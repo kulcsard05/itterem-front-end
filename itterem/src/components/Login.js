@@ -1,6 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { login } from '../api';
 
-const Login = ({ onSwitch }) => {
+const Login = ({ onSwitch, onLoginSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const result = await login(email.trim(), password);
+      if (result.ok) {
+        onLoginSuccess?.(result.user);
+      } else {
+        setError(result.message || 'Hibás név vagy jelszó');
+      }
+    } catch (err) {
+      setError(err?.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-sm">
@@ -10,7 +34,7 @@ const Login = ({ onSwitch }) => {
       </div>
 
       <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
-        <form className="space-y-6" action="#" method="POST" onSubmit={(e) => e.preventDefault()}>
+        <form className="space-y-6" action="#" method="POST" onSubmit={onSubmit}>
           <div>
             <label htmlFor="email" className="block text-sm font-medium leading-6 text-gray-900">
               Email address
@@ -22,6 +46,8 @@ const Login = ({ onSwitch }) => {
                 type="email"
                 autoComplete="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
               />
             </div>
@@ -45,17 +71,22 @@ const Login = ({ onSwitch }) => {
                 type="password"
                 autoComplete="current-password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
               />
             </div>
           </div>
 
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
           <div>
             <button
               type="submit"
+              disabled={loading}
               className="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
             >
-              Sign in
+              {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </div>
         </form>
