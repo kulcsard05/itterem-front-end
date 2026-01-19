@@ -1,5 +1,9 @@
 const DEFAULT_API_BASE_URL = 'https://localhost:7200';
 
+// Development mode - set to true to bypass backend authentication
+// You can also set VITE_DEV_MODE_AUTH=true in your .env file
+const DEV_MODE_AUTH = import.meta.env.VITE_DEV_MODE_AUTH === 'true' || true; // Change to false to disable
+
 function stripTrailingSlashes(value) {
   return String(value || '').replace(/\/+$/, '');
 }
@@ -42,6 +46,29 @@ async function readJsonOrText(response) {
 }
 
 export async function login(email, password) {
+  // ========== DEV MODE: Mock Authentication ==========
+  // To disable: Set DEV_MODE_AUTH = false at the top of this file
+  if (DEV_MODE_AUTH) {
+    console.log('🔧 DEV MODE: Using mock authentication');
+    
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Accept any credentials and return mock user data
+    return {
+      ok: true,
+      user: {
+        token: 'mock-dev-token-12345',
+        teljesNev: 'Admin Felhasználó (DEV)',
+        email: email || 'dev@test.hu',
+        telefonszam: '+36 30 1234567',
+        jogosultsag: 1,
+        id: 999
+      }
+    };
+  }
+  // ========== END DEV MODE ==========
+
   const baseUrl = getApiBaseUrl();
 
   const response = await fetch(`${baseUrl}/api/Login`, {
