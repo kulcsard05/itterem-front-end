@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { login } from '../api';
 
 const props = defineProps({
@@ -17,10 +17,38 @@ const email = ref('');
 const password = ref('');
 const loading = ref(false);
 const error = ref('');
+const fieldErrors = ref({ email: '', password: '' });
+
+function isValidEmail(value) {
+  const v = String(value || '').trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
+function validate() {
+  const next = { email: '', password: '' };
+  const emailValue = String(email.value || '').trim();
+  const passwordValue = String(password.value || '');
+
+  if (!emailValue) next.email = 'Email is required.';
+  else if (!isValidEmail(emailValue)) next.email = 'Please enter a valid email address.';
+
+  if (!passwordValue) next.password = 'Password is required.';
+
+  fieldErrors.value = next;
+  return !next.email && !next.password;
+}
+
+const canSubmit = computed(() => {
+  if (loading.value) return false;
+  const emailValue = String(email.value || '').trim();
+  const passwordValue = String(password.value || '');
+  return Boolean(emailValue && passwordValue && isValidEmail(emailValue));
+});
 
 async function onSubmit(e) {
   e.preventDefault();
   error.value = '';
+  if (!validate()) return;
   loading.value = true;
   try {
     const result = await login(String(email.value || '').trim(), String(password.value || ''));
@@ -63,6 +91,7 @@ async function onSubmit(e) {
               class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
             />
           </div>
+          <p v-if="fieldErrors.email" class="mt-2 text-sm text-red-600">{{ fieldErrors.email }}</p>
         </div>
 
         <div>
@@ -87,6 +116,7 @@ async function onSubmit(e) {
               class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
             />
           </div>
+          <p v-if="fieldErrors.password" class="mt-2 text-sm text-red-600">{{ fieldErrors.password }}</p>
         </div>
 
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
@@ -94,7 +124,7 @@ async function onSubmit(e) {
         <div>
           <button
             type="submit"
-            :disabled="loading"
+            :disabled="!canSubmit"
             class="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
             {{ loading ? 'Signing in…' : 'Sign in' }}
@@ -107,7 +137,7 @@ async function onSubmit(e) {
         <button
           type="button"
           class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
-          @click="onSwitch && onSwitch()"
+          @click="props.onSwitch && props.onSwitch()"
         >
           Register now
         </button>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Login from './components/Login.vue';
 import Register from './components/Register.vue';
 import AdminDashboard from './components/AdminDashboard.vue';
@@ -22,6 +22,8 @@ function toggleForm() {
 function handleLoginSuccess(user) {
   localStorage.setItem('auth', JSON.stringify(user));
   auth.value = user;
+  // If the logged-in user isn't admin, force-close admin view.
+  if (Number(user?.jogosultsag) !== 2) showAdmin.value = false;
 }
 
 function handleLogout() {
@@ -31,14 +33,29 @@ function handleLogout() {
   showAdmin.value = false;
 }
 
+const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 1);
+
+watch(
+  () => auth.value,
+  () => {
+    if (!isAdmin.value) showAdmin.value = false;
+  },
+  { deep: true }
+);
+
 function toggleAdmin() {
+  if (!(auth.value && auth.value.token && isAdmin.value)) return;
   showAdmin.value = !showAdmin.value;
 }
 </script>
 
 <template>
   <!-- Admin Dashboard View -->
-  <AdminDashboard v-if="showAdmin && auth && auth.token" :onBack="toggleAdmin" :onLogout="handleLogout" />
+  <AdminDashboard
+    v-if="showAdmin && auth && auth.token && isAdmin"
+    :onBack="toggleAdmin"
+    :onLogout="handleLogout"
+  />
   
   <!-- Regular Auth View -->
   <div v-else class="min-h-screen bg-gray-100 flex items-center justify-center px-4 sm:px-6 lg:px-8">
@@ -50,6 +67,7 @@ function toggleAdmin() {
         <div><span class="font-semibold">Role:</span> {{ String(auth.jogosultsag ?? '-') }}</div>
       </div>
       <button
+        v-if="isAdmin"
         type="button"
         class="mt-6 flex w-full justify-center rounded-md bg-purple-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-purple-500"
         @click="toggleAdmin"

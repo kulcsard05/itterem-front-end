@@ -2,7 +2,7 @@ const DEFAULT_API_BASE_URL = 'https://localhost:7200';
 
 // Development mode - set to true to bypass backend authentication
 // You can also set VITE_DEV_MODE_AUTH=true in your .env file
-const DEV_MODE_AUTH = import.meta.env.VITE_DEV_MODE_AUTH === 'true' || true; // Change to false to disable
+const DEV_MODE_AUTH = import.meta.env.VITE_DEV_MODE_AUTH === 'true' || false; // Change to false to disable
 
 function stripTrailingSlashes(value) {
   return String(value || '').replace(/\/+$/, '');
@@ -91,4 +91,44 @@ export async function login(email, password) {
   }
 
   return { ok: false, message: 'Login failed' };
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(String(value ?? ''));
+  const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export async function register({ teljesNev, email, password, telefonSzam }) {
+  const baseUrl = getApiBaseUrl();
+  //const hash = await sha256Hex(password);
+  const hash = password;
+
+  const response = await fetch(`${baseUrl}/api/Registration`, {
+    method: 'POST',
+    headers: {
+      accept: '*/*',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      teljesNev,
+      email,
+      hash,
+      telefonSzam,
+    }),
+  });
+
+  const body = await readJsonOrText(response);
+
+  if (response.ok) {
+    return { ok: true, data: body };
+  }
+
+  if (typeof body === 'string') {
+    return { ok: false, message: body };
+  }
+
+  return { ok: false, message: body?.message || 'Registration failed' };
 }
