@@ -1,12 +1,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import Login from './components/Login.vue';
-import Register from './components/Register.vue';
 import AdminDashboard from './components/AdminDashboard.vue';
+import MenuView from './components/MenuView.vue';
+import UserPage from './components/UserPage.vue';
 
-const currentForm = ref('login');
-const showAdmin = ref(false);
 const auth = ref(null);
+const page = ref('menu');
 
 try {
   const raw = localStorage.getItem('auth');
@@ -16,7 +15,7 @@ try {
 }
 
 function toggleForm() {
-  currentForm.value = currentForm.value === 'login' ? 'register' : 'login';
+  // no-op (kept for backwards compatibility)
 }
 
 function handleLoginSuccess(user) {
@@ -29,60 +28,98 @@ function handleLoginSuccess(user) {
 function handleLogout() {
   localStorage.removeItem('auth');
   auth.value = null;
-  currentForm.value = 'login';
-  showAdmin.value = false;
+  page.value = 'menu';
 }
 
-const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 1);
+const isLoggedIn = computed(() => Boolean(auth.value && auth.value.token));
+const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 2);
 
 watch(
   () => auth.value,
   () => {
-    if (!isAdmin.value) showAdmin.value = false;
+    if (!isAdmin.value && page.value === 'admin') page.value = 'menu';
   },
   { deep: true }
 );
 
-function toggleAdmin() {
-  if (!(auth.value && auth.value.token && isAdmin.value)) return;
-  showAdmin.value = !showAdmin.value;
+function goMenu() {
+  page.value = 'menu';
+}
+
+function goAccount() {
+  page.value = 'account';
+}
+
+function goAdmin() {
+  if (!(isLoggedIn.value && isAdmin.value)) return;
+  page.value = 'admin';
 }
 </script>
 
 <template>
-  <!-- Admin Dashboard View -->
-  <AdminDashboard
-    v-if="showAdmin && auth && auth.token && isAdmin"
-    :onBack="toggleAdmin"
-    :onLogout="handleLogout"
-  />
-  
-  <!-- Regular Auth View -->
-  <div v-else class="min-h-screen bg-gray-100 flex items-center justify-center px-4 sm:px-6 lg:px-8">
-    <div v-if="auth && auth.token" class="w-full max-w-md bg-white rounded-lg shadow-md p-8">
-      <h2 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">You are signed in</h2>
-      <div class="mt-6 text-sm text-gray-700 space-y-2">
-        <div><span class="font-semibold">Name:</span> {{ auth.teljesNev || '-' }}</div>
-        <div><span class="font-semibold">Email:</span> {{ auth.email || '-' }}</div>
-        <div><span class="font-semibold">Role:</span> {{ String(auth.jogosultsag ?? '-') }}</div>
+  <div class="min-h-screen">
+    <header class="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur">
+      <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+        <button type="button" class="text-lg font-bold text-gray-900" @click="goMenu">Itterem</button>
+
+        <nav class="flex items-center gap-2">
+          <button
+            type="button"
+            class="rounded-md px-3 py-2 text-sm font-semibold"
+            :class="page === 'menu' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
+            @click="goMenu"
+          >
+            Menu
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-3 py-2 text-sm font-semibold"
+            :class="page === 'account' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
+            @click="goAccount"
+          >
+            Account
+          </button>
+          <button
+            v-if="isLoggedIn && isAdmin"
+            type="button"
+            class="rounded-md px-3 py-2 text-sm font-semibold"
+            :class="page === 'admin' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
+            @click="goAdmin"
+          >
+            Admin
+          </button>
+        </nav>
+
+        <div class="flex items-center gap-3">
+          <div v-if="isLoggedIn" class="hidden text-right sm:block">
+            <div class="text-sm font-semibold text-gray-900">{{ auth.teljesNev || auth.email || 'User' }}</div>
+            <div class="text-xs text-gray-600">Role: {{ String(auth.jogosultsag ?? '-') }}</div>
+          </div>
+
+          <button
+            v-if="isLoggedIn"
+            type="button"
+            class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            @click="handleLogout"
+          >
+            Logout
+          </button>
+          <button
+            v-else
+            type="button"
+            class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            @click="goAccount"
+          >
+            Sign in
+          </button>
+        </div>
       </div>
-      <button
-        v-if="isAdmin"
-        type="button"
-        class="mt-6 flex w-full justify-center rounded-md bg-purple-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-purple-500"
-        @click="toggleAdmin"
-      >
-        View Admin Dashboard
-      </button>
-      <button
-        type="button"
-        class="mt-4 flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500"
-        @click="handleLogout"
-      >
-        Logout
-      </button>
-    </div>
-    <Login v-else-if="currentForm === 'login'" :onSwitch="toggleForm" :onLoginSuccess="handleLoginSuccess" />
-    <Register v-else :onSwitch="toggleForm" />
+    </header>
+
+    <main>
+      <AdminDashboard v-if="page === 'admin'" :onBack="goMenu" :onLogout="handleLogout" />
+      <MenuView v-else-if="page === 'menu'" />
+      <UserPage v-else :auth="auth" :onLoginSuccess="handleLoginSuccess" :onLogout="handleLogout" />
+    </main>
   </div>
 </template>
