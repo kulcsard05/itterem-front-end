@@ -19,7 +19,7 @@ function handleLoginSuccess(user) {
     auth.value = user;
 
     // If the logged-in user isn't admin, force-close admin view.
-    if (Number(user?.jogosultsag) !== 2 && page.value === 'admin') page.value = 'menu';
+	if (Number(user?.jogosultsag) !== 1 && page.value === 'admin') page.value = 'menu';
 }
 
 function handleLogout() {
@@ -29,7 +29,7 @@ function handleLogout() {
 }
 
 const isLoggedIn = computed(() => Boolean(auth.value && auth.value.token));
-const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 2);
+const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 1);
 
 watch(
 	() => auth.value,

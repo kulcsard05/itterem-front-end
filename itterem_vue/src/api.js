@@ -136,3 +136,193 @@ export async function getMenus() {
 export async function getDrinks() {
 	return getList('/api/Uditok', 'Failed to fetch drinks');
 }
+
+// Hozzavalok = Ingredients
+export async function getIngredients() {
+	return getList('/api/Hozzavalok', 'Failed to fetch ingredients', ['hozzavalok', 'ingredients']);
+}
+
+async function requestOk(response, fallbackErrorMessage) {
+	const body = await readJsonOrText(response);
+	if (response.ok) return { ok: true, data: body };
+	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
+	return { ok: false, message };
+}
+
+export async function updateIngredient({ id, nev }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		id: String(id ?? ''),
+		nev: String(nev ?? ''),
+	});
+
+	const response = await fetch(`${baseUrl}/api/Hozzavalok?${params.toString()}`, {
+		method: 'PUT',
+		headers: { accept: '*/*' },
+	});
+
+	return requestOk(response, 'Failed to update ingredient');
+}
+
+export async function deleteIngredient(id) {
+	const baseUrl = getApiBaseUrl();
+	const response = await fetch(`${baseUrl}/api/Hozzavalok/${encodeURIComponent(String(id))}`, {
+		method: 'DELETE',
+		headers: { accept: '*/*' },
+	});
+	return requestOk(response, 'Failed to delete ingredient');
+}
+
+export async function updateCategory({ id, nev }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		id: String(id ?? ''),
+		nev: String(nev ?? ''),
+	});
+
+	const response = await fetch(`${baseUrl}/api/Kategoria?${params.toString()}`, {
+		method: 'PUT',
+		headers: { accept: '*/*' },
+	});
+
+	return requestOk(response, 'Failed to update category');
+}
+
+export async function deleteCategory(id) {
+	const baseUrl = getApiBaseUrl();
+	const response = await fetch(`${baseUrl}/api/Kategoria/${encodeURIComponent(String(id))}`, {
+		method: 'DELETE',
+		headers: { accept: '*/*' },
+	});
+	return requestOk(response, 'Failed to delete category');
+}
+
+export async function updateMeal({ id, nev, leiras, elerheto, kategoraId, kepBase64 }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		id: String(id ?? ''),
+		nev: String(nev ?? ''),
+		leiras: String(leiras ?? ''),
+		elerheto: String(elerheto ?? ''),
+		// Backend expects this exact casing based on provided curl.
+		Kategora: String(kategoraId ?? ''),
+	});
+
+	const formData = new FormData();
+	// curl used -F 'kep=' so we always send the field (empty allowed)
+	formData.append('kep', String(kepBase64 ?? ''));
+
+	const response = await fetch(`${baseUrl}/api/Keszetelek?${params.toString()}`, {
+		method: 'PUT',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to update meal');
+}
+
+export async function deleteMeal(id) {
+	const baseUrl = getApiBaseUrl();
+	const response = await fetch(`${baseUrl}/api/Keszetelek/${encodeURIComponent(String(id))}`, {
+		method: 'DELETE',
+		headers: { accept: '*/*' },
+	});
+	return requestOk(response, 'Failed to delete meal');
+}
+
+export async function updateSide({ id, nev, leiras, elerheto, kepBase64 }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		id: String(id ?? ''),
+		nev: String(nev ?? ''),
+		leiras: String(leiras ?? ''),
+		elerheto: String(elerheto ?? ''),
+	});
+
+	const formData = new FormData();
+	formData.append('kep', String(kepBase64 ?? ''));
+
+	const response = await fetch(`${baseUrl}/api/Koretek?${params.toString()}`, {
+		method: 'PUT',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to update side');
+}
+
+export async function deleteSide(id) {
+	const baseUrl = getApiBaseUrl();
+	const response = await fetch(`${baseUrl}/api/Koretek/${encodeURIComponent(String(id))}`, {
+		method: 'DELETE',
+		headers: { accept: '*/*' },
+	});
+	return requestOk(response, 'Failed to delete side');
+}
+
+export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, kepBase64 }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		id: String(id ?? ''),
+		menuNev: String(menuNev ?? ''),
+		keszetelId: String(keszetelId ?? ''),
+		koretId: String(koretId ?? ''),
+		elerheto: String(elerheto ?? ''),
+	});
+
+	// uditoId can be NULL -> omit from query when not set
+	const uditoValue = uditoId === null || uditoId === undefined ? '' : String(uditoId);
+	if (String(uditoValue).trim() !== '') {
+		params.set('uditoId', String(uditoValue));
+	}
+
+	const formData = new FormData();
+	formData.append('kep', String(kepBase64 ?? ''));
+
+	const response = await fetch(`${baseUrl}/api/Menuk?${params.toString()}`, {
+		method: 'PUT',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to update menu');
+}
+
+export async function deleteMenu(id) {
+	const baseUrl = getApiBaseUrl();
+	const response = await fetch(`${baseUrl}/api/Menuk/${encodeURIComponent(String(id))}`, {
+		method: 'DELETE',
+		headers: { accept: '*/*' },
+	});
+	return requestOk(response, 'Failed to delete menu');
+}
+
+export async function updateDrink({ id, nev, elerheto, kepBase64 }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		id: String(id ?? ''),
+		nev: String(nev ?? ''),
+		elerheto: String(elerheto ?? ''),
+	});
+
+	const formData = new FormData();
+	formData.append('kep', String(kepBase64 ?? ''));
+
+	const response = await fetch(`${baseUrl}/api/Uditok?${params.toString()}`, {
+		method: 'PUT',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to update drink');
+}
+
+export async function deleteDrink(id) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({ id: String(id ?? '') });
+	const response = await fetch(`${baseUrl}/api/Uditok?${params.toString()}`, {
+		method: 'DELETE',
+		headers: { accept: '*/*' },
+	});
+	return requestOk(response, 'Failed to delete drink');
+}

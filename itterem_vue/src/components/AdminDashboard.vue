@@ -1,6 +1,25 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { getDrinks, getMeals, getMenus, getSides } from '../api.js';
+import {
+  deleteCategory,
+  deleteDrink,
+  deleteIngredient,
+  deleteMenu,
+  deleteMeal,
+  deleteSide,
+  getCategories,
+  getDrinks,
+  getIngredients,
+  getMeals,
+  getMenus,
+  getSides,
+  updateCategory,
+  updateDrink,
+  updateIngredient,
+  updateMenu,
+  updateMeal,
+  updateSide,
+} from '../api.js';
 
 // Props from parent
 const props = defineProps({
@@ -18,12 +37,42 @@ const props = defineProps({
 const activeTab = ref('menuk');
 
 const menukRaw = ref([]);
+const kategoriak = ref([]);
+const hozzavalok = ref([]);
 const keszetelek = ref([]); // Meals
 const koretek = ref([]); // Sides
 const uditok = ref([]); // Drinks
 
 const isLoading = ref(false);
 const loadError = ref('');
+
+const actionError = ref('');
+const actionSuccess = ref('');
+
+const showEditModal = ref(false);
+const editType = ref('');
+const editForm = ref({});
+const saving = ref(false);
+
+function clearFeedback() {
+  actionError.value = '';
+  actionSuccess.value = '';
+}
+
+function normalizeAvailable(value) {
+  return value === 1 || value === true;
+}
+
+function getMealCategoryId(meal) {
+  return (
+    meal?.kategoria_id ??
+    meal?.kategoriaId ??
+    meal?.kategoriaID ??
+    meal?.kategoria?.id ??
+    meal?.kategoria ??
+    null
+  );
+}
 
 function getMenuMealId(menu) {
   return menu?.keszetel_id ?? menu?.keszetelId ?? menu?.keszetelID ?? menu?.keszetel?.id ?? null;
@@ -66,15 +115,37 @@ const menuk = computed(() => {
 async function loadAdminData() {
   isLoading.value = true;
   loadError.value = '';
+  clearFeedback();
 
-  const results = await Promise.allSettled([getMenus(), getMeals(), getSides(), getDrinks()]);
-  const [menusRes, mealsRes, sidesRes, drinksRes] = results;
+  const results = await Promise.allSettled([
+    getMenus(),
+    getCategories(),
+    getIngredients(),
+    getMeals(),
+    getSides(),
+    getDrinks(),
+  ]);
+  const [menusRes, categoriesRes, ingredientsRes, mealsRes, sidesRes, drinksRes] = results;
 
   if (menusRes.status === 'fulfilled') {
     menukRaw.value = Array.isArray(menusRes.value) ? menusRes.value : [];
   } else {
     menukRaw.value = [];
     loadError.value = menusRes.reason instanceof Error ? menusRes.reason.message : 'Failed to load menus';
+  }
+
+  if (categoriesRes.status === 'fulfilled') {
+    kategoriak.value = Array.isArray(categoriesRes.value) ? categoriesRes.value : [];
+  } else {
+    kategoriak.value = [];
+    loadError.value = loadError.value || (categoriesRes.reason instanceof Error ? categoriesRes.reason.message : 'Failed to load categories');
+  }
+
+  if (ingredientsRes.status === 'fulfilled') {
+    hozzavalok.value = Array.isArray(ingredientsRes.value) ? ingredientsRes.value : [];
+  } else {
+    hozzavalok.value = [];
+    loadError.value = loadError.value || (ingredientsRes.reason instanceof Error ? ingredientsRes.reason.message : 'Failed to load ingredients');
   }
 
   if (mealsRes.status === 'fulfilled') {
@@ -105,47 +176,229 @@ onMounted(() => {
   loadAdminData();
 });
 
-const hozzavalok = ref([
-  { id: 1, hozzavalo_nev: 'Hamburger hus' },
-  { id: 2, hozzavalo_nev: 'Hamburger puffancs' },
-  { id: 3, hozzavalo_nev: 'Spegetti tészta' },
-  { id: 4, hozzavalo_nev: 'Spagetti hús' }
-]);
-
-const users = ref([
-  { id: 9, teljes_nev: 'Teszt Felhasználó', email: 'teszt1@teszt.hu', telefonszam: '+36 30 1234567', jogosultsag: 1, aktiv: 1 }
-]);
-
-const jogok = ref([
-  { id: 1, szint: 0, nev: 'Felhasználó', leiras: 'Bejelentkezett felhasználó, alap jog' },
-  { id: 2, szint: 1, nev: 'Felhasználó', leiras: 'Alap jogosultság' }
-]);
-
-// Edit modal state
-const showEditModal = ref(false);
-const editingItem = ref(null);
-const editForm = ref({});
-
 function setTab(tab) {
   activeTab.value = tab;
 }
 
-function openEditModal(item, type) {
-  editingItem.value = { ...item, type };
-  editForm.value = { ...item };
+const editModalTitle = computed(() => {
+  if (editType.value === 'ingredient') return 'Hozzávaló szerkesztése';
+  if (editType.value === 'category') return 'Kategória szerkesztése';
+  if (editType.value === 'menu') return 'Menü szerkesztése';
+  if (editType.value === 'meal') return 'Készétel szerkesztése';
+  if (editType.value === 'side') return 'Köret szerkesztése';
+  if (editType.value === 'drink') return 'Üdítő szerkesztése';
+  return 'Szerkesztés';
+});
+
+function openEditModal(type, item) {
+  clearFeedback();
+  editType.value = type;
+
+  if (type === 'ingredient') {
+    editForm.value = {
+      id: item?.id,
+      nev: String(item?.hozzavaloNev ?? item?.hozzavalo_nev ?? ''),
+    };
+  } else if (type === 'category') {
+    editForm.value = {
+      id: item?.id,
+      nev: String(item?.nev ?? item?.name ?? ''),
+    };
+  } else if (type === 'meal') {
+    editForm.value = {
+      id: item?.id,
+      nev: String(item?.nev ?? ''),
+      leiras: String(item?.leiras ?? ''),
+      elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
+      kategoraId: getMealCategoryId(item) ?? '',
+      kepBase64: '',
+    };
+  } else if (type === 'side') {
+    editForm.value = {
+      id: item?.id,
+      nev: String(item?.nev ?? ''),
+      leiras: String(item?.leiras ?? ''),
+      elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
+      kepBase64: '',
+    };
+  } else if (type === 'drink') {
+    editForm.value = {
+      id: item?.id,
+      nev: String(item?.nev ?? ''),
+      elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
+      kepBase64: '',
+    };
+  } else if (type === 'menu') {
+    editForm.value = {
+      id: item?.id,
+      menuNev: String(item?.menu_nev ?? item?.menuNev ?? ''),
+      keszetelId: item?.keszetel_id ?? item?.keszetelId ?? '',
+      koretId: item?.koret_id ?? item?.koretId ?? '',
+      uditoId: item?.udito_id == null ? '' : item?.udito_id,
+      elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
+      kepBase64: '',
+    };
+  } else {
+    editForm.value = { ...item };
+  }
+
   showEditModal.value = true;
 }
 
 function closeEditModal() {
   showEditModal.value = false;
-  editingItem.value = null;
+  editType.value = '';
   editForm.value = {};
+  clearFeedback();
 }
 
-function saveEdit() {
-  // This will be implemented later with actual API calls
-  console.log('Saving:', editForm.value);
-  closeEditModal();
+async function saveEdit() {
+  clearFeedback();
+  saving.value = true;
+
+  try {
+    const id = editForm.value?.id;
+    if (!id && id !== 0) {
+      actionError.value = 'Missing id.';
+      return;
+    }
+
+    if (editType.value === 'ingredient') {
+      const nev = String(editForm.value?.nev ?? '').trim();
+      if (!nev) {
+        actionError.value = 'Név kötelező.';
+        return;
+      }
+      const res = await updateIngredient({ id, nev });
+      if (!res.ok) throw new Error(res.message || 'Failed to update ingredient');
+      actionSuccess.value = 'Hozzávaló frissítve.';
+    } else if (editType.value === 'category') {
+      const nev = String(editForm.value?.nev ?? '').trim();
+      if (!nev) {
+        actionError.value = 'Név kötelező.';
+        return;
+      }
+      const res = await updateCategory({ id, nev });
+      if (!res.ok) throw new Error(res.message || 'Failed to update category');
+      actionSuccess.value = 'Kategória frissítve.';
+    } else if (editType.value === 'meal') {
+      const nev = String(editForm.value?.nev ?? '').trim();
+      const leiras = String(editForm.value?.leiras ?? '').trim();
+      const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
+      const kategoraId = String(editForm.value?.kategoraId ?? '').trim();
+      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+
+      if (!nev) {
+        actionError.value = 'Név kötelező.';
+        return;
+      }
+      if (!kategoraId) {
+        actionError.value = 'Kategória kötelező.';
+        return;
+      }
+
+      const res = await updateMeal({ id, nev, leiras, elerheto, kategoraId, kepBase64 });
+      if (!res.ok) throw new Error(res.message || 'Failed to update meal');
+      actionSuccess.value = 'Készétel frissítve.';
+    } else if (editType.value === 'side') {
+      const nev = String(editForm.value?.nev ?? '').trim();
+      const leiras = String(editForm.value?.leiras ?? '').trim();
+      const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
+      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+
+      if (!nev) {
+        actionError.value = 'Név kötelező.';
+        return;
+      }
+
+      const res = await updateSide({ id, nev, leiras, elerheto, kepBase64 });
+      if (!res.ok) throw new Error(res.message || 'Failed to update side');
+      actionSuccess.value = 'Köret frissítve.';
+    } else if (editType.value === 'drink') {
+      const nev = String(editForm.value?.nev ?? '').trim();
+      const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
+      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+
+      if (!nev) {
+        actionError.value = 'Név kötelező.';
+        return;
+      }
+
+      const res = await updateDrink({ id, nev, elerheto, kepBase64 });
+      if (!res.ok) throw new Error(res.message || 'Failed to update drink');
+      actionSuccess.value = 'Üdítő frissítve.';
+    } else if (editType.value === 'menu') {
+      const menuNev = String(editForm.value?.menuNev ?? '').trim();
+      const keszetelId = String(editForm.value?.keszetelId ?? '').trim();
+      const koretId = String(editForm.value?.koretId ?? '').trim();
+      const uditoIdRaw = editForm.value?.uditoId;
+      const uditoId = String(uditoIdRaw ?? '').trim() === '' ? null : uditoIdRaw;
+      const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
+      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+
+      if (!menuNev) {
+        actionError.value = 'Menü név kötelező.';
+        return;
+      }
+      if (!keszetelId) {
+        actionError.value = 'Készétel kötelező.';
+        return;
+      }
+      if (!koretId) {
+        actionError.value = 'Köret kötelező.';
+        return;
+      }
+
+      const res = await updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, kepBase64 });
+      if (!res.ok) throw new Error(res.message || 'Failed to update menu');
+      actionSuccess.value = 'Menü frissítve.';
+    }
+
+    showEditModal.value = false;
+    await loadAdminData();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Save failed';
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function handleDelete(type, item) {
+  clearFeedback();
+  const id = item?.id;
+  if (!confirm('Biztosan törlöd?')) return;
+
+  try {
+    if (type === 'ingredient') {
+      const res = await deleteIngredient(id);
+      if (!res.ok) throw new Error(res.message || 'Failed to delete ingredient');
+      actionSuccess.value = 'Hozzávaló törölve.';
+    } else if (type === 'category') {
+      const res = await deleteCategory(id);
+      if (!res.ok) throw new Error(res.message || 'Failed to delete category');
+      actionSuccess.value = 'Kategória törölve.';
+    } else if (type === 'meal') {
+      const res = await deleteMeal(id);
+      if (!res.ok) throw new Error(res.message || 'Failed to delete meal');
+      actionSuccess.value = 'Készétel törölve.';
+    } else if (type === 'side') {
+      const res = await deleteSide(id);
+      if (!res.ok) throw new Error(res.message || 'Failed to delete side');
+      actionSuccess.value = 'Köret törölve.';
+    } else if (type === 'menu') {
+      const res = await deleteMenu(id);
+      if (!res.ok) throw new Error(res.message || 'Failed to delete menu');
+      actionSuccess.value = 'Menü törölve.';
+    } else if (type === 'drink') {
+      const res = await deleteDrink(id);
+      if (!res.ok) throw new Error(res.message || 'Failed to delete drink');
+      actionSuccess.value = 'Üdítő törölve.';
+    }
+
+    await loadAdminData();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Delete failed';
+  }
 }
 </script>
 
@@ -181,6 +434,18 @@ function saveEdit() {
         Menük
       </button>
       <button 
+        :class="['tab-button', { 'tab-active': activeTab === 'kategoriak' }]"
+        @click="setTab('kategoriak')"
+      >
+        Kategóriák
+      </button>
+      <button 
+        :class="['tab-button', { 'tab-active': activeTab === 'hozzavalok' }]"
+        @click="setTab('hozzavalok')"
+      >
+        Hozzávalók
+      </button>
+      <button 
         :class="['tab-button', { 'tab-active': activeTab === 'keszetelek' }]"
         @click="setTab('keszetelek')"
       >
@@ -198,24 +463,6 @@ function saveEdit() {
       >
         Üdítők
       </button>
-      <button 
-        :class="['tab-button', { 'tab-active': activeTab === 'hozzavalok' }]"
-        @click="setTab('hozzavalok')"
-      >
-        Hozzávalók
-      </button>
-      <button 
-        :class="['tab-button', { 'tab-active': activeTab === 'users' }]"
-        @click="setTab('users')"
-      >
-        Felhasználók
-      </button>
-      <button 
-        :class="['tab-button', { 'tab-active': activeTab === 'jogok' }]"
-        @click="setTab('jogok')"
-      >
-        Jogosultságok
-      </button>
     </div>
 
     <!-- Content Area -->
@@ -228,23 +475,29 @@ function saveEdit() {
         {{ loadError }}
       </div>
 
+		<div v-if="actionError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">
+			{{ actionError }}
+		</div>
+		<div v-if="actionSuccess" class="mb-4 rounded-lg bg-green-50 p-3 text-sm font-medium text-green-800">
+			{{ actionSuccess }}
+		</div>
+
       <!-- Menuk Tab -->
       <div v-if="activeTab === 'menuk'" class="tab-content">
         <div class="content-header">
           <h2 class="content-title">Menük Kezelése</h2>
-          <button class="btn-add">+ Új Menü</button>
         </div>
         <div class="table-container">
           <table class="data-table">
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Menú Név</th>
+                <th>Menü Név</th>
                 <th>Készétel</th>
                 <th>Köret</th>
                 <th>Üdítő</th>
                 <th>Elérhető</th>
-                <th>Műveletek</th>
+				<th>Műveletek</th>
               </tr>
             </thead>
             <tbody>
@@ -259,21 +512,76 @@ function saveEdit() {
                     {{ menu.elerheto ? 'Igen' : 'Nem' }}
                   </span>
                 </td>
-                <td class="actions">
-                  <button class="btn-edit" @click="openEditModal(menu, 'menu')">Szerkeszt</button>
-                  <button class="btn-delete">Töröl</button>
-                </td>
+				<td class="actions">
+					<button class="btn-edit" @click="openEditModal('menu', menu)">Szerkeszt</button>
+					<button class="btn-delete" @click="handleDelete('menu', menu)">Töröl</button>
+				</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
+    <!-- Kategoriak Tab -->
+    <div v-if="activeTab === 'kategoriak'" class="tab-content">
+      <div class="content-header">
+        <h2 class="content-title">Kategóriák Kezelése</h2>
+      </div>
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Név</th>
+              <th>Műveletek</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="kat in kategoriak" :key="kat.id">
+              <td>{{ kat.id }}</td>
+              <td class="font-semibold">{{ kat.nev }}</td>
+              <td class="actions">
+                <button class="btn-edit" @click="openEditModal('category', kat)">Szerkeszt</button>
+                <button class="btn-delete" @click="handleDelete('category', kat)">Töröl</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Hozzavalok Tab -->
+    <div v-if="activeTab === 'hozzavalok'" class="tab-content">
+      <div class="content-header">
+        <h2 class="content-title">Hozzávalók Kezelése</h2>
+      </div>
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Név</th>
+              <th>Műveletek</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="hoz in hozzavalok" :key="hoz.id">
+              <td>{{ hoz.id }}</td>
+              <td class="font-semibold">{{ hoz.hozzavaloNev }}</td>
+              <td class="actions">
+                <button class="btn-edit" @click="openEditModal('ingredient', hoz)">Szerkeszt</button>
+                <button class="btn-delete" @click="handleDelete('ingredient', hoz)">Töröl</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
       <!-- Keszetelek Tab -->
       <div v-if="activeTab === 'keszetelek'" class="tab-content">
         <div class="content-header">
           <h2 class="content-title">Készételek Kezelése</h2>
-          <button class="btn-add">+ Új Készétel</button>
         </div>
         <div class="table-container">
           <table class="data-table">
@@ -283,7 +591,7 @@ function saveEdit() {
                 <th>Név</th>
                 <th>Leírás</th>
                 <th>Elérhető</th>
-                <th>Műveletek</th>
+				<th>Műveletek</th>
               </tr>
             </thead>
             <tbody>
@@ -296,10 +604,10 @@ function saveEdit() {
                     {{ keszetel.elerheto ? 'Igen' : 'Nem' }}
                   </span>
                 </td>
-                <td class="actions">
-                  <button class="btn-edit">Szerkeszt</button>
-                  <button class="btn-delete">Töröl</button>
-                </td>
+				<td class="actions">
+					<button class="btn-edit" @click="openEditModal('meal', keszetel)">Szerkeszt</button>
+					<button class="btn-delete" @click="handleDelete('meal', keszetel)">Töröl</button>
+				</td>
               </tr>
             </tbody>
           </table>
@@ -310,7 +618,6 @@ function saveEdit() {
       <div v-if="activeTab === 'koretek'" class="tab-content">
         <div class="content-header">
           <h2 class="content-title">Köretek Kezelése</h2>
-          <button class="btn-add">+ Új Köret</button>
         </div>
         <div class="table-container">
           <table class="data-table">
@@ -320,7 +627,7 @@ function saveEdit() {
                 <th>Név</th>
                 <th>Leírás</th>
                 <th>Elérhető</th>
-                <th>Műveletek</th>
+				<th>Műveletek</th>
               </tr>
             </thead>
             <tbody>
@@ -333,10 +640,10 @@ function saveEdit() {
                     {{ koret.elerheto ? 'Igen' : 'Nem' }}
                   </span>
                 </td>
-                <td class="actions">
-                  <button class="btn-edit">Szerkeszt</button>
-                  <button class="btn-delete">Töröl</button>
-                </td>
+				<td class="actions">
+					<button class="btn-edit" @click="openEditModal('side', koret)">Szerkeszt</button>
+					<button class="btn-delete" @click="handleDelete('side', koret)">Töröl</button>
+				</td>
               </tr>
             </tbody>
           </table>
@@ -347,7 +654,6 @@ function saveEdit() {
       <div v-if="activeTab === 'uditok'" class="tab-content">
         <div class="content-header">
           <h2 class="content-title">Üdítők Kezelése</h2>
-          <button class="btn-add">+ Új Üdítő</button>
         </div>
         <div class="table-container">
           <table class="data-table">
@@ -356,7 +662,7 @@ function saveEdit() {
                 <th>ID</th>
                 <th>Név</th>
                 <th>Elérhető</th>
-                <th>Műveletek</th>
+				<th>Műveletek</th>
               </tr>
             </thead>
             <tbody>
@@ -368,119 +674,10 @@ function saveEdit() {
                     {{ udito.elerheto ? 'Igen' : 'Nem' }}
                   </span>
                 </td>
-                <td class="actions">
-                  <button class="btn-edit">Szerkeszt</button>
-                  <button class="btn-delete">Töröl</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Hozzavalok Tab -->
-      <div v-if="activeTab === 'hozzavalok'" class="tab-content">
-        <div class="content-header">
-          <h2 class="content-title">Hozzávalók Kezelése</h2>
-          <button class="btn-add">+ Új Hozzávaló</button>
-        </div>
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Hozzávaló Név</th>
-                <th>Műveletek</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="hozzavalo in hozzavalok" :key="hozzavalo.id">
-                <td>{{ hozzavalo.id }}</td>
-                <td class="font-semibold">{{ hozzavalo.hozzavalo_nev }}</td>
-                <td class="actions">
-                  <button class="btn-edit">Szerkeszt</button>
-                  <button class="btn-delete">Töröl</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Users Tab -->
-      <div v-if="activeTab === 'users'" class="tab-content">
-        <div class="content-header">
-          <h2 class="content-title">Felhasználók Kezelése</h2>
-          <button class="btn-add">+ Új Felhasználó</button>
-        </div>
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Teljes Név</th>
-                <th>Email</th>
-                <th>Telefonszám</th>
-                <th>Jogosultság</th>
-                <th>Aktív</th>
-                <th>Műveletek</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="user in users" :key="user.id">
-                <td>{{ user.id }}</td>
-                <td class="font-semibold">{{ user.teljes_nev }}</td>
-                <td>{{ user.email }}</td>
-                <td>{{ user.telefonszam }}</td>
-                <td>
-                  <span class="badge-jogosultsag">
-                    Szint {{ user.jogosultsag }}
-                  </span>
-                </td>
-                <td>
-                  <span :class="['status-badge', user.aktiv ? 'status-active' : 'status-inactive']">
-                    {{ user.aktiv ? 'Igen' : 'Nem' }}
-                  </span>
-                </td>
-                <td class="actions">
-                  <button class="btn-edit">Szerkeszt</button>
-                  <button class="btn-delete">Töröl</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Jogok Tab -->
-      <div v-if="activeTab === 'jogok'" class="tab-content">
-        <div class="content-header">
-          <h2 class="content-title">Jogosultságok Kezelése</h2>
-          <button class="btn-add">+ Új Jogosultság</button>
-        </div>
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Szint</th>
-                <th>Név</th>
-                <th>Leírás</th>
-                <th>Műveletek</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="jog in jogok" :key="jog.id">
-                <td>{{ jog.id }}</td>
-                <td>
-                  <span class="badge-level">{{ jog.szint }}</span>
-                </td>
-                <td class="font-semibold">{{ jog.nev }}</td>
-                <td>{{ jog.leiras }}</td>
-                <td class="actions">
-                  <button class="btn-edit">Szerkeszt</button>
-                  <button class="btn-delete">Töröl</button>
-                </td>
+				<td class="actions">
+					<button class="btn-edit" @click="openEditModal('drink', udito)">Szerkeszt</button>
+					<button class="btn-delete" @click="handleDelete('drink', udito)">Töröl</button>
+				</td>
               </tr>
             </tbody>
           </table>
@@ -488,65 +685,94 @@ function saveEdit() {
       </div>
     </div>
 
-    <!-- Edit Modal -->
-    <div v-if="showEditModal" class="modal-overlay" @click.self="closeEditModal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 class="modal-title">Menü Szerkesztése</h3>
-          <button class="modal-close" @click="closeEditModal">×</button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">ID</label>
-            <input v-model="editForm.id" type="text" class="form-input" disabled />
-          </div>
+  <!-- Edit Modal -->
+  <div v-if="showEditModal" class="modal-overlay" @click.self="closeEditModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">{{ editModalTitle }}</h3>
+        <button class="modal-close" @click="closeEditModal">×</button>
+      </div>
 
-          <div class="form-group">
-            <label class="form-label">Menú Név</label>
-            <input v-model="editForm.menu_nev" type="text" class="form-input" placeholder="Menü neve" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Készétel</label>
-            <select v-model="editForm.keszetel_id" class="form-input">
-              <option :value="null">Válassz készételt</option>
-              <option v-for="k in keszetelek" :key="k.id" :value="k.id">{{ k.nev }}</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Köret</label>
-            <select v-model="editForm.koret_id" class="form-input">
-              <option :value="null">Válassz köretet</option>
-              <option v-for="k in koretek" :key="k.id" :value="k.id">{{ k.nev }}</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Üdítő</label>
-            <select v-model="editForm.udito_id" class="form-input">
-              <option :value="null">Válassz üdítőt</option>
-              <option v-for="u in uditok" :key="u.id" :value="u.id">{{ u.nev }}</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Elérhető</label>
-            <div class="form-checkbox-group">
-              <input v-model="editForm.elerheto" type="checkbox" :true-value="1" :false-value="0" class="form-checkbox" id="elerheto" />
-              <label for="elerheto" class="form-checkbox-label">Elérhető a menüben</label>
-            </div>
-          </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">ID</label>
+          <input v-model="editForm.id" type="text" class="form-input" disabled />
         </div>
 
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="closeEditModal">Mégse</button>
-          <button class="btn-save" @click="saveEdit">Mentés</button>
+        <div v-if="editType !== 'menu'" class="form-group">
+          <label class="form-label">Név</label>
+          <input v-model="editForm.nev" type="text" class="form-input" />
+        </div>
+
+        <div v-if="editType === 'menu'" class="form-group">
+          <label class="form-label">Menü név</label>
+          <input v-model="editForm.menuNev" type="text" class="form-input" />
+        </div>
+
+        <div v-if="editType === 'meal' || editType === 'side'" class="form-group">
+          <label class="form-label">Leírás</label>
+          <textarea v-model="editForm.leiras" class="form-input" rows="3" />
+        </div>
+
+        <div v-if="editType === 'meal' || editType === 'side' || editType === 'drink' || editType === 'menu'" class="form-group">
+          <label class="form-label">Elérhető</label>
+          <select v-model="editForm.elerheto" class="form-input">
+            <option :value="1">Igen</option>
+            <option :value="0">Nem</option>
+          </select>
+        </div>
+
+        <div v-if="editType === 'meal'" class="form-group">
+          <label class="form-label">Kategória</label>
+          <select v-model="editForm.kategoraId" class="form-input">
+            <option value="">Válassz kategóriát</option>
+            <option v-for="k in kategoriak" :key="k.id" :value="k.id">{{ k.nev }}</option>
+          </select>
+        </div>
+
+        <div v-if="editType === 'menu'" class="form-group">
+          <label class="form-label">Készétel</label>
+          <select v-model="editForm.keszetelId" class="form-input">
+            <option value="">Válassz készételt</option>
+            <option v-for="m in keszetelek" :key="m.id" :value="m.id">{{ m.nev }}</option>
+          </select>
+        </div>
+
+        <div v-if="editType === 'menu'" class="form-group">
+          <label class="form-label">Köret</label>
+          <select v-model="editForm.koretId" class="form-input">
+            <option value="">Válassz köretet</option>
+            <option v-for="k in koretek" :key="k.id" :value="k.id">{{ k.nev }}</option>
+          </select>
+        </div>
+
+        <div v-if="editType === 'menu'" class="form-group">
+          <label class="form-label">Üdítő</label>
+          <select v-model="editForm.uditoId" class="form-input">
+            <option value="">Nincs ital</option>
+            <option v-for="u in uditok" :key="u.id" :value="u.id">{{ u.nev }}</option>
+          </select>
+          <div class="help-text">A “Nincs ital” (NULL) az alapértelmezett.</div>
+        </div>
+
+        <div v-if="editType === 'meal' || editType === 'side' || editType === 'drink' || editType === 'menu'" class="form-group">
+          <label class="form-label">Kép (base64)</label>
+          <textarea
+            v-model="editForm.kepBase64"
+            class="form-input"
+            rows="4"
+            placeholder="data:image/png;base64,.... (optional)"
+          />
+          <div class="help-text">Ha üresen hagyod, üres kep mezőt küldünk (mint a curl -F 'kep=').</div>
         </div>
       </div>
-    </div>
 
+      <div class="modal-footer">
+        <button class="btn-cancel" :disabled="saving" @click="closeEditModal">Mégse</button>
+        <button class="btn-save" :disabled="saving" @click="saveEdit">{{ saving ? 'Mentés…' : 'Mentés' }}</button>
+      </div>
+    </div>
+  </div>
   </div>
 </template>
 
@@ -711,6 +937,42 @@ function saveEdit() {
   box-shadow: 0 4px 8px rgba(16, 185, 129, 0.4);
 }
 
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-edit,
+.btn-delete {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-edit {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.btn-edit:hover {
+  background: #bfdbfe;
+  transform: translateY(-1px);
+}
+
+.btn-delete {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.btn-delete:hover {
+  background: #fecaca;
+  transform: translateY(-1px);
+}
+
 .table-container {
   overflow-x: auto;
   border-radius: 8px;
@@ -769,61 +1031,6 @@ function saveEdit() {
   color: #991b1b;
 }
 
-.badge-jogosultsag {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 12px;
-  background: #dbeafe;
-  color: #1e40af;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.badge-level {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 12px;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.actions {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-edit,
-.btn-delete {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-edit {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.btn-edit:hover {
-  background: #bfdbfe;
-  transform: translateY(-1px);
-}
-
-.btn-delete {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.btn-delete:hover {
-  background: #fecaca;
-  transform: translateY(-1px);
-}
 
 .font-semibold {
   font-weight: 600;
@@ -868,10 +1075,6 @@ function saveEdit() {
     align-items: flex-start;
   }
 
-  .btn-add {
-    width: 100%;
-  }
-
   .data-table {
     font-size: 0.875rem;
   }
@@ -881,9 +1084,6 @@ function saveEdit() {
     padding: 12px 8px;
   }
 
-  .actions {
-    flex-direction: column;
-  }
 }
 
 /* Modal Styles */
@@ -906,34 +1106,22 @@ function saveEdit() {
   background: white;
   border-radius: 16px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  max-width: 600px;
+  max-width: 720px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  animation: modalSlideIn 0.3s ease-out;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px;
+  padding: 20px;
   border-bottom: 2px solid #e5e7eb;
 }
 
 .modal-title {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #1f2937;
   margin: 0;
@@ -952,21 +1140,14 @@ function saveEdit() {
   justify-content: center;
   border: none;
   cursor: pointer;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background: #e5e7eb;
-  color: #374151;
-  transform: scale(1.1);
 }
 
 .modal-body {
-  padding: 24px;
+  padding: 20px;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .form-label {
@@ -994,49 +1175,23 @@ function saveEdit() {
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.form-input:disabled {
-  background: #f9fafb;
-  color: #9ca3af;
-  cursor: not-allowed;
-}
-
-.form-checkbox-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.form-checkbox {
-  width: 20px;
-  height: 20px;
-  border: 2px solid #e5e7eb;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.form-checkbox:checked {
-  background: #667eea;
-  border-color: #667eea;
-}
-
-.form-checkbox-label {
-  font-size: 0.875rem;
-  color: #4b5563;
-  cursor: pointer;
-  user-select: none;
+.help-text {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #6b7280;
 }
 
 .modal-footer {
   display: flex;
   gap: 12px;
-  padding: 24px;
+  padding: 20px;
   border-top: 2px solid #e5e7eb;
   justify-content: flex-end;
 }
 
 .btn-cancel,
 .btn-save {
-  padding: 10px 24px;
+  padding: 10px 18px;
   border: none;
   border-radius: 8px;
   font-weight: 600;
@@ -1050,40 +1205,8 @@ function saveEdit() {
   color: #6b7280;
 }
 
-.btn-cancel:hover {
-  background: #e5e7eb;
-  transform: translateY(-1px);
-}
-
 .btn-save {
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
-  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
-}
-
-.btn-save:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.4);
-}
-
-@media (max-width: 768px) {
-  .modal-content {
-    max-height: 95vh;
-  }
-
-  .modal-header,
-  .modal-body,
-  .modal-footer {
-    padding: 16px;
-  }
-
-  .modal-footer {
-    flex-direction: column;
-  }
-
-  .btn-cancel,
-  .btn-save {
-    width: 100%;
-  }
 }
 </style>
