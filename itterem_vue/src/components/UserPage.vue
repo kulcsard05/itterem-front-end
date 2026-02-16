@@ -4,15 +4,15 @@ import Login from './Login.vue';
 import Register from './Register.vue';
 
 const props = defineProps({
-  auth: { type: Object, default: null },
-  onLoginSuccess: { type: Function, default: undefined },
-  onLogout: { type: Function, default: undefined },
+	auth: { type: Object, default: null },
+	onLoginSuccess: { type: Function, default: undefined },
+	onLogout: { type: Function, default: undefined },
 });
 
 const currentForm = ref('login');
 
 function toggleForm() {
-  currentForm.value = currentForm.value === 'login' ? 'register' : 'login';
+	currentForm.value = currentForm.value === 'login' ? 'register' : 'login';
 }
 </script>
 

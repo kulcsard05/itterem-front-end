@@ -8,51 +8,48 @@ const auth = ref(null);
 const page = ref('menu');
 
 try {
-  const raw = localStorage.getItem('auth');
-  auth.value = raw ? JSON.parse(raw) : null;
+	const raw = localStorage.getItem('auth');
+	auth.value = raw ? JSON.parse(raw) : null;
 } catch {
-  auth.value = null;
-}
-
-function toggleForm() {
-  // no-op (kept for backwards compatibility)
+	auth.value = null;
 }
 
 function handleLoginSuccess(user) {
-  localStorage.setItem('auth', JSON.stringify(user));
-  auth.value = user;
-  // If the logged-in user isn't admin, force-close admin view.
-  if (Number(user?.jogosultsag) !== 2) showAdmin.value = false;
+    localStorage.setItem('auth', JSON.stringify(user));
+    auth.value = user;
+
+    // If the logged-in user isn't admin, force-close admin view.
+    if (Number(user?.jogosultsag) !== 2 && page.value === 'admin') page.value = 'menu';
 }
 
 function handleLogout() {
-  localStorage.removeItem('auth');
-  auth.value = null;
-  page.value = 'menu';
+	localStorage.removeItem('auth');
+	auth.value = null;
+	page.value = 'menu';
 }
 
 const isLoggedIn = computed(() => Boolean(auth.value && auth.value.token));
 const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 2);
 
 watch(
-  () => auth.value,
-  () => {
-    if (!isAdmin.value && page.value === 'admin') page.value = 'menu';
-  },
-  { deep: true }
+	() => auth.value,
+	() => {
+		if (!isAdmin.value && page.value === 'admin') page.value = 'menu';
+	},
+	{ deep: true }
 );
 
 function goMenu() {
-  page.value = 'menu';
+	page.value = 'menu';
 }
 
 function goAccount() {
-  page.value = 'account';
+	page.value = 'account';
 }
 
 function goAdmin() {
-  if (!(isLoggedIn.value && isAdmin.value)) return;
-  page.value = 'admin';
+	if (!(isLoggedIn.value && isAdmin.value)) return;
+	page.value = 'admin';
 }
 </script>
 

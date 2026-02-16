@@ -1,5 +1,3 @@
-import { randomSaltHex, sha256Hex } from './authCrypto';
-
 const DEFAULT_API_BASE_URL = 'http://localhost:5258';
 
 function getApiBaseUrl() {
@@ -82,26 +80,20 @@ export async function login(email, password) {
 
 export async function register({ fullName, email, phone, password }) {
   const baseUrl = getApiBaseUrl();
-  const salt = randomSaltHex(16);
-  const tmpHASH = sha256Hex(password);
 
-  const payload = {
-    id: 0,
-    jogosultsag: 0,
-    teljesNev: fullName,
-    email,
-    telefonSzam: phone,
-    hash: `${tmpHASH}${salt}`,
-    salt,
-    aktiv: 0,
-  };
+  const params = new URLSearchParams({
+    teljes_nev: String(fullName ?? '').trim(),
+    email: String(email ?? '').trim(),
+    jelszo: String(password ?? ''),
+    telefonszam: String(phone ?? '').trim(),
+  });
 
-  const response = await fetch(`${baseUrl}/api/Registration`, {
+  const response = await fetch(`${baseUrl}/api/Registration?${params.toString()}`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      accept: '*/*',
     },
-    body: JSON.stringify(payload),
+    body: '',
   });
 
   const body = await readJsonOrText(response);

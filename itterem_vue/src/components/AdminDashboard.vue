@@ -1,5 +1,6 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { getDrinks, getMeals, getMenus, getSides } from '../api.js';
 
 // Props from parent
 const props = defineProps({
@@ -13,26 +14,96 @@ const props = defineProps({
   },
 });
 
-// Mock data based on the SQL database
+// Data (loaded from API)
 const activeTab = ref('menuk');
 
-const menuk = ref([
-  { id: 2, menu_nev: 'Hamburger menu', keszetel: 'Sima Hamburger', koret: 'testköret1', udito: 'Pepsi 0,5L', elerheto: 1 }
-]);
+const menukRaw = ref([]);
+const keszetelek = ref([]); // Meals
+const koretek = ref([]); // Sides
+const uditok = ref([]); // Drinks
 
-const keszetelek = ref([
-  { id: 1, nev: 'Sima Hamburger', leiras: 'Sima Hamburger', elerheto: 1 },
-  { id: 2, nev: 'Bolognai spagetti', leiras: 'Bolognai spagetti', elerheto: 0 }
-]);
+const isLoading = ref(false);
+const loadError = ref('');
 
-const koretek = ref([
-  { id: 1, nev: 'testköret1', leiras: '', elerheto: 1 }
-]);
+function getMenuMealId(menu) {
+  return menu?.keszetel_id ?? menu?.keszetelId ?? menu?.keszetelID ?? menu?.keszetel?.id ?? null;
+}
 
-const uditok = ref([
-  { id: 1, nev: 'Pepsi 0,5L', elerheto: 0 },
-  { id: 2, nev: 'Nincs ital', elerheto: 1 }
-]);
+function getMenuSideId(menu) {
+  return menu?.koret_id ?? menu?.koretId ?? menu?.koretID ?? menu?.koret?.id ?? null;
+}
+
+function getMenuDrinkId(menu) {
+  return menu?.udito_id ?? menu?.uditoId ?? menu?.uditoID ?? menu?.udito?.id ?? null;
+}
+
+const mealsById = computed(() => new Map((keszetelek.value || []).map((m) => [String(m.id), m])));
+const sidesById = computed(() => new Map((koretek.value || []).map((s) => [String(s.id), s])));
+const drinksById = computed(() => new Map((uditok.value || []).map((d) => [String(d.id), d])));
+
+const menuk = computed(() => {
+  return (menukRaw.value || []).map((menu) => {
+    const keszetel_id = getMenuMealId(menu);
+    const koret_id = getMenuSideId(menu);
+    const udito_id = getMenuDrinkId(menu);
+
+    const meal = keszetel_id != null ? mealsById.value.get(String(keszetel_id)) : null;
+    const side = koret_id != null ? sidesById.value.get(String(koret_id)) : null;
+    const drink = udito_id != null ? drinksById.value.get(String(udito_id)) : null;
+
+    return {
+      ...menu,
+      keszetel_id,
+      koret_id,
+      udito_id,
+      keszetel: meal?.nev ?? (keszetel_id != null ? String(keszetel_id) : '-'),
+      koret: side?.nev ?? (koret_id != null ? String(koret_id) : '-'),
+      udito: drink?.nev ?? (udito_id != null ? String(udito_id) : '-'),
+    };
+  });
+});
+
+async function loadAdminData() {
+  isLoading.value = true;
+  loadError.value = '';
+
+  const results = await Promise.allSettled([getMenus(), getMeals(), getSides(), getDrinks()]);
+  const [menusRes, mealsRes, sidesRes, drinksRes] = results;
+
+  if (menusRes.status === 'fulfilled') {
+    menukRaw.value = Array.isArray(menusRes.value) ? menusRes.value : [];
+  } else {
+    menukRaw.value = [];
+    loadError.value = menusRes.reason instanceof Error ? menusRes.reason.message : 'Failed to load menus';
+  }
+
+  if (mealsRes.status === 'fulfilled') {
+    keszetelek.value = Array.isArray(mealsRes.value) ? mealsRes.value : [];
+  } else {
+    keszetelek.value = [];
+    loadError.value = loadError.value || (mealsRes.reason instanceof Error ? mealsRes.reason.message : 'Failed to load meals');
+  }
+
+  if (sidesRes.status === 'fulfilled') {
+    koretek.value = Array.isArray(sidesRes.value) ? sidesRes.value : [];
+  } else {
+    koretek.value = [];
+    loadError.value = loadError.value || (sidesRes.reason instanceof Error ? sidesRes.reason.message : 'Failed to load sides');
+  }
+
+  if (drinksRes.status === 'fulfilled') {
+    uditok.value = Array.isArray(drinksRes.value) ? drinksRes.value : [];
+  } else {
+    uditok.value = [];
+    loadError.value = loadError.value || (drinksRes.reason instanceof Error ? drinksRes.reason.message : 'Failed to load drinks');
+  }
+
+  isLoading.value = false;
+}
+
+onMounted(() => {
+  loadAdminData();
+});
 
 const hozzavalok = ref([
   { id: 1, hozzavalo_nev: 'Hamburger hus' },
@@ -91,6 +162,9 @@ function saveEdit() {
           <button class="btn-back" @click="props.onBack">
             ← Vissza
           </button>
+          <button class="btn-back" @click="loadAdminData">
+            ↻ Frissítés
+          </button>
           <button class="btn-logout" @click="props.onLogout">
             Kilépés
           </button>
@@ -146,6 +220,14 @@ function saveEdit() {
 
     <!-- Content Area -->
     <div class="admin-content">
+      <div v-if="isLoading" class="mb-4 rounded-lg bg-white/90 p-3 text-sm font-medium text-gray-800">
+        Adatok betöltése...
+      </div>
+
+      <div v-else-if="loadError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">
+        {{ loadError }}
+      </div>
+
       <!-- Menuk Tab -->
       <div v-if="activeTab === 'menuk'" class="tab-content">
         <div class="content-header">
@@ -427,25 +509,25 @@ function saveEdit() {
 
           <div class="form-group">
             <label class="form-label">Készétel</label>
-            <select v-model="editForm.keszetel" class="form-input">
-              <option value="">Válassz készételt</option>
-              <option v-for="k in keszetelek" :key="k.id" :value="k.nev">{{ k.nev }}</option>
+            <select v-model="editForm.keszetel_id" class="form-input">
+              <option :value="null">Válassz készételt</option>
+              <option v-for="k in keszetelek" :key="k.id" :value="k.id">{{ k.nev }}</option>
             </select>
           </div>
 
           <div class="form-group">
             <label class="form-label">Köret</label>
-            <select v-model="editForm.koret" class="form-input">
-              <option value="">Válassz köretet</option>
-              <option v-for="k in koretek" :key="k.id" :value="k.nev">{{ k.nev }}</option>
+            <select v-model="editForm.koret_id" class="form-input">
+              <option :value="null">Válassz köretet</option>
+              <option v-for="k in koretek" :key="k.id" :value="k.id">{{ k.nev }}</option>
             </select>
           </div>
 
           <div class="form-group">
             <label class="form-label">Üdítő</label>
-            <select v-model="editForm.udito" class="form-input">
-              <option value="">Válassz üdítőt</option>
-              <option v-for="u in uditok" :key="u.id" :value="u.nev">{{ u.nev }}</option>
+            <select v-model="editForm.udito_id" class="form-input">
+              <option :value="null">Válassz üdítőt</option>
+              <option v-for="u in uditok" :key="u.id" :value="u.id">{{ u.nev }}</option>
             </select>
           </div>
 

@@ -3,14 +3,14 @@ import { computed, ref } from 'vue';
 import { login } from '../api';
 
 const props = defineProps({
-  onSwitch: {
-    type: Function,
-    default: undefined,
-  },
-  onLoginSuccess: {
-    type: Function,
-    default: undefined,
-  },
+	onSwitch: {
+		type: Function,
+		default: undefined,
+	},
+	onLoginSuccess: {
+		type: Function,
+		default: undefined,
+	},
 });
 
 const email = ref('');
@@ -20,22 +20,22 @@ const error = ref('');
 const fieldErrors = ref({ email: '', password: '' });
 
 function isValidEmail(value) {
-  const v = String(value || '').trim();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+	const v = String(value || '').trim();
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
 function validate() {
-  const next = { email: '', password: '' };
-  const emailValue = String(email.value || '').trim();
-  const passwordValue = String(password.value || '');
+	const next = { email: '', password: '' };
+	const emailValue = String(email.value || '').trim();
+	const passwordValue = String(password.value || '');
 
-  if (!emailValue) next.email = 'Email is required.';
-  else if (!isValidEmail(emailValue)) next.email = 'Please enter a valid email address.';
+	if (!emailValue) next.email = 'Email is required.';
+	else if (!isValidEmail(emailValue)) next.email = 'Please enter a valid email address.';
 
-  if (!passwordValue) next.password = 'Password is required.';
+	if (!passwordValue) next.password = 'Password is required.';
 
-  fieldErrors.value = next;
-  return !next.email && !next.password;
+	fieldErrors.value = next;
+	return !next.email && !next.password;
 }
 
 const canSubmit = computed(() => {
@@ -46,23 +46,26 @@ const canSubmit = computed(() => {
 });
 
 async function onSubmit(e) {
-  e.preventDefault();
-  error.value = '';
-  if (!validate()) return;
-  loading.value = true;
-  try {
-    const result = await login(String(email.value || '').trim(), String(password.value || ''));
-    if (result.ok) {
-      // Let the parent decide what to do with the user/token.
-      props.onLoginSuccess?.(result.user);
-    } else {
-      error.value = result.message || 'Hibás név vagy jelszó';
-    }
-  } catch (err) {
-    error.value = err?.message || 'Login failed';
-  } finally {
-    loading.value = false;
-  }
+	e.preventDefault();
+
+	error.value = '';
+
+	if (!validate()) return;
+	loading.value = true;
+	
+	try {
+		const result = await login(String(email.value || '').trim(), String(password.value || ''));
+		if (result.ok) {
+		// Let the parent decide what to do with the user/token.
+		props.onLoginSuccess?.(result.user);
+		} else {
+		error.value = result.message || 'Hibás név vagy jelszó';
+		}
+	} catch (err) {
+		error.value = err?.message || 'Login failed';
+	} finally {
+		loading.value = false;
+	}
 }
 </script>
 
