@@ -2,6 +2,13 @@
 import { computed, onMounted, ref } from 'vue';
 import { getCategories, getDrinks, getMeals, getMenus, getSides } from '../api.js';
 
+const props = defineProps({
+    onOpenItem: {
+        type: Function,
+        default: undefined,
+    },
+});
+
 const activeType = ref('meals'); // meals | sides | menus | drinks
 
 const categories = ref([]);
@@ -26,54 +33,70 @@ const errors = ref({
     drinks: '',
 });
 
-function isAvailable(item) {
-    return item?.elerheto === 1 || item?.elerheto === true;
-}
-
 function getMealCategoryId(meal) {
-    const value =
-        meal?.kategoria_id ??
-        meal?.kategoriaId ??
-        meal?.kategoria?.id ??
-        meal?.kategoria ??
-        null;
+    const value = meal?.kategoriaId ?? null;
     return value == null ? null : String(value);
 }
 
 function getCategoryName(cat) {
-    return cat?.nev ?? cat?.name ?? (cat?.id != null ? String(cat.id) : '');
+    return cat?.nev ?? '';
 }
 
 function getCategoryMeals(cat) {
-    const value =
-        cat?.kesziteleks ??
-        cat?.keszetelek ??
-        cat?.keszetelekList ??
-        cat?.meals ??
-        cat?.items ??
-        [];
+    const value = cat?.kesziteleks ?? [];
     return Array.isArray(value) ? value : [];
 }
 
 function getItemName(type, item) {
     if (!item) return '-';
-    if (type === 'menus') return item?.menu_nev ?? item?.menuNev ?? item?.nev ?? '-';
+    if (type === 'menus') return item?.menuNev ?? '-';
     return item?.nev ?? '-';
 }
 
-function getItemDescription(_type, item) {
-    return item?.leiras ?? '';
+function getItemPrice(item) {
+    return item?.ar ?? null;
+}
+
+function getItemImage(item) {
+    return item?.kep ?? null;
 }
 
 function getMenuMeta(menu) {
     const parts = [];
-    const meal = menu?.keszetel?.nev ?? menu?.keszetel;
-    const side = menu?.koret?.nev ?? menu?.koret;
-    const drink = menu?.udito?.nev ?? menu?.udito;
+    const meal = menu?.keszetelNev;
+    const side = menu?.koretNev;
+    const drink = menu?.uditoNev;
     if (meal) parts.push(String(meal));
     if (side) parts.push(String(side));
     if (drink) parts.push(String(drink));
     return parts.join(' • ');
+}
+
+function getItemDescription(type, item, categoryName = '') {
+    const desc = String(item?.leiras ?? '').trim();
+    if (desc) return desc;
+
+    if (type === 'menus') {
+        return getMenuMeta(item) || 'Menu item';
+    }
+
+    if (type === 'meals' && categoryName) {
+        return `Category: ${categoryName}`;
+    }
+
+    return 'No description available.';
+}
+
+function openItem(type, item, categoryName = '') {
+    props.onOpenItem?.({
+        type,
+        item,
+        name: getItemName(type, item),
+        description: getItemDescription(type, item, categoryName),
+        price: getItemPrice(item),
+        image: getItemImage(item),
+        meta: type === 'menus' ? getMenuMeta(item) : categoryName,
+    });
 }
 
 async function loadOne(key, fn, targetRef, fallbackMessage) {
@@ -117,12 +140,27 @@ const selectedError = computed(() => errors.value[activeType.value]);
 const mealSections = computed(() => {
     const cats = Array.isArray(categories.value) ? categories.value : [];
     const ms = Array.isArray(meals.value) ? meals.value : [];
+    const mealsById = new Map(ms.map((meal) => [String(meal?.id), meal]));
 
     // Preferred: backend returns categories with nested meals, e.g.
     // [{ nev: 'Hamburgerek', kesziteleks: [...] }, ...]
     const sectionsFromNestedMeals = cats
         .map((cat, index) => {
-            const list = getCategoryMeals(cat);
+            const list = getCategoryMeals(cat).map((meal) => {
+                const id = meal?.id;
+                if (id == null) return meal;
+
+                const fullMeal = mealsById.get(String(id));
+                if (!fullMeal) return meal;
+
+                return {
+                    ...fullMeal,
+                    ...meal,
+                    ar: meal?.ar ?? fullMeal?.ar,
+                    kep: meal?.kep ?? fullMeal?.kep,
+                    nev: meal?.nev ?? fullMeal?.nev,
+                };
+            });
             const id = cat?.id ?? cat?.kategoriaId ?? cat?.kategoria_id ?? cat?.nev ?? String(index);
             return {
                 id: String(id),
@@ -260,24 +298,29 @@ const mealSections = computed(() => {
                 <section v-for="section in mealSections" :key="section.id">
                     <h2 class="text-lg font-bold text-gray-900">{{ section.name }}</h2>
 
-                    <div class="mt-3 space-y-3">
+                    <div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <div
                             v-for="item in section.meals"
                             :key="item.id"
-                            class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+                            class="cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
+                            @click="openItem('meals', item, section.name)"
                         >
-                            <div class="flex items-start justify-between gap-3">
-                                <div>
+                            <div class="flex items-stretch justify-between gap-3">
+                                <div class="flex flex-col justify-between">
                                     <h3 class="text-base font-semibold text-gray-900">{{ item.nev }}</h3>
-                                    <p v-if="item.leiras" class="mt-1 text-sm text-gray-600">{{ item.leiras }}</p>
-                                </div>
 
-                                <span
-                                    class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium"
-                                    :class="isAvailable(item) ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'"
-                                >
-                                    {{ isAvailable(item) ? 'Available' : 'Unavailable' }}
-                                </span>
+                                    <div>
+                                        <p v-if="getItemPrice(item) != null" class="mt-auto text-sm font-medium text-gray-700">
+                                            {{ getItemPrice(item) }} Ft
+                                        </p>
+                                    </div>
+                                </div>
+                                <img
+                                    v-if="getItemImage(item)"
+                                    :src=getItemImage(item)
+                                    alt=""
+                                    class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
+                                />
                             </div>
                         </div>
                     </div>
@@ -313,29 +356,30 @@ const mealSections = computed(() => {
                     <div
                         v-for="item in selectedList"
                         :key="item.id"
-                        class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+                        class="cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
+                        @click="openItem(activeType, item)"
                     >
-                        <div class="flex items-start justify-between gap-3">
-                            <div>
+                        <div class="flex items-stretch justify-between gap-3">
+                            <div class="flex flex-col justify-between">
                                 <h3 class="text-base font-semibold text-gray-900">
                                     {{ getItemName(activeType, item) }}
                                 </h3>
 
-                                <p v-if="getItemDescription(activeType, item)" class="mt-1 text-sm text-gray-600">
-                                    {{ getItemDescription(activeType, item) }}
-                                </p>
-
-                                <p v-if="activeType === 'menus' && getMenuMeta(item)" class="mt-2 text-xs text-gray-500">
-                                    {{ getMenuMeta(item) }}
-                                </p>
+                                <div>
+                                    <p v-if="activeType === 'menus' && getMenuMeta(item)" class="text-xs text-gray-500">
+                                        {{ getMenuMeta(item) }}
+                                    </p>
+                                    <p v-if="getItemPrice(item) != null" class="mt-auto text-sm font-medium text-gray-700">
+                                        {{ getItemPrice(item) }} Ft
+                                    </p>
+                                </div>
                             </div>
-
-                            <span
-                                class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium"
-                                :class="isAvailable(item) ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'"
-                            >
-                                {{ isAvailable(item) ? 'Available' : 'Unavailable' }}
-                            </span>
+                            <img
+                                v-if="getItemImage(item)"
+                                :src=getItemImage(item)
+                                alt=""
+                                class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
+                            />
                         </div>
                     </div>
                 </div>

@@ -1,11 +1,14 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import AdminDashboard from './components/AdminDashboard.vue';
+import MenuItemPage from './components/MenuItemPage.vue';
 import MenuView from './components/MenuView.vue';
 import UserPage from './components/UserPage.vue';
 
 const auth = ref(null);
 const page = ref('menu');
+const selectedMenuItem = ref(null);
+const cart = ref([]);
 
 try {
 	const raw = localStorage.getItem('auth');
@@ -41,6 +44,7 @@ watch(
 
 function goMenu() {
 	page.value = 'menu';
+  selectedMenuItem.value = null;
 }
 
 function goAccount() {
@@ -50,6 +54,16 @@ function goAccount() {
 function goAdmin() {
 	if (!(isLoggedIn.value && isAdmin.value)) return;
 	page.value = 'admin';
+}
+
+function openMenuItem(itemData) {
+  selectedMenuItem.value = itemData;
+  page.value = 'item';
+}
+
+function addToCart(itemData) {
+  if (!itemData) return;
+  cart.value = [...cart.value, itemData];
 }
 </script>
 
@@ -63,18 +77,10 @@ function goAdmin() {
           <button
             type="button"
             class="rounded-md px-3 py-2 text-sm font-semibold"
-            :class="page === 'menu' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
+            :class="page === 'menu' || page === 'item' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
             @click="goMenu"
           >
             Menu
-          </button>
-          <button
-            type="button"
-            class="rounded-md px-3 py-2 text-sm font-semibold"
-            :class="page === 'account' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
-            @click="goAccount"
-          >
-            Account
           </button>
           <button
             v-if="isLoggedIn && isAdmin"
@@ -88,10 +94,15 @@ function goAdmin() {
         </nav>
 
         <div class="flex items-center gap-3">
-          <div v-if="isLoggedIn" class="hidden text-right sm:block">
-            <div class="text-sm font-semibold text-gray-900">{{ auth.teljesNev || auth.email || 'User' }}</div>
-            <div class="text-xs text-gray-600">Role: {{ String(auth.jogosultsag ?? '-') }}</div>
-          </div>
+          <button
+            v-if="isLoggedIn"
+            type="button"
+            class="hidden rounded-md px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 sm:inline-flex"
+            :class="page === 'account' ? 'bg-gray-900 text-white hover:bg-gray-900' : ''"
+            @click="goAccount"
+          >
+            {{ auth.teljesNev || auth.email || 'User' }}
+          </button>
 
           <button
             v-if="isLoggedIn"
@@ -115,7 +126,13 @@ function goAdmin() {
 
     <main>
       <AdminDashboard v-if="page === 'admin'" :onBack="goMenu" :onLogout="handleLogout" />
-      <MenuView v-else-if="page === 'menu'" />
+      <MenuItemPage
+        v-else-if="page === 'item'"
+        :itemData="selectedMenuItem"
+        :onBack="goMenu"
+        :onAddToCart="addToCart"
+      />
+      <MenuView v-else-if="page === 'menu'" :onOpenItem="openMenuItem" />
       <UserPage v-else :auth="auth" :onLoginSuccess="handleLoginSuccess" :onLogout="handleLogout" />
     </main>
   </div>

@@ -63,51 +63,91 @@ function normalizeAvailable(value) {
   return value === 1 || value === true;
 }
 
+function normalizeSelectValue(value) {
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
+function resolveIdByName(list, name, nameKeys = ['nev']) {
+  const normalizedName = String(name ?? '').trim().toLowerCase();
+  if (!normalizedName) return null;
+
+  const found = (Array.isArray(list) ? list : []).find((item) => {
+    return nameKeys.some((key) => String(item?.[key] ?? '').trim().toLowerCase() === normalizedName);
+  });
+
+  return found?.id ?? null;
+}
+
 function getMealCategoryId(meal) {
-  return (
-    meal?.kategoria_id ??
-    meal?.kategoriaId ??
-    meal?.kategoriaID ??
-    meal?.kategoria?.id ??
-    meal?.kategoria ??
-    null
-  );
+  const directId = meal?.kategoriaId ?? meal?.kategoraId ?? meal?.kategoria?.id ?? null;
+  if (directId !== null && directId !== undefined) return directId;
+
+  return resolveIdByName(kategoriak.value, meal?.kategoriaNev ?? meal?.kategoria?.nev ?? meal?.kategoriaName, ['nev']);
 }
 
 function getMenuMealId(menu) {
-  return menu?.keszetel_id ?? menu?.keszetelId ?? menu?.keszetelID ?? menu?.keszetel?.id ?? null;
+  const directId = menu?.keszetelId ?? menu?.keszetel?.id ?? null;
+  if (directId !== null && directId !== undefined) return directId;
+
+  return resolveIdByName(keszetelek.value, menu?.keszetelNev ?? menu?.keszetel, ['nev']);
 }
 
 function getMenuSideId(menu) {
-  return menu?.koret_id ?? menu?.koretId ?? menu?.koretID ?? menu?.koret?.id ?? null;
+  const directId = menu?.koretId ?? menu?.koret?.id ?? null;
+  if (directId !== null && directId !== undefined) return directId;
+
+  return resolveIdByName(koretek.value, menu?.koretNev ?? menu?.koret, ['nev']);
 }
 
 function getMenuDrinkId(menu) {
-  return menu?.udito_id ?? menu?.uditoId ?? menu?.uditoID ?? menu?.udito?.id ?? null;
+  const directId = menu?.uditoId ?? menu?.udito?.id ?? null;
+  if (directId !== null && directId !== undefined) return directId;
+
+  return resolveIdByName(uditok.value, menu?.uditoNev ?? menu?.udito, ['nev']);
 }
 
-const mealsById = computed(() => new Map((keszetelek.value || []).map((m) => [String(m.id), m])));
-const sidesById = computed(() => new Map((koretek.value || []).map((s) => [String(s.id), s])));
-const drinksById = computed(() => new Map((uditok.value || []).map((d) => [String(d.id), d])));
+function normalizePriceValue(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return '';
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return '';
+  return String(Math.round(parsed));
+}
+
+function parsePrice(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed);
+}
+
+function formatPrice(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return '-';
+  return `${parsed.toLocaleString('hu-HU')} Ft`;
+}
+
+function getMealCategoryName(meal) {
+  const directName = String(meal?.kategoriaNev ?? meal?.kategoria?.nev ?? meal?.kategoriaName ?? '').trim();
+  if (directName) return directName;
+
+  const categoryId = getMealCategoryId(meal);
+  const foundCategory = (Array.isArray(kategoriak.value) ? kategoriak.value : []).find((cat) => {
+    return String(cat?.id ?? '') === String(categoryId ?? '');
+  });
+
+  return String(foundCategory?.nev ?? '-');
+}
 
 const menuk = computed(() => {
   return (menukRaw.value || []).map((menu) => {
-    const keszetel_id = getMenuMealId(menu);
-    const koret_id = getMenuSideId(menu);
-    const udito_id = getMenuDrinkId(menu);
-
-    const meal = keszetel_id != null ? mealsById.value.get(String(keszetel_id)) : null;
-    const side = koret_id != null ? sidesById.value.get(String(koret_id)) : null;
-    const drink = udito_id != null ? drinksById.value.get(String(udito_id)) : null;
-
     return {
       ...menu,
-      keszetel_id,
-      koret_id,
-      udito_id,
-      keszetel: meal?.nev ?? (keszetel_id != null ? String(keszetel_id) : '-'),
-      koret: side?.nev ?? (koret_id != null ? String(koret_id) : '-'),
-      udito: drink?.nev ?? (udito_id != null ? String(udito_id) : '-'),
+      menuDisplayName: String(menu?.menuNev ?? '-'),
+      keszetel: String(menu?.keszetelNev ?? '-'),
+      koret: String(menu?.koretNev ?? '-'),
+      udito: String(menu?.uditoNev ?? '-'),
     };
   });
 });
@@ -197,12 +237,12 @@ function openEditModal(type, item) {
   if (type === 'ingredient') {
     editForm.value = {
       id: item?.id,
-      nev: String(item?.hozzavaloNev ?? item?.hozzavalo_nev ?? ''),
+      nev: String(item?.hozzavaloNev ?? ''),
     };
   } else if (type === 'category') {
     editForm.value = {
       id: item?.id,
-      nev: String(item?.nev ?? item?.name ?? ''),
+      nev: String(item?.nev ?? ''),
     };
   } else if (type === 'meal') {
     editForm.value = {
@@ -210,8 +250,9 @@ function openEditModal(type, item) {
       nev: String(item?.nev ?? ''),
       leiras: String(item?.leiras ?? ''),
       elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-      kategoraId: getMealCategoryId(item) ?? '',
-      kepBase64: '',
+      kategoraId: normalizeSelectValue(getMealCategoryId(item)),
+      ar: normalizePriceValue(item?.ar),
+      kepFile: null,
     };
   } else if (type === 'side') {
     editForm.value = {
@@ -219,23 +260,26 @@ function openEditModal(type, item) {
       nev: String(item?.nev ?? ''),
       leiras: String(item?.leiras ?? ''),
       elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-      kepBase64: '',
+      ar: normalizePriceValue(item?.ar),
+      kepFile: null,
     };
   } else if (type === 'drink') {
     editForm.value = {
       id: item?.id,
       nev: String(item?.nev ?? ''),
       elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-      kepBase64: '',
+      ar: normalizePriceValue(item?.ar),
+      kepFile: null,
     };
   } else if (type === 'menu') {
     editForm.value = {
       id: item?.id,
-      menuNev: String(item?.menu_nev ?? item?.menuNev ?? ''),
-      keszetelId: item?.keszetel_id ?? item?.keszetelId ?? '',
-      koretId: item?.koret_id ?? item?.koretId ?? '',
-      uditoId: item?.udito_id == null ? '' : item?.udito_id,
+      menuNev: String(item?.menuNev ?? ''),
+      keszetelId: normalizeSelectValue(getMenuMealId(item)),
+      koretId: normalizeSelectValue(getMenuSideId(item)),
+      uditoId: normalizeSelectValue(getMenuDrinkId(item)),
       elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
+      ar: normalizePriceValue(item?.ar),
       kepBase64: '',
     };
   } else {
@@ -250,6 +294,14 @@ function closeEditModal() {
   editType.value = '';
   editForm.value = {};
   clearFeedback();
+}
+
+function onEditImageSelected(event) {
+  const file = event?.target?.files?.[0] ?? null;
+  editForm.value = {
+    ...editForm.value,
+    kepFile: file,
+  };
 }
 
 async function saveEdit() {
@@ -286,7 +338,8 @@ async function saveEdit() {
       const leiras = String(editForm.value?.leiras ?? '').trim();
       const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
       const kategoraId = String(editForm.value?.kategoraId ?? '').trim();
-      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+      const ar = parsePrice(editForm.value?.ar);
+      const kepFile = editForm.value?.kepFile ?? null;
 
       if (!nev) {
         actionError.value = 'Név kötelező.';
@@ -296,35 +349,49 @@ async function saveEdit() {
         actionError.value = 'Kategória kötelező.';
         return;
       }
+      if (ar === null) {
+        actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
+        return;
+      }
 
-      const res = await updateMeal({ id, nev, leiras, elerheto, kategoraId, kepBase64 });
+      const res = await updateMeal({ id, nev, leiras, elerheto, kategoraId, ar, kepFile });
       if (!res.ok) throw new Error(res.message || 'Failed to update meal');
       actionSuccess.value = 'Készétel frissítve.';
     } else if (editType.value === 'side') {
       const nev = String(editForm.value?.nev ?? '').trim();
       const leiras = String(editForm.value?.leiras ?? '').trim();
       const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
-      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+      const ar = parsePrice(editForm.value?.ar);
+      const kepFile = editForm.value?.kepFile ?? null;
 
       if (!nev) {
         actionError.value = 'Név kötelező.';
         return;
       }
+      if (ar === null) {
+        actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
+        return;
+      }
 
-      const res = await updateSide({ id, nev, leiras, elerheto, kepBase64 });
+      const res = await updateSide({ id, nev, leiras, elerheto, ar, kepFile });
       if (!res.ok) throw new Error(res.message || 'Failed to update side');
       actionSuccess.value = 'Köret frissítve.';
     } else if (editType.value === 'drink') {
       const nev = String(editForm.value?.nev ?? '').trim();
       const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
-      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+      const ar = parsePrice(editForm.value?.ar);
+      const kepFile = editForm.value?.kepFile ?? null;
 
       if (!nev) {
         actionError.value = 'Név kötelező.';
         return;
       }
+      if (ar === null) {
+        actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
+        return;
+      }
 
-      const res = await updateDrink({ id, nev, elerheto, kepBase64 });
+      const res = await updateDrink({ id, nev, elerheto, ar, kepFile });
       if (!res.ok) throw new Error(res.message || 'Failed to update drink');
       actionSuccess.value = 'Üdítő frissítve.';
     } else if (editType.value === 'menu') {
@@ -334,6 +401,7 @@ async function saveEdit() {
       const uditoIdRaw = editForm.value?.uditoId;
       const uditoId = String(uditoIdRaw ?? '').trim() === '' ? null : uditoIdRaw;
       const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
+      const ar = parsePrice(editForm.value?.ar);
       const kepBase64 = String(editForm.value?.kepBase64 ?? '');
 
       if (!menuNev) {
@@ -348,8 +416,12 @@ async function saveEdit() {
         actionError.value = 'Köret kötelező.';
         return;
       }
+      if (ar === null) {
+        actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
+        return;
+      }
 
-      const res = await updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, kepBase64 });
+      const res = await updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepBase64 });
       if (!res.ok) throw new Error(res.message || 'Failed to update menu');
       actionSuccess.value = 'Menü frissítve.';
     }
@@ -496,6 +568,7 @@ async function handleDelete(type, item) {
                 <th>Készétel</th>
                 <th>Köret</th>
                 <th>Üdítő</th>
+                <th>Ár</th>
                 <th>Elérhető</th>
 				<th>Műveletek</th>
               </tr>
@@ -503,10 +576,11 @@ async function handleDelete(type, item) {
             <tbody>
               <tr v-for="menu in menuk" :key="menu.id">
                 <td>{{ menu.id }}</td>
-                <td class="font-semibold">{{ menu.menu_nev }}</td>
+                <td class="font-semibold">{{ menu.menuDisplayName }}</td>
                 <td>{{ menu.keszetel }}</td>
                 <td>{{ menu.koret }}</td>
                 <td>{{ menu.udito }}</td>
+                <td>{{ formatPrice(menu.ar) }}</td>
                 <td>
                   <span :class="['status-badge', menu.elerheto ? 'status-active' : 'status-inactive']">
                     {{ menu.elerheto ? 'Igen' : 'Nem' }}
@@ -589,7 +663,9 @@ async function handleDelete(type, item) {
               <tr>
                 <th>ID</th>
                 <th>Név</th>
+                <th>Kategória</th>
                 <th>Leírás</th>
+                <th>Ár</th>
                 <th>Elérhető</th>
 				<th>Műveletek</th>
               </tr>
@@ -598,7 +674,9 @@ async function handleDelete(type, item) {
               <tr v-for="keszetel in keszetelek" :key="keszetel.id">
                 <td>{{ keszetel.id }}</td>
                 <td class="font-semibold">{{ keszetel.nev }}</td>
+                <td>{{ getMealCategoryName(keszetel) }}</td>
                 <td>{{ keszetel.leiras }}</td>
+                <td>{{ formatPrice(keszetel.ar) }}</td>
                 <td>
                   <span :class="['status-badge', keszetel.elerheto ? 'status-active' : 'status-inactive']">
                     {{ keszetel.elerheto ? 'Igen' : 'Nem' }}
@@ -626,6 +704,7 @@ async function handleDelete(type, item) {
                 <th>ID</th>
                 <th>Név</th>
                 <th>Leírás</th>
+                <th>Ár</th>
                 <th>Elérhető</th>
 				<th>Műveletek</th>
               </tr>
@@ -635,6 +714,7 @@ async function handleDelete(type, item) {
                 <td>{{ koret.id }}</td>
                 <td class="font-semibold">{{ koret.nev }}</td>
                 <td>{{ koret.leiras || '-' }}</td>
+                <td>{{ formatPrice(koret.ar) }}</td>
                 <td>
                   <span :class="['status-badge', koret.elerheto ? 'status-active' : 'status-inactive']">
                     {{ koret.elerheto ? 'Igen' : 'Nem' }}
@@ -661,6 +741,7 @@ async function handleDelete(type, item) {
               <tr>
                 <th>ID</th>
                 <th>Név</th>
+                <th>Ár</th>
                 <th>Elérhető</th>
 				<th>Műveletek</th>
               </tr>
@@ -669,6 +750,7 @@ async function handleDelete(type, item) {
               <tr v-for="udito in uditok" :key="udito.id">
                 <td>{{ udito.id }}</td>
                 <td class="font-semibold">{{ udito.nev }}</td>
+                <td>{{ formatPrice(udito.ar) }}</td>
                 <td>
                   <span :class="['status-badge', udito.elerheto ? 'status-active' : 'status-inactive']">
                     {{ udito.elerheto ? 'Igen' : 'Nem' }}
@@ -722,11 +804,16 @@ async function handleDelete(type, item) {
           </select>
         </div>
 
+        <div v-if="editType === 'meal' || editType === 'side' || editType === 'drink' || editType === 'menu'" class="form-group">
+          <label class="form-label">Ár (Ft)</label>
+          <input v-model="editForm.ar" type="number" min="0" step="1" class="form-input" />
+        </div>
+
         <div v-if="editType === 'meal'" class="form-group">
           <label class="form-label">Kategória</label>
           <select v-model="editForm.kategoraId" class="form-input">
             <option value="">Válassz kategóriát</option>
-            <option v-for="k in kategoriak" :key="k.id" :value="k.id">{{ k.nev }}</option>
+            <option v-for="k in kategoriak" :key="k.id" :value="String(k.id)">{{ k.nev }}</option>
           </select>
         </div>
 
@@ -734,7 +821,7 @@ async function handleDelete(type, item) {
           <label class="form-label">Készétel</label>
           <select v-model="editForm.keszetelId" class="form-input">
             <option value="">Válassz készételt</option>
-            <option v-for="m in keszetelek" :key="m.id" :value="m.id">{{ m.nev }}</option>
+            <option v-for="m in keszetelek" :key="m.id" :value="String(m.id)">{{ m.nev }}</option>
           </select>
         </div>
 
@@ -742,7 +829,7 @@ async function handleDelete(type, item) {
           <label class="form-label">Köret</label>
           <select v-model="editForm.koretId" class="form-input">
             <option value="">Válassz köretet</option>
-            <option v-for="k in koretek" :key="k.id" :value="k.id">{{ k.nev }}</option>
+            <option v-for="k in koretek" :key="k.id" :value="String(k.id)">{{ k.nev }}</option>
           </select>
         </div>
 
@@ -750,20 +837,21 @@ async function handleDelete(type, item) {
           <label class="form-label">Üdítő</label>
           <select v-model="editForm.uditoId" class="form-input">
             <option value="">Nincs ital</option>
-            <option v-for="u in uditok" :key="u.id" :value="u.id">{{ u.nev }}</option>
+            <option v-for="u in uditok" :key="u.id" :value="String(u.id)">{{ u.nev }}</option>
           </select>
           <div class="help-text">A “Nincs ital” (NULL) az alapértelmezett.</div>
         </div>
 
-        <div v-if="editType === 'meal' || editType === 'side' || editType === 'drink' || editType === 'menu'" class="form-group">
-          <label class="form-label">Kép (base64)</label>
-          <textarea
-            v-model="editForm.kepBase64"
+        <div v-if="editType === 'meal' || editType === 'side' || editType === 'drink'" class="form-group">
+          <label class="form-label">Kép feltöltése</label>
+          <input
+            type="file"
+            accept="image/*"
             class="form-input"
-            rows="4"
-            placeholder="data:image/png;base64,.... (optional)"
+            @change="onEditImageSelected"
           />
-          <div class="help-text">Ha üresen hagyod, üres kep mezőt küldünk (mint a curl -F 'kep=').</div>
+          <div class="help-text">Az API a kep mezőt IFormFile-ként várja.</div>
+          <div v-if="editForm.kepFile" class="help-text">Kiválasztva: {{ editForm.kepFile.name }}</div>
         </div>
       </div>
 
@@ -879,6 +967,11 @@ async function handleDelete(type, item) {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+}
+
+.tab-button.tab-active:hover {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
 }
 
 .admin-content {

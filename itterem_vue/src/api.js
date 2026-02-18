@@ -1,4 +1,5 @@
 const DEFAULT_API_BASE_URL = 'https://localhost:7200';
+const LIST_CACHE_PREFIX = 'itterem:list:';
 
 function stripTrailingSlashes(value) {
 	return String(value || '').replace(/\/+$/, '');
@@ -9,6 +10,40 @@ export function getApiBaseUrl() {
 	if (envBaseUrl !== undefined) return stripTrailingSlashes(envBaseUrl);
 
 	return stripTrailingSlashes(DEFAULT_API_BASE_URL);
+}
+
+export function getListCacheKey(endpointPath) {
+	return `${LIST_CACHE_PREFIX}${String(endpointPath || '').trim().toLowerCase()}`;
+}
+
+function writeListCache(endpointPath, list) {
+	try {
+		const key = getListCacheKey(endpointPath);
+		localStorage.setItem(
+			key,
+			JSON.stringify({
+				updatedAt: Date.now(),
+				data: Array.isArray(list) ? list : [],
+			})
+		);
+	} catch {
+		// Ignore cache write errors.
+	}
+}
+
+function readListCache(endpointPath) {
+	try {
+		const key = getListCacheKey(endpointPath);
+		const raw = localStorage.getItem(key);
+		if (!raw) return [];
+
+		const parsed = JSON.parse(raw);
+		if (Array.isArray(parsed)) return parsed;
+		if (parsed && Array.isArray(parsed.data)) return parsed.data;
+		return [];
+	} catch {
+		return [];
+	}
 }
 
 async function readJsonOrText(response) {
@@ -47,6 +82,8 @@ export async function login(email, password) {
 	});
 
 	const body = await readJsonOrText(response);
+
+	console.log('Login response body:', body);
 
 	if (response.ok) {
 		return { ok: true, user: body };
@@ -93,26 +130,46 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 	const baseUrl = getApiBaseUrl();
 	const url = baseUrl ? `${baseUrl}${endpointPath}` : endpointPath;
 
-	const response = await fetch(url, {
-		method: 'GET',
-		headers: {
-			accept: '*/*',
-		},
-	});
+	try {
+		const response = await fetch(url, {
+			method: 'GET',
+			headers: {
+				accept: '*/*',
+			},
+		});
 
-	const body = await readJsonOrText(response);
+		const body = await readJsonOrText(response);
 
-	if (!response.ok) {
-		throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
+		if (!response.ok) {
+			const cached = readListCache(endpointPath);
+			if (cached.length > 0) return cached;
+			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
+		}
+
+		let list = [];
+		if (Array.isArray(body)) {
+			list = body;
+		} else if (body && Array.isArray(body.data)) {
+			list = body.data;
+		} else {
+			for (const key of extraArrayKeys) {
+				if (body && Array.isArray(body[key])) {
+					list = body[key];
+					break;
+				}
+			}
+		}
+
+		console.log(`Fetched from ${endpointPath}:`, list);
+
+		writeListCache(endpointPath, list);
+		return list;
+	} catch (error) {
+		const cached = readListCache(endpointPath);
+		if (cached.length > 0) return cached;
+		if (error instanceof Error) throw error;
+		throw new Error(fallbackErrorMessage);
 	}
-
-	if (Array.isArray(body)) return body;
-	if (body && Array.isArray(body.data)) return body.data;
-	for (const key of extraArrayKeys) {
-		if (body && Array.isArray(body[key])) return body[key];
-	}
-
-	return [];
 }
 
 export async function getCategories() {
@@ -197,20 +254,26 @@ export async function deleteCategory(id) {
 	return requestOk(response, 'Failed to delete category');
 }
 
-export async function updateMeal({ id, nev, leiras, elerheto, kategoraId, kepBase64 }) {
+function appendKepFile(formData, kepFile) {
+	if (kepFile instanceof File) {
+		formData.append('kep', kepFile, kepFile.name || 'image');
+	}
+}
+
+export async function updateMeal({ id, nev, leiras, elerheto, kategoraId, ar, kepFile }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
 		id: String(id ?? ''),
 		nev: String(nev ?? ''),
 		leiras: String(leiras ?? ''),
 		elerheto: String(elerheto ?? ''),
+		ar: String(ar ?? ''),
 		// Backend expects this exact casing based on provided curl.
 		Kategora: String(kategoraId ?? ''),
 	});
 
 	const formData = new FormData();
-	// curl used -F 'kep=' so we always send the field (empty allowed)
-	formData.append('kep', String(kepBase64 ?? ''));
+	appendKepFile(formData, kepFile);
 
 	const response = await fetch(`${baseUrl}/api/Keszetelek?${params.toString()}`, {
 		method: 'PUT',
@@ -230,17 +293,18 @@ export async function deleteMeal(id) {
 	return requestOk(response, 'Failed to delete meal');
 }
 
-export async function updateSide({ id, nev, leiras, elerheto, kepBase64 }) {
+export async function updateSide({ id, nev, leiras, elerheto, ar, kepFile }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
 		id: String(id ?? ''),
 		nev: String(nev ?? ''),
 		leiras: String(leiras ?? ''),
 		elerheto: String(elerheto ?? ''),
+		ar: String(ar ?? ''),
 	});
 
 	const formData = new FormData();
-	formData.append('kep', String(kepBase64 ?? ''));
+	appendKepFile(formData, kepFile);
 
 	const response = await fetch(`${baseUrl}/api/Koretek?${params.toString()}`, {
 		method: 'PUT',
@@ -260,7 +324,7 @@ export async function deleteSide(id) {
 	return requestOk(response, 'Failed to delete side');
 }
 
-export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, kepBase64 }) {
+export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepBase64 }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
 		id: String(id ?? ''),
@@ -268,6 +332,7 @@ export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, el
 		keszetelId: String(keszetelId ?? ''),
 		koretId: String(koretId ?? ''),
 		elerheto: String(elerheto ?? ''),
+		ar: String(ar ?? ''),
 	});
 
 	// uditoId can be NULL -> omit from query when not set
@@ -297,16 +362,17 @@ export async function deleteMenu(id) {
 	return requestOk(response, 'Failed to delete menu');
 }
 
-export async function updateDrink({ id, nev, elerheto, kepBase64 }) {
+export async function updateDrink({ id, nev, elerheto, ar, kepFile }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
 		id: String(id ?? ''),
 		nev: String(nev ?? ''),
 		elerheto: String(elerheto ?? ''),
+		ar: String(ar ?? ''),
 	});
 
 	const formData = new FormData();
-	formData.append('kep', String(kepBase64 ?? ''));
+	appendKepFile(formData, kepFile);
 
 	const response = await fetch(`${baseUrl}/api/Uditok?${params.toString()}`, {
 		method: 'PUT',
