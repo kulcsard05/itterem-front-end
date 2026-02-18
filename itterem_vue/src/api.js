@@ -230,6 +230,21 @@ export async function deleteIngredient(id) {
 	return requestOk(response, 'Failed to delete ingredient');
 }
 
+export async function createIngredient({ nev }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		nev: String(nev ?? ''),
+	});
+
+	const response = await fetch(`${baseUrl}/api/Hozzavalok?${params.toString()}`, {
+		method: 'POST',
+		headers: { accept: '*/*' },
+		body: '',
+	});
+
+	return requestOk(response, 'Failed to create ingredient');
+}
+
 export async function updateCategory({ id, nev }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
@@ -252,6 +267,21 @@ export async function deleteCategory(id) {
 		headers: { accept: '*/*' },
 	});
 	return requestOk(response, 'Failed to delete category');
+}
+
+export async function createCategory({ nev }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		nev: String(nev ?? ''),
+	});
+
+	const response = await fetch(`${baseUrl}/api/Kategoria?${params.toString()}`, {
+		method: 'POST',
+		headers: { accept: '*/*' },
+		body: '',
+	});
+
+	return requestOk(response, 'Failed to create category');
 }
 
 function appendKepFile(formData, kepFile) {
@@ -293,6 +323,28 @@ export async function deleteMeal(id) {
 	return requestOk(response, 'Failed to delete meal');
 }
 
+export async function createMeal({ nev, leiras, elerheto, katid, ar, kepFile }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		nev: String(nev ?? ''),
+		leiras: String(leiras ?? ''),
+		ar: String(ar ?? ''),
+		elerheto: String(elerheto ?? ''),
+		katid: String(katid ?? ''),
+	});
+
+	const formData = new FormData();
+	appendKepFile(formData, kepFile);
+
+	const response = await fetch(`${baseUrl}/api/Keszetelek?${params.toString()}`, {
+		method: 'POST',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to create meal');
+}
+
 export async function updateSide({ id, nev, leiras, elerheto, ar, kepFile }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
@@ -324,7 +376,28 @@ export async function deleteSide(id) {
 	return requestOk(response, 'Failed to delete side');
 }
 
-export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepBase64 }) {
+export async function createSide({ nev, leiras, elerheto, ar, kepFile }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		nev: String(nev ?? ''),
+		leiras: String(leiras ?? ''),
+		ar: String(ar ?? ''),
+		elerheto: String(elerheto ?? ''),
+	});
+
+	const formData = new FormData();
+	appendKepFile(formData, kepFile);
+
+	const response = await fetch(`${baseUrl}/api/Koretek?${params.toString()}`, {
+		method: 'POST',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to create side');
+}
+
+export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepFile }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
 		id: String(id ?? ''),
@@ -342,7 +415,7 @@ export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, el
 	}
 
 	const formData = new FormData();
-	formData.append('kep', String(kepBase64 ?? ''));
+	appendKepFile(formData, kepFile);
 
 	const response = await fetch(`${baseUrl}/api/Menuk?${params.toString()}`, {
 		method: 'PUT',
@@ -360,6 +433,32 @@ export async function deleteMenu(id) {
 		headers: { accept: '*/*' },
 	});
 	return requestOk(response, 'Failed to delete menu');
+}
+
+export async function createMenu({ menuNev, ar, keszetelId, koretId, uditoId, elerheto, kepFile }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		menuNev: String(menuNev ?? ''),
+		ar: String(ar ?? ''),
+		keszetelId: String(keszetelId ?? ''),
+		koretId: String(koretId ?? ''),
+		elerheto: String(elerheto ?? ''),
+	});
+
+	if (String(uditoId ?? '').trim() !== '') {
+		params.set('uditoId', String(uditoId));
+	}
+
+	const formData = new FormData();
+	appendKepFile(formData, kepFile);
+
+	const response = await fetch(`${baseUrl}/api/Menuk?${params.toString()}`, {
+		method: 'POST',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to create menu');
 }
 
 export async function updateDrink({ id, nev, elerheto, ar, kepFile }) {
@@ -391,4 +490,24 @@ export async function deleteDrink(id) {
 		headers: { accept: '*/*' },
 	});
 	return requestOk(response, 'Failed to delete drink');
+}
+
+export async function createDrink({ nev, elerheto, ar, kepFile }) {
+	const baseUrl = getApiBaseUrl();
+	const params = new URLSearchParams({
+		nev: String(nev ?? ''),
+		ar: String(ar ?? ''),
+		elerheto: String(elerheto ?? ''),
+	});
+
+	const formData = new FormData();
+	appendKepFile(formData, kepFile);
+
+	const response = await fetch(`${baseUrl}/api/Uditok?${params.toString()}`, {
+		method: 'POST',
+		headers: { accept: '*/*' },
+		body: formData,
+	});
+
+	return requestOk(response, 'Failed to create drink');
 }

@@ -1,6 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import {
+  createCategory,
+  createDrink,
+  createIngredient,
+  createMenu,
+  createMeal,
+  createSide,
   deleteCategory,
   deleteDrink,
   deleteIngredient,
@@ -8,6 +14,7 @@ import {
   deleteMeal,
   deleteSide,
   getCategories,
+  getApiBaseUrl,
   getDrinks,
   getIngredients,
   getMeals,
@@ -50,8 +57,10 @@ const actionError = ref('');
 const actionSuccess = ref('');
 
 const showEditModal = ref(false);
+const editMode = ref('edit');
 const editType = ref('');
 const editForm = ref({});
+const selectedImagePreviewUrl = ref('');
 const saving = ref(false);
 
 function clearFeedback() {
@@ -140,6 +149,64 @@ function getMealCategoryName(meal) {
   return String(foundCategory?.nev ?? '-');
 }
 
+function looksLikeBase64Binary(value) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return false;
+  if (normalized.length < 40) return false;
+  if (normalized.includes(' ') || normalized.includes('\n') || normalized.includes('\r')) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(normalized);
+}
+
+function toAbsoluteImageUrl(rawValue) {
+  const value = String(rawValue ?? '').trim();
+  if (!value) return '';
+
+  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+
+  if (looksLikeBase64Binary(value)) {
+    return `data:image/jpeg;base64,${value}`;
+  }
+
+  const normalizedPath = value.startsWith('/') ? value : `/${value}`;
+  return `${getApiBaseUrl()}${normalizedPath}`;
+}
+
+function getCurrentImageFromItem(item) {
+  if (!item || typeof item !== 'object') return '';
+
+  const candidates = [
+    item.kep,
+    item.kepUrl,
+    item.image,
+    item.imageUrl,
+    item.kepBase64,
+  ];
+
+  for (const candidate of candidates) {
+    const resolved = toAbsoluteImageUrl(candidate);
+    if (resolved) return resolved;
+  }
+
+  return '';
+}
+
+function clearSelectedImagePreview() {
+  if (selectedImagePreviewUrl.value) {
+    URL.revokeObjectURL(selectedImagePreviewUrl.value);
+    selectedImagePreviewUrl.value = '';
+  }
+}
+
+const imageEditableTypes = new Set(['meal', 'side', 'drink', 'menu']);
+
+const showImageUploadSection = computed(() => imageEditableTypes.has(editType.value));
+
+const displayedImagePreview = computed(() => {
+  if (selectedImagePreviewUrl.value) return selectedImagePreviewUrl.value;
+  return String(editForm.value?.currentImageUrl ?? '').trim();
+});
+
 const menuk = computed(() => {
   return (menukRaw.value || []).map((menu) => {
     return {
@@ -221,17 +288,22 @@ function setTab(tab) {
 }
 
 const editModalTitle = computed(() => {
-  if (editType.value === 'ingredient') return 'Hozzávaló szerkesztése';
-  if (editType.value === 'category') return 'Kategória szerkesztése';
-  if (editType.value === 'menu') return 'Menü szerkesztése';
-  if (editType.value === 'meal') return 'Készétel szerkesztése';
-  if (editType.value === 'side') return 'Köret szerkesztése';
-  if (editType.value === 'drink') return 'Üdítő szerkesztése';
+  const modeText = editMode.value === 'create' ? 'létrehozása' : 'szerkesztése';
+  if (editType.value === 'ingredient') return `Hozzávaló ${modeText}`;
+  if (editType.value === 'category') return `Kategória ${modeText}`;
+  if (editType.value === 'menu') return `Menü ${modeText}`;
+  if (editType.value === 'meal') return `Készétel ${modeText}`;
+  if (editType.value === 'side') return `Köret ${modeText}`;
+  if (editType.value === 'drink') return `Üdítő ${modeText}`;
   return 'Szerkesztés';
 });
 
+const isCreateMode = computed(() => editMode.value === 'create');
+
 function openEditModal(type, item) {
   clearFeedback();
+  clearSelectedImagePreview();
+  editMode.value = 'edit';
   editType.value = type;
 
   if (type === 'ingredient') {
@@ -253,6 +325,7 @@ function openEditModal(type, item) {
       kategoraId: normalizeSelectValue(getMealCategoryId(item)),
       ar: normalizePriceValue(item?.ar),
       kepFile: null,
+      currentImageUrl: getCurrentImageFromItem(item),
     };
   } else if (type === 'side') {
     editForm.value = {
@@ -262,6 +335,7 @@ function openEditModal(type, item) {
       elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
       ar: normalizePriceValue(item?.ar),
       kepFile: null,
+      currentImageUrl: getCurrentImageFromItem(item),
     };
   } else if (type === 'drink') {
     editForm.value = {
@@ -270,6 +344,7 @@ function openEditModal(type, item) {
       elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
       ar: normalizePriceValue(item?.ar),
       kepFile: null,
+      currentImageUrl: getCurrentImageFromItem(item),
     };
   } else if (type === 'menu') {
     editForm.value = {
@@ -280,7 +355,8 @@ function openEditModal(type, item) {
       uditoId: normalizeSelectValue(getMenuDrinkId(item)),
       elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
       ar: normalizePriceValue(item?.ar),
-      kepBase64: '',
+      kepFile: null,
+      currentImageUrl: getCurrentImageFromItem(item),
     };
   } else {
     editForm.value = { ...item };
@@ -289,15 +365,80 @@ function openEditModal(type, item) {
   showEditModal.value = true;
 }
 
+function openCreateModal(type) {
+  clearFeedback();
+  clearSelectedImagePreview();
+  editMode.value = 'create';
+  editType.value = type;
+
+  if (type === 'ingredient') {
+    editForm.value = {
+      nev: '',
+    };
+  } else if (type === 'category') {
+    editForm.value = {
+      nev: '',
+    };
+  } else if (type === 'meal') {
+    editForm.value = {
+      nev: '',
+      leiras: '',
+      elerheto: 1,
+      kategoraId: '',
+      ar: '',
+      kepFile: null,
+      currentImageUrl: '',
+    };
+  } else if (type === 'side') {
+    editForm.value = {
+      nev: '',
+      leiras: '',
+      elerheto: 1,
+      ar: '',
+      kepFile: null,
+      currentImageUrl: '',
+    };
+  } else if (type === 'drink') {
+    editForm.value = {
+      nev: '',
+      elerheto: 1,
+      ar: '',
+      kepFile: null,
+      currentImageUrl: '',
+    };
+  } else if (type === 'menu') {
+    editForm.value = {
+      menuNev: '',
+      keszetelId: '',
+      koretId: '',
+      uditoId: '',
+      elerheto: 1,
+      ar: '',
+      kepFile: null,
+      currentImageUrl: '',
+    };
+  } else {
+    editForm.value = {};
+  }
+
+  showEditModal.value = true;
+}
+
 function closeEditModal() {
+  clearSelectedImagePreview();
   showEditModal.value = false;
+  editMode.value = 'edit';
   editType.value = '';
   editForm.value = {};
   clearFeedback();
 }
 
 function onEditImageSelected(event) {
+  clearSelectedImagePreview();
   const file = event?.target?.files?.[0] ?? null;
+  if (file instanceof File) {
+    selectedImagePreviewUrl.value = URL.createObjectURL(file);
+  }
   editForm.value = {
     ...editForm.value,
     kepFile: file,
@@ -309,8 +450,9 @@ async function saveEdit() {
   saving.value = true;
 
   try {
+    const isCreate = isCreateMode.value;
     const id = editForm.value?.id;
-    if (!id && id !== 0) {
+    if (!isCreate && !id && id !== 0) {
       actionError.value = 'Missing id.';
       return;
     }
@@ -321,18 +463,18 @@ async function saveEdit() {
         actionError.value = 'Név kötelező.';
         return;
       }
-      const res = await updateIngredient({ id, nev });
-      if (!res.ok) throw new Error(res.message || 'Failed to update ingredient');
-      actionSuccess.value = 'Hozzávaló frissítve.';
+      const res = isCreate ? await createIngredient({ nev }) : await updateIngredient({ id, nev });
+      if (!res.ok) throw new Error(res.message || (isCreate ? 'Failed to create ingredient' : 'Failed to update ingredient'));
+      actionSuccess.value = isCreate ? 'Hozzávaló létrehozva.' : 'Hozzávaló frissítve.';
     } else if (editType.value === 'category') {
       const nev = String(editForm.value?.nev ?? '').trim();
       if (!nev) {
         actionError.value = 'Név kötelező.';
         return;
       }
-      const res = await updateCategory({ id, nev });
-      if (!res.ok) throw new Error(res.message || 'Failed to update category');
-      actionSuccess.value = 'Kategória frissítve.';
+      const res = isCreate ? await createCategory({ nev }) : await updateCategory({ id, nev });
+      if (!res.ok) throw new Error(res.message || (isCreate ? 'Failed to create category' : 'Failed to update category'));
+      actionSuccess.value = isCreate ? 'Kategória létrehozva.' : 'Kategória frissítve.';
     } else if (editType.value === 'meal') {
       const nev = String(editForm.value?.nev ?? '').trim();
       const leiras = String(editForm.value?.leiras ?? '').trim();
@@ -353,10 +495,16 @@ async function saveEdit() {
         actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
         return;
       }
+      if (isCreate && !kepFile) {
+        actionError.value = 'Kép feltöltése kötelező.';
+        return;
+      }
 
-      const res = await updateMeal({ id, nev, leiras, elerheto, kategoraId, ar, kepFile });
-      if (!res.ok) throw new Error(res.message || 'Failed to update meal');
-      actionSuccess.value = 'Készétel frissítve.';
+      const res = isCreate
+        ? await createMeal({ nev, leiras, elerheto, katid: kategoraId, ar, kepFile })
+        : await updateMeal({ id, nev, leiras, elerheto, kategoraId, ar, kepFile });
+      if (!res.ok) throw new Error(res.message || (isCreate ? 'Failed to create meal' : 'Failed to update meal'));
+      actionSuccess.value = isCreate ? 'Készétel létrehozva.' : 'Készétel frissítve.';
     } else if (editType.value === 'side') {
       const nev = String(editForm.value?.nev ?? '').trim();
       const leiras = String(editForm.value?.leiras ?? '').trim();
@@ -372,10 +520,16 @@ async function saveEdit() {
         actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
         return;
       }
+      if (isCreate && !kepFile) {
+        actionError.value = 'Kép feltöltése kötelező.';
+        return;
+      }
 
-      const res = await updateSide({ id, nev, leiras, elerheto, ar, kepFile });
-      if (!res.ok) throw new Error(res.message || 'Failed to update side');
-      actionSuccess.value = 'Köret frissítve.';
+      const res = isCreate
+        ? await createSide({ nev, leiras, elerheto, ar, kepFile })
+        : await updateSide({ id, nev, leiras, elerheto, ar, kepFile });
+      if (!res.ok) throw new Error(res.message || (isCreate ? 'Failed to create side' : 'Failed to update side'));
+      actionSuccess.value = isCreate ? 'Köret létrehozva.' : 'Köret frissítve.';
     } else if (editType.value === 'drink') {
       const nev = String(editForm.value?.nev ?? '').trim();
       const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
@@ -390,10 +544,16 @@ async function saveEdit() {
         actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
         return;
       }
+      if (isCreate && !kepFile) {
+        actionError.value = 'Kép feltöltése kötelező.';
+        return;
+      }
 
-      const res = await updateDrink({ id, nev, elerheto, ar, kepFile });
-      if (!res.ok) throw new Error(res.message || 'Failed to update drink');
-      actionSuccess.value = 'Üdítő frissítve.';
+      const res = isCreate
+        ? await createDrink({ nev, elerheto, ar, kepFile })
+        : await updateDrink({ id, nev, elerheto, ar, kepFile });
+      if (!res.ok) throw new Error(res.message || (isCreate ? 'Failed to create drink' : 'Failed to update drink'));
+      actionSuccess.value = isCreate ? 'Üdítő létrehozva.' : 'Üdítő frissítve.';
     } else if (editType.value === 'menu') {
       const menuNev = String(editForm.value?.menuNev ?? '').trim();
       const keszetelId = String(editForm.value?.keszetelId ?? '').trim();
@@ -402,7 +562,7 @@ async function saveEdit() {
       const uditoId = String(uditoIdRaw ?? '').trim() === '' ? null : uditoIdRaw;
       const elerheto = String(editForm.value?.elerheto ?? '0') === '1' ? 1 : 0;
       const ar = parsePrice(editForm.value?.ar);
-      const kepBase64 = String(editForm.value?.kepBase64 ?? '');
+      const kepFile = editForm.value?.kepFile ?? null;
 
       if (!menuNev) {
         actionError.value = 'Menü név kötelező.';
@@ -420,10 +580,16 @@ async function saveEdit() {
         actionError.value = 'Érvényes ár kötelező (0 vagy nagyobb).';
         return;
       }
+      if (isCreate && !kepFile) {
+        actionError.value = 'Kép feltöltése kötelező.';
+        return;
+      }
 
-      const res = await updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepBase64 });
-      if (!res.ok) throw new Error(res.message || 'Failed to update menu');
-      actionSuccess.value = 'Menü frissítve.';
+      const res = isCreate
+        ? await createMenu({ menuNev, ar, keszetelId, koretId, uditoId, elerheto, kepFile })
+        : await updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepFile });
+      if (!res.ok) throw new Error(res.message || (isCreate ? 'Failed to create menu' : 'Failed to update menu'));
+      actionSuccess.value = isCreate ? 'Menü létrehozva.' : 'Menü frissítve.';
     }
 
     showEditModal.value = false;
@@ -574,6 +740,11 @@ async function handleDelete(type, item) {
               </tr>
             </thead>
             <tbody>
+              <tr class="add-entry-row">
+                <td colspan="8">
+                  <button class="btn-add-entry" @click="openCreateModal('menu')">+ Új menü</button>
+                </td>
+              </tr>
               <tr v-for="menu in menuk" :key="menu.id">
                 <td>{{ menu.id }}</td>
                 <td class="font-semibold">{{ menu.menuDisplayName }}</td>
@@ -611,6 +782,11 @@ async function handleDelete(type, item) {
             </tr>
           </thead>
           <tbody>
+            <tr class="add-entry-row">
+              <td colspan="3">
+                <button class="btn-add-entry" @click="openCreateModal('category')">+ Új kategória</button>
+              </td>
+            </tr>
             <tr v-for="kat in kategoriak" :key="kat.id">
               <td>{{ kat.id }}</td>
               <td class="font-semibold">{{ kat.nev }}</td>
@@ -639,6 +815,11 @@ async function handleDelete(type, item) {
             </tr>
           </thead>
           <tbody>
+            <tr class="add-entry-row">
+              <td colspan="3">
+                <button class="btn-add-entry" @click="openCreateModal('ingredient')">+ Új hozzávaló</button>
+              </td>
+            </tr>
             <tr v-for="hoz in hozzavalok" :key="hoz.id">
               <td>{{ hoz.id }}</td>
               <td class="font-semibold">{{ hoz.hozzavaloNev }}</td>
@@ -671,6 +852,11 @@ async function handleDelete(type, item) {
               </tr>
             </thead>
             <tbody>
+              <tr class="add-entry-row">
+                <td colspan="7">
+                  <button class="btn-add-entry" @click="openCreateModal('meal')">+ Új készétel</button>
+                </td>
+              </tr>
               <tr v-for="keszetel in keszetelek" :key="keszetel.id">
                 <td>{{ keszetel.id }}</td>
                 <td class="font-semibold">{{ keszetel.nev }}</td>
@@ -710,6 +896,11 @@ async function handleDelete(type, item) {
               </tr>
             </thead>
             <tbody>
+              <tr class="add-entry-row">
+                <td colspan="6">
+                  <button class="btn-add-entry" @click="openCreateModal('side')">+ Új köret</button>
+                </td>
+              </tr>
               <tr v-for="koret in koretek" :key="koret.id">
                 <td>{{ koret.id }}</td>
                 <td class="font-semibold">{{ koret.nev }}</td>
@@ -747,6 +938,11 @@ async function handleDelete(type, item) {
               </tr>
             </thead>
             <tbody>
+              <tr class="add-entry-row">
+                <td colspan="5">
+                  <button class="btn-add-entry" @click="openCreateModal('drink')">+ Új üdítő</button>
+                </td>
+              </tr>
               <tr v-for="udito in uditok" :key="udito.id">
                 <td>{{ udito.id }}</td>
                 <td class="font-semibold">{{ udito.nev }}</td>
@@ -776,7 +972,7 @@ async function handleDelete(type, item) {
       </div>
 
       <div class="modal-body">
-        <div class="form-group">
+        <div v-if="!isCreateMode" class="form-group">
           <label class="form-label">ID</label>
           <input v-model="editForm.id" type="text" class="form-input" disabled />
         </div>
@@ -842,7 +1038,15 @@ async function handleDelete(type, item) {
           <div class="help-text">A “Nincs ital” (NULL) az alapértelmezett.</div>
         </div>
 
-        <div v-if="editType === 'meal' || editType === 'side' || editType === 'drink'" class="form-group">
+        <div v-if="showImageUploadSection" class="form-group">
+          <label class="form-label">Jelenlegi kép</label>
+          <div v-if="displayedImagePreview" class="image-preview-wrap">
+            <img :src="displayedImagePreview" alt="Előnézet" class="image-preview" />
+          </div>
+          <div v-else class="help-text">Nincs kép jelenleg.</div>
+        </div>
+
+        <div v-if="showImageUploadSection" class="form-group">
           <label class="form-label">Kép feltöltése</label>
           <input
             type="file"
@@ -850,14 +1054,15 @@ async function handleDelete(type, item) {
             class="form-input"
             @change="onEditImageSelected"
           />
-          <div class="help-text">Az API a kep mezőt IFormFile-ként várja.</div>
+          <div class="help-text">Az API a kep mezőt IFormFile / string($binary) formában várja.</div>
           <div v-if="editForm.kepFile" class="help-text">Kiválasztva: {{ editForm.kepFile.name }}</div>
+          <div v-if="!isCreateMode" class="help-text">Szerkesztésnél opcionális, létrehozásnál kötelező.</div>
         </div>
       </div>
 
       <div class="modal-footer">
         <button class="btn-cancel" :disabled="saving" @click="closeEditModal">Mégse</button>
-        <button class="btn-save" :disabled="saving" @click="saveEdit">{{ saving ? 'Mentés…' : 'Mentés' }}</button>
+        <button class="btn-save" :disabled="saving" @click="saveEdit">{{ saving ? 'Mentés…' : (isCreateMode ? 'Létrehozás' : 'Mentés') }}</button>
       </div>
     </div>
   </div>
@@ -1028,6 +1233,27 @@ async function handleDelete(type, item) {
 .btn-add:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(16, 185, 129, 0.4);
+}
+
+.add-entry-row td {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.btn-add-entry {
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-entry:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.35);
 }
 
 .actions {
@@ -1272,6 +1498,22 @@ async function handleDelete(type, item) {
   margin-top: 6px;
   font-size: 0.75rem;
   color: #6b7280;
+}
+
+.image-preview-wrap {
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f9fafb;
+}
+
+.image-preview {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
 }
 
 .modal-footer {

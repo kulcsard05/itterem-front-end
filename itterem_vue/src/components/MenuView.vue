@@ -72,6 +72,53 @@ function getMenuMeta(menu) {
     return parts.join(' • ');
 }
 
+function findByIdOrName(list, idValue, nameValue) {
+    const normalizedId = String(idValue ?? '').trim();
+    const normalizedName = String(nameValue ?? '').trim().toLowerCase();
+
+    return (Array.isArray(list) ? list : []).find((item) => {
+        const itemId = String(item?.id ?? '').trim();
+        const itemName = String(item?.nev ?? '').trim().toLowerCase();
+
+        if (normalizedId && itemId && itemId === normalizedId) return true;
+        if (normalizedName && itemName && itemName === normalizedName) return true;
+        return false;
+    }) ?? null;
+}
+
+function buildMenuBreakdown(menu) {
+    const meal = findByIdOrName(meals.value, menu?.keszetelId, menu?.keszetelNev);
+    const side = findByIdOrName(sides.value, menu?.koretId, menu?.koretNev);
+
+    const mealName = String(menu?.keszetelNev ?? meal?.nev ?? '-');
+    const sideName = String(menu?.koretNev ?? side?.nev ?? '-');
+    const drinkName = String(menu?.uditoNev ?? '-');
+
+    const mealDescription = String(meal?.leiras ?? '').trim() || '-';
+    const sideDescription = String(side?.leiras ?? '').trim() || '-';
+
+    return [
+        {
+            key: 'meal',
+            label: 'Meal',
+            name: mealName,
+            description: mealDescription,
+        },
+        {
+            key: 'side',
+            label: 'Side',
+            name: sideName,
+            description: sideDescription,
+        },
+        {
+            key: 'drink',
+            label: 'Drink',
+            name: drinkName,
+            description: '',
+        },
+    ];
+}
+
 function getItemDescription(type, item, categoryName = '') {
     const desc = String(item?.leiras ?? '').trim();
     if (desc) return desc;
@@ -96,6 +143,7 @@ function openItem(type, item, categoryName = '') {
         price: getItemPrice(item),
         image: getItemImage(item),
         meta: type === 'menus' ? getMenuMeta(item) : categoryName,
+        menuBreakdown: type === 'menus' ? buildMenuBreakdown(item) : [],
     });
 }
 
