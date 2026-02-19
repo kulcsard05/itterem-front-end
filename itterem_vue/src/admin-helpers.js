@@ -106,3 +106,22 @@ export function buildBasePayload(form, { includeDescription = false } = {}) {
 	}
 	return base;
 }
+
+/**
+ * Build <select> option objects from an entity list.
+ * Default shape assumes { id, nev }.
+ */
+export function buildSelectOptions(
+	list,
+	{ valueKey = 'id', labelKey = 'nev', valueCast = (v) => String(v) } = {},
+) {
+	const items = Array.isArray(list) ? list : [];
+	return items
+		.map((item) => {
+			const value = item?.[valueKey];
+			const label = item?.[labelKey];
+			if (value == null) return null;
+			return { value: valueCast(value), label: String(label ?? '').trim() };
+		})
+		.filter(Boolean);
+}

@@ -1,4 +1,4 @@
-import { getListCacheKey } from './api.js';
+import { getApiBaseUrl, getListCacheKey } from './api.js';
 
 /**
  * Validate an email address.
@@ -81,4 +81,43 @@ export function readFirstText(candidates = []) {
 		if (value) return value;
 	}
 	return '';
+}
+
+// ---------------------------------------------------------------------------
+// Images
+// ---------------------------------------------------------------------------
+
+function looksLikeBase64Binary(value) {
+	const s = String(value ?? '').trim();
+	if (s.length < 40 || /[\s]/.test(s)) return false;
+	return /^[A-Za-z0-9+/=]+$/.test(s);
+}
+
+/**
+ * Convert various backend "image" representations into a browser-safe <img src>.
+ * Handles:
+ * - absolute URLs
+ * - relative paths (prefixed with API base URL)
+ * - base64 (assumed jpeg)
+ * - already-usable data:/blob:
+ */
+export function toImageSrc(rawValue, { baseUrl } = {}) {
+	const value = String(rawValue ?? '').trim();
+	if (!value) return '';
+
+	if (value.startsWith('data:') || value.startsWith('blob:')) return value;
+	if (/^https?:\/\//i.test(value)) return value;
+	if (looksLikeBase64Binary(value)) return `data:image/jpeg;base64,${value}`;
+
+	const base = String(baseUrl ?? getApiBaseUrl() ?? '').trim();
+	const path = value.startsWith('/') ? value : `/${value}`;
+	return base ? `${base}${path}` : path;
+}
+
+/**
+ * Convenience for entities that store an image under the `kep` field.
+ */
+export function getImageSrcFromItem(item, key = 'kep') {
+	if (!item || typeof item !== 'object') return '';
+	return toImageSrc(item?.[key]);
 }

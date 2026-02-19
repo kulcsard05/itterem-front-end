@@ -13,7 +13,6 @@ import {
 	deleteMenu,
 	deleteMeal,
 	deleteSide,
-	getApiBaseUrl,
 	getCategories,
 	getDrinks,
 	getIngredients,
@@ -38,12 +37,15 @@ import {
 	normalizeSelectValue,
 	buildElerheto,
 	buildBasePayload,
+	buildSelectOptions,
 	requiredName,
 	requiredPrice,
 	requiredImageOnCreate,
 	requiredSelect,
 	validateAll,
 } from '../admin-helpers.js';
+
+import { getImageSrcFromItem } from '../utils.js';
 
 // ── Events ──────────────────────────────────────────────────────
 const emit = defineEmits(['back', 'logout']);
@@ -125,25 +127,8 @@ function getMealCategoryName(meal) {
 	return String(found?.nev ?? '-');
 }
 
-function looksLikeBase64Binary(value) {
-	const s = String(value ?? '').trim();
-	if (s.length < 40 || /[\s]/.test(s)) return false;
-	return /^[A-Za-z0-9+/=]+$/.test(s);
-}
-
-function toAbsoluteImageUrl(rawValue) {
-	const value = String(rawValue ?? '').trim();
-	if (!value) return '';
-	if (value.startsWith('data:') || value.startsWith('blob:')) return value;
-	if (/^https?:\/\//i.test(value)) return value;
-	if (looksLikeBase64Binary(value)) return `data:image/jpeg;base64,${value}`;
-	const path = value.startsWith('/') ? value : `/${value}`;
-	return `${getApiBaseUrl()}${path}`;
-}
-
 function getCurrentImageFromItem(item) {
-	if (!item || typeof item !== 'object') return '';
-	return toAbsoluteImageUrl(item.kep);
+	return getImageSrcFromItem(item, 'kep');
 }
 
 // ── Image Preview ───────────────────────────────────────────────
@@ -258,7 +243,7 @@ const entityConfigs = {
 				label: 'Kategória',
 				type: 'select',
 				placeholder: 'Válassz kategóriát',
-				options: () => kategoriak.value.map((k) => ({ value: String(k.id), label: k.nev })),
+				options: () => buildSelectOptions(kategoriak.value),
 			},
 		],
 		mapItemToForm: (item) => ({
@@ -417,14 +402,14 @@ const entityConfigs = {
 				label: 'Készétel',
 				type: 'select',
 				placeholder: 'Válassz készételt',
-				options: () => keszetelek.value.map((m) => ({ value: String(m.id), label: m.nev })),
+				options: () => buildSelectOptions(keszetelek.value),
 			},
 			{
 				key: 'koretId',
 				label: 'Köret',
 				type: 'select',
 				placeholder: 'Válassz köretet',
-				options: () => koretek.value.map((k) => ({ value: String(k.id), label: k.nev })),
+				options: () => buildSelectOptions(koretek.value),
 			},
 			{
 				key: 'uditoId',
@@ -432,7 +417,7 @@ const entityConfigs = {
 				type: 'select',
 				placeholder: 'Nincs ital',
 				helpText: 'A "Nincs ital" (NULL) az alapértelmezett.',
-				options: () => uditok.value.map((u) => ({ value: String(u.id), label: u.nev })),
+				options: () => buildSelectOptions(uditok.value),
 			},
 			{ key: 'elerheto', label: 'Elérhető', type: 'select', options: AVAILABLE_OPTIONS },
 			{ key: 'ar', label: 'Ár (Ft)', type: 'number', min: 0, step: 1 },

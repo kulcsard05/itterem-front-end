@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { getCategories, getDrinks, getMeals, getMenus, getSides } from '../api.js';
-import { findByIdOrName } from '../utils.js';
+import { findByIdOrName, toImageSrc } from '../utils.js';
 
 const emit = defineEmits(['open-item']);
 
@@ -54,7 +54,7 @@ function getItemPrice(item) {
 }
 
 function getItemImage(item) {
-	return item?.kep ?? null;
+	return toImageSrc(item?.kep);
 }
 
 function getMenuMeta(menu) {
