@@ -8,24 +8,19 @@ function stripTrailingSlashes(value) {
 export function getApiBaseUrl() {
 	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
 	if (envBaseUrl !== undefined) return stripTrailingSlashes(envBaseUrl);
-
 	return stripTrailingSlashes(DEFAULT_API_BASE_URL);
 }
 
 export function getListCacheKey(endpointPath) {
-	return `${LIST_CACHE_PREFIX}${String(endpointPath || '').trim().toLowerCase()}`;
+	return `${LIST_CACHE_PREFIX}${String(endpointPath || '')
+		.trim()
+		.toLowerCase()}`;
 }
 
 function writeListCache(endpointPath, list) {
 	try {
 		const key = getListCacheKey(endpointPath);
-		localStorage.setItem(
-			key,
-			JSON.stringify({
-				updatedAt: Date.now(),
-				data: Array.isArray(list) ? list : [],
-			})
-		);
+		localStorage.setItem(key, JSON.stringify(Array.isArray(list) ? list : []));
 	} catch {
 		// Ignore cache write errors.
 	}
@@ -45,6 +40,10 @@ function readListCache(endpointPath) {
 		return [];
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Response helpers
+// ---------------------------------------------------------------------------
 
 async function readJsonOrText(response) {
 	const contentType = response.headers.get('content-type') || '';
@@ -69,30 +68,88 @@ async function readJsonOrText(response) {
 	return raw;
 }
 
+async function requestOk(response, fallbackErrorMessage) {
+	const body = await readJsonOrText(response);
+	if (response.ok) return { ok: true, data: body };
+	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
+	return { ok: false, message };
+}
+
+// ---------------------------------------------------------------------------
+// Generic CRUD helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Generic mutation helper for POST / PUT / DELETE.
+ *
+ * @param {Object}  opts
+ * @param {'POST'|'PUT'|'DELETE'} opts.method       HTTP method.
+ * @param {string}                opts.endpoint      Path appended to base URL (e.g. '/api/Hozzavalok').
+ * @param {Object}               [opts.params]       Query-string key/value pairs.
+ * @param {File}                  [opts.kepFile]      Optional image file to upload.
+ * @param {string}                opts.fallbackError  Error message when backend doesn't provide one.
+ * @returns {Promise<{ok: boolean, data?: *, message?: string}>}
+ */
+async function mutate({ method, endpoint, params = {}, kepFile, fallbackError }) {
+	const baseUrl = getApiBaseUrl();
+
+	// Build query string — stringify every value so URLSearchParams is happy.
+	const searchParams = new URLSearchParams();
+	for (const [k, v] of Object.entries(params)) {
+		searchParams.set(k, String(v ?? ''));
+	}
+
+	const url = `${baseUrl}${endpoint}?${searchParams.toString()}`;
+
+	// If there is a file, send as FormData; otherwise empty body for POST, none for others.
+	let body = undefined;
+	if (kepFile instanceof File) {
+		const fd = new FormData();
+		fd.append('kep', kepFile, kepFile.name || 'image');
+		body = fd;
+	} else if (method === 'POST') {
+		body = '';
+	}
+
+	const response = await fetch(url, {
+		method,
+		headers: { accept: '*/*' },
+		body,
+	});
+
+	return requestOk(response, fallbackError);
+}
+
+/**
+ * DELETE where the id is part of the URL path (e.g. /api/Hozzavalok/5).
+ * Most entities use this pattern.
+ */
+async function deletePath(endpoint, id, fallbackError) {
+	const baseUrl = getApiBaseUrl();
+	const response = await fetch(`${baseUrl}${endpoint}/${encodeURIComponent(String(id))}`, {
+		method: 'DELETE',
+		headers: { accept: '*/*' },
+	});
+	return requestOk(response, fallbackError);
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
 export async function login(email, password) {
 	const baseUrl = getApiBaseUrl();
 
 	const response = await fetch(`${baseUrl}/api/Login`, {
 		method: 'POST',
-		headers: {
-		accept: '*/*',
-		'Content-Type': 'application/json',
-		},
+		headers: { accept: '*/*', 'Content-Type': 'application/json' },
 		body: JSON.stringify({ email, passwd: password }),
 	});
 
 	const body = await readJsonOrText(response);
 
-	console.log('Login response body:', body);
-
-	if (response.ok) {
-		return { ok: true, user: body };
-	}
-
-	if (typeof body === 'string') {
-		return { ok: false, message: body };
-	}
-
+	if (response.ok) return { ok: true, user: body };
+	if (typeof body === 'string') return { ok: false, message: body };
 	return { ok: false, message: 'Login failed' };
 }
 
@@ -107,24 +164,20 @@ export async function register({ teljesNev, email, password, telefonSzam }) {
 
 	const response = await fetch(`${baseUrl}/api/Registration?${params.toString()}`, {
 		method: 'POST',
-		headers: {
-		accept: '*/*',
-		},
+		headers: { accept: '*/*' },
 		body: '',
 	});
 
 	const body = await readJsonOrText(response);
 
-	if (response.ok) {
-		return { ok: true, data: body };
-	}
-
-	if (typeof body === 'string') {
-		return { ok: false, message: body };
-	}
-
+	if (response.ok) return { ok: true, data: body };
+	if (typeof body === 'string') return { ok: false, message: body };
 	return { ok: false, message: body?.message || 'Registration failed' };
 }
+
+// ---------------------------------------------------------------------------
+// GET lists (with localStorage cache fallback)
+// ---------------------------------------------------------------------------
 
 async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) {
 	const baseUrl = getApiBaseUrl();
@@ -133,9 +186,7 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 	try {
 		const response = await fetch(url, {
 			method: 'GET',
-			headers: {
-				accept: '*/*',
-			},
+			headers: { accept: '*/*' },
 		});
 
 		const body = await readJsonOrText(response);
@@ -160,8 +211,6 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 			}
 		}
 
-		console.log(`Fetched from ${endpointPath}:`, list);
-
 		writeListCache(endpointPath, list);
 		return list;
 	} catch (error) {
@@ -172,341 +221,208 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 	}
 }
 
-export async function getCategories() {
+export function getCategories() {
 	return getList('/api/Kategoria', 'Failed to fetch categories', ['categories']);
 }
 
-// Keszetelek = Meals
-export async function getMeals() {
+/** Keszetelek = Meals */
+export function getMeals() {
 	return getList('/api/Keszetelek', 'Failed to fetch meals');
 }
 
-// Koretek = Sides
-export async function getSides() {
+/** Koretek = Sides */
+export function getSides() {
 	return getList('/api/Koretek', 'Failed to fetch sides');
 }
 
-export async function getMenus() {
+export function getMenus() {
 	return getList('/api/Menuk', 'Failed to fetch menus');
 }
 
-export async function getDrinks() {
+export function getDrinks() {
 	return getList('/api/Uditok', 'Failed to fetch drinks');
 }
 
-// Hozzavalok = Ingredients
-export async function getIngredients() {
+/** Hozzavalok = Ingredients */
+export function getIngredients() {
 	return getList('/api/Hozzavalok', 'Failed to fetch ingredients', ['hozzavalok', 'ingredients']);
 }
 
-async function requestOk(response, fallbackErrorMessage) {
-	const body = await readJsonOrText(response);
-	if (response.ok) return { ok: true, data: body };
-	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
-	return { ok: false, message };
-}
+// ---------------------------------------------------------------------------
+// Ingredients  (Hozzávalók)
+// ---------------------------------------------------------------------------
 
-export async function updateIngredient({ id, nev }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		id: String(id ?? ''),
-		nev: String(nev ?? ''),
-	});
-
-	const response = await fetch(`${baseUrl}/api/Hozzavalok?${params.toString()}`, {
+export function updateIngredient({ id, nev }) {
+	return mutate({
 		method: 'PUT',
-		headers: { accept: '*/*' },
+		endpoint: '/api/Hozzavalok',
+		params: { id, nev },
+		fallbackError: 'Failed to update ingredient',
 	});
-
-	return requestOk(response, 'Failed to update ingredient');
 }
 
-export async function deleteIngredient(id) {
-	const baseUrl = getApiBaseUrl();
-	const response = await fetch(`${baseUrl}/api/Hozzavalok/${encodeURIComponent(String(id))}`, {
-		method: 'DELETE',
-		headers: { accept: '*/*' },
-	});
-	return requestOk(response, 'Failed to delete ingredient');
+/** DELETE uses path param: /api/Hozzavalok/{id} */
+export function deleteIngredient(id) {
+	return deletePath('/api/Hozzavalok', id, 'Failed to delete ingredient');
 }
 
-export async function createIngredient({ nev }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		nev: String(nev ?? ''),
-	});
-
-	const response = await fetch(`${baseUrl}/api/Hozzavalok?${params.toString()}`, {
+export function createIngredient({ nev }) {
+	return mutate({
 		method: 'POST',
-		headers: { accept: '*/*' },
-		body: '',
+		endpoint: '/api/Hozzavalok',
+		params: { nev },
+		fallbackError: 'Failed to create ingredient',
 	});
-
-	return requestOk(response, 'Failed to create ingredient');
 }
 
-export async function updateCategory({ id, nev }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		id: String(id ?? ''),
-		nev: String(nev ?? ''),
-	});
+// ---------------------------------------------------------------------------
+// Categories  (Kategóriák)
+// ---------------------------------------------------------------------------
 
-	const response = await fetch(`${baseUrl}/api/Kategoria?${params.toString()}`, {
+export function updateCategory({ id, nev }) {
+	return mutate({
 		method: 'PUT',
-		headers: { accept: '*/*' },
+		endpoint: '/api/Kategoria',
+		params: { id, nev },
+		fallbackError: 'Failed to update category',
 	});
-
-	return requestOk(response, 'Failed to update category');
 }
 
-export async function deleteCategory(id) {
-	const baseUrl = getApiBaseUrl();
-	const response = await fetch(`${baseUrl}/api/Kategoria/${encodeURIComponent(String(id))}`, {
-		method: 'DELETE',
-		headers: { accept: '*/*' },
-	});
-	return requestOk(response, 'Failed to delete category');
+/** DELETE uses path param: /api/Kategoria/{id} */
+export function deleteCategory(id) {
+	return deletePath('/api/Kategoria', id, 'Failed to delete category');
 }
 
-export async function createCategory({ nev }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		nev: String(nev ?? ''),
-	});
-
-	const response = await fetch(`${baseUrl}/api/Kategoria?${params.toString()}`, {
+export function createCategory({ nev }) {
+	return mutate({
 		method: 'POST',
-		headers: { accept: '*/*' },
-		body: '',
+		endpoint: '/api/Kategoria',
+		params: { nev },
+		fallbackError: 'Failed to create category',
 	});
-
-	return requestOk(response, 'Failed to create category');
 }
 
-function appendKepFile(formData, kepFile) {
-	if (kepFile instanceof File) {
-		formData.append('kep', kepFile, kepFile.name || 'image');
+// ---------------------------------------------------------------------------
+// Meals  (Készételek)
+// ---------------------------------------------------------------------------
+
+export function updateMeal({ id, nev, leiras, elerheto, kategoriaId, ar, kepFile }) {
+	return mutate({
+		method: 'PUT',
+		endpoint: '/api/Keszetelek',
+		params: { id, nev, leiras, elerheto, ar, Kategora: kategoriaId },
+		kepFile,
+		fallbackError: 'Failed to update meal',
+	});
+}
+
+/** DELETE uses path param: /api/Keszetelek/{id} */
+export function deleteMeal(id) {
+	return deletePath('/api/Keszetelek', id, 'Failed to delete meal');
+}
+
+export function createMeal({ nev, leiras, elerheto, katid, ar, kepFile }) {
+	return mutate({
+		method: 'POST',
+		endpoint: '/api/Keszetelek',
+		params: { nev, leiras, ar, elerheto, katid },
+		kepFile,
+		fallbackError: 'Failed to create meal',
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Sides  (Köretek)
+// ---------------------------------------------------------------------------
+
+export function updateSide({ id, nev, leiras, elerheto, ar, kepFile }) {
+	return mutate({
+		method: 'PUT',
+		endpoint: '/api/Koretek',
+		params: { id, nev, leiras, elerheto, ar },
+		kepFile,
+		fallbackError: 'Failed to update side',
+	});
+}
+
+/** DELETE uses path param: /api/Koretek/{id} */
+export function deleteSide(id) {
+	return deletePath('/api/Koretek', id, 'Failed to delete side');
+}
+
+export function createSide({ nev, leiras, elerheto, ar, kepFile }) {
+	return mutate({
+		method: 'POST',
+		endpoint: '/api/Koretek',
+		params: { nev, leiras, ar, elerheto },
+		kepFile,
+		fallbackError: 'Failed to create side',
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Menus  (Menük)
+// ---------------------------------------------------------------------------
+
+export function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepFile }) {
+	const params = { id, menuNev, keszetelId, koretId, elerheto, ar };
+	// uditoId can be NULL — only include when set.
+	if (uditoId != null && String(uditoId).trim() !== '') {
+		params.uditoId = uditoId;
 	}
+	return mutate({ method: 'PUT', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Failed to update menu' });
 }
 
-export async function updateMeal({ id, nev, leiras, elerheto, kategoriaId, ar, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		id: String(id ?? ''),
-		nev: String(nev ?? ''),
-		leiras: String(leiras ?? ''),
-		elerheto: String(elerheto ?? ''),
-		ar: String(ar ?? ''),
-		Kategoria: String(kategoriaId ?? ''),
-	});
-
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
-
-	const response = await fetch(`${baseUrl}/api/Keszetelek?${params.toString()}`, {
-		method: 'PUT',
-		headers: { accept: '*/*' },
-		body: formData,
-	});
-
-	return requestOk(response, 'Failed to update meal');
+/** DELETE uses path param: /api/Menuk/{id} */
+export function deleteMenu(id) {
+	return deletePath('/api/Menuk', id, 'Failed to delete menu');
 }
 
-export async function deleteMeal(id) {
-	const baseUrl = getApiBaseUrl();
-	const response = await fetch(`${baseUrl}/api/Keszetelek/${encodeURIComponent(String(id))}`, {
-		method: 'DELETE',
-		headers: { accept: '*/*' },
-	});
-	return requestOk(response, 'Failed to delete meal');
-}
-
-export async function createMeal({ nev, leiras, elerheto, katid, ar, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		nev: String(nev ?? ''),
-		leiras: String(leiras ?? ''),
-		ar: String(ar ?? ''),
-		elerheto: String(elerheto ?? ''),
-		katid: String(katid ?? ''),
-	});
-
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
-
-	const response = await fetch(`${baseUrl}/api/Keszetelek?${params.toString()}`, {
-		method: 'POST',
-		headers: { accept: '*/*' },
-		body: formData,
-	});
-
-	return requestOk(response, 'Failed to create meal');
-}
-
-export async function updateSide({ id, nev, leiras, elerheto, ar, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		id: String(id ?? ''),
-		nev: String(nev ?? ''),
-		leiras: String(leiras ?? ''),
-		elerheto: String(elerheto ?? ''),
-		ar: String(ar ?? ''),
-	});
-
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
-
-	const response = await fetch(`${baseUrl}/api/Koretek?${params.toString()}`, {
-		method: 'PUT',
-		headers: { accept: '*/*' },
-		body: formData,
-	});
-
-	return requestOk(response, 'Failed to update side');
-}
-
-export async function deleteSide(id) {
-	const baseUrl = getApiBaseUrl();
-	const response = await fetch(`${baseUrl}/api/Koretek/${encodeURIComponent(String(id))}`, {
-		method: 'DELETE',
-		headers: { accept: '*/*' },
-	});
-	return requestOk(response, 'Failed to delete side');
-}
-
-export async function createSide({ nev, leiras, elerheto, ar, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		nev: String(nev ?? ''),
-		leiras: String(leiras ?? ''),
-		ar: String(ar ?? ''),
-		elerheto: String(elerheto ?? ''),
-	});
-
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
-
-	const response = await fetch(`${baseUrl}/api/Koretek?${params.toString()}`, {
-		method: 'POST',
-		headers: { accept: '*/*' },
-		body: formData,
-	});
-
-	return requestOk(response, 'Failed to create side');
-}
-
-export async function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		id: String(id ?? ''),
-		menuNev: String(menuNev ?? ''),
-		keszetelId: String(keszetelId ?? ''),
-		koretId: String(koretId ?? ''),
-		elerheto: String(elerheto ?? ''),
-		ar: String(ar ?? ''),
-	});
-
-	// uditoId can be NULL -> omit from query when not set
-	const uditoValue = uditoId === null || uditoId === undefined ? '' : String(uditoId);
-	if (String(uditoValue).trim() !== '') {
-		params.set('uditoId', String(uditoValue));
+export function createMenu({ menuNev, ar, keszetelId, koretId, uditoId, elerheto, kepFile }) {
+	const params = { menuNev, ar, keszetelId, koretId, elerheto };
+	if (uditoId != null && String(uditoId).trim() !== '') {
+		params.uditoId = uditoId;
 	}
+	return mutate({ method: 'POST', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Failed to create menu' });
+}
 
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
+// ---------------------------------------------------------------------------
+// Drinks  (Üdítők)
+//
+// NOTE: The backend uses a DIFFERENT delete pattern for drinks.
+// Instead of /api/Uditok/{id}  (path param), it expects  /api/Uditok?id={id}  (query param).
+// This is a backend inconsistency; do NOT change without updating the backend.
+// ---------------------------------------------------------------------------
 
-	const response = await fetch(`${baseUrl}/api/Menuk?${params.toString()}`, {
+export function updateDrink({ id, nev, elerheto, ar, kepFile }) {
+	return mutate({
 		method: 'PUT',
-		headers: { accept: '*/*' },
-		body: formData,
+		endpoint: '/api/Uditok',
+		params: { id, nev, elerheto, ar },
+		kepFile,
+		fallbackError: 'Failed to update drink',
 	});
-
-	return requestOk(response, 'Failed to update menu');
 }
 
-export async function deleteMenu(id) {
-	const baseUrl = getApiBaseUrl();
-	const response = await fetch(`${baseUrl}/api/Menuk/${encodeURIComponent(String(id))}`, {
+/**
+ * DELETE uses **query param**: /api/Uditok?id={id}
+ * (Unlike all other entities which use path param. This is required by the backend.)
+ */
+export function deleteDrink(id) {
+	return mutate({
 		method: 'DELETE',
-		headers: { accept: '*/*' },
+		endpoint: '/api/Uditok',
+		params: { id },
+		fallbackError: 'Failed to delete drink',
 	});
-	return requestOk(response, 'Failed to delete menu');
 }
 
-export async function createMenu({ menuNev, ar, keszetelId, koretId, uditoId, elerheto, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		menuNev: String(menuNev ?? ''),
-		ar: String(ar ?? ''),
-		keszetelId: String(keszetelId ?? ''),
-		koretId: String(koretId ?? ''),
-		elerheto: String(elerheto ?? ''),
-	});
-
-	if (String(uditoId ?? '').trim() !== '') {
-		params.set('uditoId', String(uditoId));
-	}
-
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
-
-	const response = await fetch(`${baseUrl}/api/Menuk?${params.toString()}`, {
+export function createDrink({ nev, elerheto, ar, kepFile }) {
+	return mutate({
 		method: 'POST',
-		headers: { accept: '*/*' },
-		body: formData,
+		endpoint: '/api/Uditok',
+		params: { nev, ar, elerheto },
+		kepFile,
+		fallbackError: 'Failed to create drink',
 	});
-
-	return requestOk(response, 'Failed to create menu');
-}
-
-export async function updateDrink({ id, nev, elerheto, ar, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		id: String(id ?? ''),
-		nev: String(nev ?? ''),
-		elerheto: String(elerheto ?? ''),
-		ar: String(ar ?? ''),
-	});
-
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
-
-	const response = await fetch(`${baseUrl}/api/Uditok?${params.toString()}`, {
-		method: 'PUT',
-		headers: { accept: '*/*' },
-		body: formData,
-	});
-
-	return requestOk(response, 'Failed to update drink');
-}
-
-export async function deleteDrink(id) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({ id: String(id ?? '') });
-	const response = await fetch(`${baseUrl}/api/Uditok?${params.toString()}`, {
-		method: 'DELETE',
-		headers: { accept: '*/*' },
-	});
-	return requestOk(response, 'Failed to delete drink');
-}
-
-export async function createDrink({ nev, elerheto, ar, kepFile }) {
-	const baseUrl = getApiBaseUrl();
-	const params = new URLSearchParams({
-		nev: String(nev ?? ''),
-		ar: String(ar ?? ''),
-		elerheto: String(elerheto ?? ''),
-	});
-
-	const formData = new FormData();
-	appendKepFile(formData, kepFile);
-
-	const response = await fetch(`${baseUrl}/api/Uditok?${params.toString()}`, {
-		method: 'POST',
-		headers: { accept: '*/*' },
-		body: formData,
-	});
-
-	return requestOk(response, 'Failed to create drink');
 }

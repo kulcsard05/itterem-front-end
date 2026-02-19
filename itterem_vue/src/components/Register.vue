@@ -1,13 +1,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { register } from '../api';
+import { isValidEmail, isValidPhone } from '../utils.js';
 
-const props = defineProps({
-	onSwitch: {
-		type: Function,
-		default: undefined,
-	},
-});
+const emit = defineEmits(['switch']);
 
 const fullName = ref('');
 const email = ref('');
@@ -20,25 +16,12 @@ const success = ref('');
 const fieldErrors = ref({ fullName: '', email: '', phone: '', password: '' });
 const submitAttempted = ref(false);
 
-function isValidEmail(value) {
-	const v = String(value || '').trim();
-	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-}
-
-function isValidPhone(value) {
-	const raw = String(value || '').trim();
-	if (!raw) return false;
-	if (!/^[0-9+()\-\s.]+$/.test(raw)) return false;
-	const digits = raw.replace(/\D/g, '');
-	return digits.length >= 7;
-}
-
 function validate() {
 	const next = { fullName: '', email: '', phone: '', password: '' };
-	const fullNameValue = String(fullName.value || '').trim();
-	const emailValue = String(email.value || '').trim();
-	const phoneValue = String(phone.value || '').trim();
-	const passwordValue = String(password.value || '');
+	const fullNameValue = fullName.value.trim();
+	const emailValue = email.value.trim();
+	const phoneValue = phone.value.trim();
+	const passwordValue = password.value;
 
 	if (!fullNameValue) next.fullName = 'Full name is required.';
 	else if (fullNameValue.length < 2) next.fullName = 'Full name is too short.';
@@ -56,17 +39,13 @@ function validate() {
 	return !next.fullName && !next.email && !next.phone && !next.password;
 }
 
-
 const isFormValid = computed(() => {
-	const fullNameValue = String(fullName.value || '').trim();
-	const emailValue = String(email.value || '').trim();
-	const phoneValue = String(phone.value || '').trim();
-	const passwordValue = String(password.value || '');
+	const fullNameValue = fullName.value.trim();
+	const emailValue = email.value.trim();
+	const phoneValue = phone.value.trim();
+	const passwordValue = password.value;
 	return (
-		fullNameValue.length >= 2 &&
-		isValidEmail(emailValue) &&
-		isValidPhone(phoneValue) &&
-		passwordValue.length >= 6
+		fullNameValue.length >= 2 && isValidEmail(emailValue) && isValidPhone(phoneValue) && passwordValue.length >= 6
 	);
 });
 
@@ -90,10 +69,10 @@ async function onSubmit(e) {
 
 	try {
 		const result = await register({
-			teljesNev: String(fullName.value || '').trim(),
-			email: String(email.value || '').trim(),
-			password: String(password.value || ''),
-			telefonSzam: String(phone.value || '').trim(),
+			teljesNev: fullName.value.trim(),
+			email: email.value.trim(),
+			password: password.value,
+			telefonSzam: phone.value.trim(),
 		});
 
 		if (result.ok) {
@@ -105,10 +84,10 @@ async function onSubmit(e) {
 			submitAttempted.value = false;
 			fieldErrors.value = { fullName: '', email: '', phone: '', password: '' };
 			// Switch back to login (backend doesn't return token here).
-			setTimeout(() => props.onSwitch?.(), 350);
-	} else {
-		error.value = result.message || 'Registration failed';
-	}
+			setTimeout(() => emit('switch'), 350);
+		} else {
+			error.value = result.message || 'Registration failed';
+		}
 	} catch (err) {
 		error.value = err?.message || 'Registration failed';
 	} finally {
@@ -120,38 +99,34 @@ async function onSubmit(e) {
 <template>
 	<div class="w-full max-w-md bg-white rounded-lg shadow-md p-8">
 		<div class="sm:mx-auto sm:w-full sm:max-w-sm">
-			<h2 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">
-			Create a new account
-			</h2>
+			<h2 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">Create a new account</h2>
 		</div>
 
 		<div class="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
 			<form class="space-y-6" action="#" method="POST" @submit="onSubmit">
 				<div>
-					<label for="name" class="block text-sm font-medium leading-6 text-gray-900">
-					Full Name
-					</label>
+					<label for="name" class="block text-sm font-medium leading-6 text-gray-900"> Full Name </label>
 					<div class="mt-2">
-					<input
-						id="name"
-						v-model="fullName"
-						name="name"
-						type="text"
-						autocomplete="name"
-						required
-						:class="[
-							'block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-inset sm:text-sm sm:leading-6',
-							fieldErrors.fullName ? 'ring-red-500 focus:ring-red-600' : 'ring-gray-300 focus:ring-indigo-600',
-						]"
-					/>
+						<input
+							id="name"
+							v-model="fullName"
+							name="name"
+							type="text"
+							autocomplete="name"
+							required
+							:class="[
+								'block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-inset sm:text-sm sm:leading-6',
+								fieldErrors.fullName
+									? 'ring-red-500 focus:ring-red-600'
+									: 'ring-gray-300 focus:ring-indigo-600',
+							]"
+						/>
 					</div>
 					<p v-if="fieldErrors.fullName" class="mt-2 text-sm text-red-600">{{ fieldErrors.fullName }}</p>
 				</div>
 
 				<div>
-					<label for="email" class="block text-sm font-medium leading-6 text-gray-900">
-					Email address
-					</label>
+					<label for="email" class="block text-sm font-medium leading-6 text-gray-900"> Email address </label>
 					<div class="mt-2">
 						<input
 							id="email"
@@ -162,7 +137,9 @@ async function onSubmit(e) {
 							required
 							:class="[
 								'block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-inset sm:text-sm sm:leading-6',
-								fieldErrors.email ? 'ring-red-500 focus:ring-red-600' : 'ring-gray-300 focus:ring-indigo-600',
+								fieldErrors.email
+									? 'ring-red-500 focus:ring-red-600'
+									: 'ring-gray-300 focus:ring-indigo-600',
 							]"
 						/>
 					</div>
@@ -170,9 +147,7 @@ async function onSubmit(e) {
 				</div>
 
 				<div>
-					<label for="phone" class="block text-sm font-medium leading-6 text-gray-900">
-					Phone number
-					</label>
+					<label for="phone" class="block text-sm font-medium leading-6 text-gray-900"> Phone number </label>
 					<div class="mt-2">
 						<input
 							id="phone"
@@ -183,7 +158,9 @@ async function onSubmit(e) {
 							required
 							:class="[
 								'block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-inset sm:text-sm sm:leading-6',
-								fieldErrors.phone ? 'ring-red-500 focus:ring-red-600' : 'ring-gray-300 focus:ring-indigo-600',
+								fieldErrors.phone
+									? 'ring-red-500 focus:ring-red-600'
+									: 'ring-gray-300 focus:ring-indigo-600',
 							]"
 						/>
 					</div>
@@ -191,9 +168,7 @@ async function onSubmit(e) {
 				</div>
 
 				<div>
-					<label for="password" class="block text-sm font-medium leading-6 text-gray-900">
-					Password
-					</label>
+					<label for="password" class="block text-sm font-medium leading-6 text-gray-900"> Password </label>
 					<div class="mt-2">
 						<input
 							id="password"
@@ -204,25 +179,29 @@ async function onSubmit(e) {
 							required
 							:class="[
 								'block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset placeholder:text-gray-400 focus:ring-2 focus:ring-inset sm:text-sm sm:leading-6',
-								fieldErrors.password ? 'ring-red-500 focus:ring-red-600' : 'ring-gray-300 focus:ring-indigo-600',
+								fieldErrors.password
+									? 'ring-red-500 focus:ring-red-600'
+									: 'ring-gray-300 focus:ring-indigo-600',
 							]"
 						/>
 					</div>
-					<p v-if="!fieldErrors.password" class="mt-2 text-xs text-gray-500">Password must be at least 6 characters.</p>
+					<p v-if="!fieldErrors.password" class="mt-2 text-xs text-gray-500">
+						Password must be at least 6 characters.
+					</p>
 					<p v-if="fieldErrors.password" class="mt-2 text-sm text-red-600">{{ fieldErrors.password }}</p>
 				</div>
 
 				<div>
 					<button
-					type="submit"
-					:disabled="loading"
-					:class="[
-						'flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600',
-						loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-500',
-						!loading && !isFormValid ? 'opacity-90' : '',
-					]"
+						type="submit"
+						:disabled="loading"
+						:class="[
+							'flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600',
+							loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-500',
+							!loading && !isFormValid ? 'opacity-90' : '',
+						]"
 					>
-					{{ loading ? 'Signing up…' : 'Sign up' }}
+						{{ loading ? 'Signing up…' : 'Sign up' }}
 					</button>
 				</div>
 			</form>
@@ -231,14 +210,14 @@ async function onSubmit(e) {
 			<p v-if="success" class="mt-4 text-sm text-green-600">{{ success }}</p>
 
 			<p class="mt-10 text-center text-sm text-gray-500">
-			Already have an account?
-			<button
-				type="button"
-				class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
-				@click="props.onSwitch && props.onSwitch()"
-			>
-				Sign in
-			</button>
+				Already have an account?
+				<button
+					type="button"
+					class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
+					@click="emit('switch')"
+				>
+					Sign in
+				</button>
 			</p>
 		</div>
 	</div>
