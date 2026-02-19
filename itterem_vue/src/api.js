@@ -290,7 +290,7 @@ function appendKepFile(formData, kepFile) {
 	}
 }
 
-export async function updateMeal({ id, nev, leiras, elerheto, kategoraId, ar, kepFile }) {
+export async function updateMeal({ id, nev, leiras, elerheto, kategoriaId, ar, kepFile }) {
 	const baseUrl = getApiBaseUrl();
 	const params = new URLSearchParams({
 		id: String(id ?? ''),
@@ -298,8 +298,7 @@ export async function updateMeal({ id, nev, leiras, elerheto, kategoraId, ar, ke
 		leiras: String(leiras ?? ''),
 		elerheto: String(elerheto ?? ''),
 		ar: String(ar ?? ''),
-		// Backend expects this exact casing based on provided curl.
-		Kategora: String(kategoraId ?? ''),
+		Kategoria: String(kategoriaId ?? ''),
 	});
 
 	const formData = new FormData();
