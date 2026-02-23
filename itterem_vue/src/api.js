@@ -1,4 +1,11 @@
-import { getApiBaseUrl, readListCache, writeListCache } from './utils.js';
+import {
+	AUTH_EXPIRED_MESSAGE,
+	clearStoredAuth,
+	getApiBaseUrl,
+	readListCache,
+	readStoredAuth,
+	writeListCache,
+} from './utils.js';
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -9,13 +16,8 @@ import { getApiBaseUrl, readListCache, writeListCache } from './utils.js';
  * @returns {string|null}
  */
 function getAuthToken() {
-	try {
-		const raw = localStorage.getItem('auth');
-		const auth = raw ? JSON.parse(raw) : null;
-		return auth?.token ?? null;
-	} catch {
-		return null;
-	}
+	const auth = readStoredAuth();
+	return auth?.token ?? null;
 }
 
 /**
@@ -60,6 +62,12 @@ async function readJsonOrText(response) {
 async function requestOk(response, fallbackErrorMessage) {
 	const body = await readJsonOrText(response);
 	if (response.ok) return { ok: true, data: body };
+
+	if (response.status === 401) {
+		clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
+		return { ok: false, message: AUTH_EXPIRED_MESSAGE };
+	}
+
 	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
 	return { ok: false, message };
 }
@@ -197,6 +205,11 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 		const body = await readJsonOrText(response);
 
 		if (!response.ok) {
+			if (response.status === 401) {
+				clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
+				throw new Error(AUTH_EXPIRED_MESSAGE);
+			}
+
 			const cached = readListCache(endpointPath);
 			if (cached.length > 0) return cached;
 			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
@@ -219,6 +232,10 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 		writeListCache(endpointPath, list);
 		return list;
 	} catch (error) {
+		if (error instanceof Error && error.message === AUTH_EXPIRED_MESSAGE) {
+			throw error;
+		}
+
 		const cached = readListCache(endpointPath);
 		if (cached.length > 0) return cached;
 		if (error instanceof Error) throw error;
@@ -252,8 +269,31 @@ export function getDrinks() {
 // Orders  (Rendelések)
 // ---------------------------------------------------------------------------
 
+export const ORDER_STATUSES = ['Függőben', 'Folyamatban', 'Átvehető', 'Átvett'];
+
 export function getOrders() {
 	return getList('/api/Rendelesek', 'Rendelések betöltése sikertelen');
+}
+
+export function getOwnOrders() {
+	return getList('/api/Rendelesek/sajat', 'Saját rendelések betöltése sikertelen');
+}
+
+export function updateOrderStatus(id, status) {
+	const normalizedStatus = String(status ?? '').trim();
+	if (!ORDER_STATUSES.includes(normalizedStatus)) {
+		return Promise.resolve({
+			ok: false,
+			message: `Érvénytelen státusz. Engedélyezett értékek: ${ORDER_STATUSES.join(', ')}`,
+		});
+	}
+
+	return mutate({
+		method: 'PUT',
+		endpoint: `/api/Rendelesek/${encodeURIComponent(String(id ?? ''))}`,
+		params: { status: normalizedStatus },
+		fallbackError: 'Rendelés státusz frissítése sikertelen',
+	});
 }
 
 /**

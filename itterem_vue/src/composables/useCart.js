@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue';
+import { getItemTypeLabel, getOrderItemIdKey } from '../utils.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton so every component shares the same cart.
@@ -28,27 +29,7 @@ function saveToStorage(items) {
 // items: Array<{ type: string, id: number, name: string, price: number|null, image: string, quantity: number }>
 const items = ref(loadFromStorage());
 
-/**
- * Map a cart item type to the correct id key expected by the ordering API.
- */
-function typeToIdKey(type) {
-	switch (String(type).toLowerCase()) {
-		case 'meals':
-		case 'meal':
-			return 'keszetelId';
-		case 'drinks':
-		case 'drink':
-			return 'uditoId';
-		case 'menus':
-		case 'menu':
-			return 'menuId';
-		case 'sides':
-		case 'side':
-			return 'koretId';
-		default:
-			return null;
-	}
-}
+// Note: mapping lives in utils.js so UI and API stay consistent.
 
 export function useCart() {
 	// -------------------------------------------------------------------------
@@ -76,14 +57,18 @@ export function useCart() {
 		const type = String(itemData?.type ?? '');
 		const id = itemData?.id ?? itemData?.item?.id;
 
-		if (!id || !typeToIdKey(type)) return;
+		if (!id || !getOrderItemIdKey(type)) return;
+
+		const typeLabel = String(itemData?.typeLabel ?? '').trim() || getItemTypeLabel(type);
 
 		const existing = items.value.find((c) => c.type === type && c.id === id);
 		if (existing) {
 			existing.quantity += 1;
+			if (!String(existing.typeLabel ?? '').trim()) existing.typeLabel = typeLabel;
 		} else {
 			items.value.push({
 				type,
+				typeLabel,
 				id,
 				name: String(itemData?.name ?? ''),
 				price: itemData?.price ?? null,
@@ -131,7 +116,7 @@ export function useCart() {
 	 */
 	function buildOrderItems() {
 		return items.value.map((item) => {
-			const idKey = typeToIdKey(item.type);
+			const idKey = getOrderItemIdKey(item.type);
 			return { [idKey]: item.id, mennyiseg: item.quantity };
 		});
 	}

@@ -97,6 +97,78 @@ export function parseJwt(token) {
 	}
 }
 
+export const AUTH_STORAGE_KEY = 'auth';
+export const AUTH_EXPIRED_EVENT = 'itterem:auth-expired';
+export const AUTH_EXPIRED_MESSAGE = 'A bejelentkezés lejárt. Kérjük, jelentkezz be újra.';
+
+/**
+ * Return JWT expiration as epoch milliseconds, or null when unavailable.
+ * @param {string} token
+ * @returns {number|null}
+ */
+export function getJwtExpirationMs(token) {
+	const payload = parseJwt(token);
+	const exp = Number(payload?.exp);
+	if (!Number.isFinite(exp) || exp <= 0) return null;
+	return exp * 1000;
+}
+
+/**
+ * Check whether a JWT is expired.
+ * @param {string} token
+ * @returns {boolean}
+ */
+export function isJwtExpired(token) {
+	const expiryMs = getJwtExpirationMs(token);
+	if (expiryMs == null) return false;
+	return Date.now() >= expiryMs;
+}
+
+/**
+ * Read auth object from localStorage and optionally purge expired token.
+ * @param {{purgeExpired?: boolean, emitEventOnExpiry?: boolean}} [options]
+ */
+export function readStoredAuth(options = {}) {
+	const { purgeExpired = true, emitEventOnExpiry = true } = options;
+
+	try {
+		const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+		const auth = raw ? JSON.parse(raw) : null;
+
+		if (!auth?.token) return auth ?? null;
+
+		if (purgeExpired && isJwtExpired(auth.token)) {
+			clearStoredAuth({ emitEvent: emitEventOnExpiry, reason: 'expired' });
+			return null;
+		}
+
+		return auth;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Remove auth from localStorage and optionally emit an expiry event.
+ * @param {{emitEvent?: boolean, reason?: string}} [options]
+ */
+export function clearStoredAuth(options = {}) {
+	const { emitEvent = false, reason = 'logout' } = options;
+	try {
+		localStorage.removeItem(AUTH_STORAGE_KEY);
+	} catch {
+		// ignore
+	}
+
+	if (!emitEvent) return;
+
+	try {
+		window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { reason } }));
+	} catch {
+		// ignore
+	}
+}
+
 /**
  * Find an item in a list by matching its `id` or `nev` field.
  * @param {Array} list
@@ -122,6 +194,43 @@ export function findByIdOrName(list, idValue, nameValue) {
 			return false;
 		}) ?? null
 	);
+}
+
+// ---------------------------------------------------------------------------
+// Item type helpers (UI labels + order payload mapping)
+// ---------------------------------------------------------------------------
+
+const ITEM_TYPE_INFO = {
+	meals: { label: 'Készétel', idKey: 'keszetelId' },
+	meal: { label: 'Készétel', idKey: 'keszetelId' },
+	sides: { label: 'Köret', idKey: 'koretId' },
+	side: { label: 'Köret', idKey: 'koretId' },
+	menus: { label: 'Menü', idKey: 'menuId' },
+	menu: { label: 'Menü', idKey: 'menuId' },
+	drinks: { label: 'Üdítő', idKey: 'uditoId' },
+	drink: { label: 'Üdítő', idKey: 'uditoId' },
+};
+
+function normalizeItemType(type) {
+	return String(type ?? '').trim().toLowerCase();
+}
+
+/**
+ * Return the Hungarian label for an internal item type.
+ * @param {string} type
+ */
+export function getItemTypeLabel(type) {
+	const key = normalizeItemType(type);
+	return ITEM_TYPE_INFO[key]?.label ?? 'Tétel';
+}
+
+/**
+ * Return the expected id key for the ordering API payload.
+ * @param {string} type
+ */
+export function getOrderItemIdKey(type) {
+	const key = normalizeItemType(type);
+	return ITEM_TYPE_INFO[key]?.idKey ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +295,63 @@ export function readFirstText(candidates = []) {
 		if (value) return value;
 	}
 	return '';
+}
+
+// ---------------------------------------------------------------------------
+// Order status helpers
+// ---------------------------------------------------------------------------
+
+export const ORDER_STATUS_CLASSES = {
+	Függőben: 'bg-orange-100 text-orange-800',
+	Folyamatban: 'bg-yellow-100 text-yellow-800',
+	Átvehető: 'bg-green-100 text-green-800 status-atvehetö',
+	Átvett: 'bg-blue-100 text-blue-800',
+};
+
+export function getOrderStatusClasses(status) {
+	return ORDER_STATUS_CLASSES[String(status ?? '').trim()] ?? 'bg-gray-100 text-gray-800';
+}
+
+// ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a value as a localized date+time string (Hungarian by default).
+ * Accepts Date, ISO string, or any value convertible by Date().
+ */
+export function formatDateTime(value, locale = 'hu-HU') {
+	if (!value) return '-';
+	const d = new Date(value);
+	if (Number.isNaN(d.getTime())) return String(value);
+	return d.toLocaleString(locale);
+}
+
+// ---------------------------------------------------------------------------
+// Order display helpers
+// ---------------------------------------------------------------------------
+
+export function getOrderItemName(entry) {
+	const mealName = String(entry?.keszetelNev ?? '').trim();
+	if (mealName) return mealName;
+
+	const drinkName = String(entry?.uditoNev ?? '').trim();
+	if (drinkName) return drinkName;
+
+	const menuName = String(entry?.menuNev ?? '').trim();
+	if (menuName) return menuName;
+
+	const sideName = String(entry?.koretNev ?? '').trim();
+	if (sideName) return sideName;
+
+	return 'Ismeretlen tétel';
+}
+
+export function formatOrderItems(order) {
+	const list = Array.isArray(order?.rendelesElemeks) ? order.rendelesElemeks : [];
+	if (list.length === 0) return '-';
+
+	return list.map((entry) => `${getOrderItemName(entry)} × ${entry?.mennyiseg ?? 0}`).join(' | ');
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { findByIdOrName, readListCache, readFirstText } from '../utils.js';
+import { findByIdOrName, getItemTypeLabel, readListCache, readFirstText } from '../utils.js';
 
 const props = defineProps({
 	itemData: {
@@ -28,6 +28,8 @@ const itemDescription = computed(() => props.itemData?.description ?? 'Nincs leÃ
 const itemPrice = computed(() => props.itemData?.price);
 const itemMeta = computed(() => props.itemData?.meta ?? '');
 const itemType = computed(() => props.itemData?.type ?? 'item');
+
+const itemTypeLabel = computed(() => String(props.itemData?.typeLabel ?? '').trim() || getItemTypeLabel(itemType.value));
 
 const hideDescriptionTypes = new Set(['menus', 'menu', 'drinks', 'drink']);
 const showDescription = computed(() => {
@@ -108,7 +110,7 @@ function addToCart() {
 			<img v-if="itemImage" :src="itemImage" :alt="itemTitle" class="h-72 w-full object-cover" />
 
 			<div class="p-6">
-				<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">{{ itemType }}</div>
+				<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">{{ itemTypeLabel }}</div>
 				<h1 class="text-2xl font-bold text-gray-900">{{ itemTitle }}</h1>
 
 				<!--         <p v-if="itemMeta" class="mt-2 text-sm text-gray-600">{{ itemMeta }}</p> -->

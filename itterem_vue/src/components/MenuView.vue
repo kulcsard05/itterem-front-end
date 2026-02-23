@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { getCategories, getDrinks, getMeals, getMenus, getSides } from '../api.js';
-import { findByIdOrName, toImageSrc } from '../utils.js';
+import { findByIdOrName, getItemTypeLabel, toImageSrc } from '../utils.js';
 
 const emit = defineEmits(['open-item', 'add-to-cart']);
 
@@ -119,6 +119,7 @@ function getItemDescription(type, item, categoryName = '') {
 function openItem(type, item, categoryName = '') {
 	emit('open-item', {
 		type,
+		typeLabel: getItemTypeLabel(type),
 		item,
 		name: getItemName(type, item),
 		description: getItemDescription(type, item, categoryName),
@@ -133,6 +134,7 @@ function quickAddToCart(event, type, item, categoryName = '') {
 	event.stopPropagation();
 	emit('add-to-cart', {
 		type,
+		typeLabel: getItemTypeLabel(type),
 		id: item?.id,
 		item,
 		name: getItemName(type, item),

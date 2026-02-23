@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { placeOrder } from '../api.js';
 import { useCart } from '../composables/useCart.js';
-import { parseJwt } from '../utils.js';
+import { getItemTypeLabel, parseJwt } from '../utils.js';
 
 const props = defineProps({
 	open: {
@@ -38,25 +38,6 @@ function withTimeout(promise, ms) {
 	});
 
 	return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-}
-
-function formatType(type) {
-	switch (String(type).toLowerCase()) {
-		case 'meals':
-		case 'meal':
-			return 'Készétel';
-		case 'sides':
-		case 'side':
-			return 'Köret';
-		case 'menus':
-		case 'menu':
-			return 'Menü';
-		case 'drinks':
-		case 'drink':
-			return 'Üdítő';
-		default:
-			return type;
-	}
 }
 
 async function submitOrder() {
@@ -177,7 +158,7 @@ async function submitOrder() {
 
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-medium text-gray-900">{{ item.name }}</p>
-						<p class="text-xs text-gray-500">{{ formatType(item.type) }}</p>
+						<p class="text-xs text-gray-500">{{ item.typeLabel || getItemTypeLabel(item.type) }}</p>
 						<p v-if="item.price != null" class="text-sm font-semibold text-gray-800">
 							{{ item.price * item.quantity }} Ft
 						</p>

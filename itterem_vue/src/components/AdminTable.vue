@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { getOrderStatusClasses } from '../utils.js';
 
 const props = defineProps({
 	columns: { type: Array, required: true },

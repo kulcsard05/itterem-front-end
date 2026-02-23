@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue';
 import Login from './Login.vue';
 import Register from './Register.vue';
-import { updatePhone } from '../api.js';
-import { isValidPhone, parseJwt } from '../utils.js';
+import { getOwnOrders, updatePhone } from '../api.js';
+import { formatDateTime, formatOrderItems, getOrderStatusClasses, isValidPhone, parseJwt } from '../utils.js';
 
 const props = defineProps({
 	auth: { type: Object, default: null },
@@ -17,6 +17,9 @@ const phoneInput = ref('');
 const phoneError = ref('');
 const phoneSuccess = ref('');
 const phoneSaving = ref(false);
+const ownOrders = ref([]);
+const ordersLoading = ref(false);
+const ordersError = ref('');
 
 function getPhoneFromAuth(auth) {
 	if (!auth) return '';
@@ -99,6 +102,45 @@ async function savePhone() {
 function toggleForm() {
 	currentForm.value = currentForm.value === 'login' ? 'register' : 'login';
 }
+
+// formatDateTime / formatOrderItems moved to utils.js
+
+const displayedOrders = computed(() =>
+	(ownOrders.value || []).slice().sort((a, b) => {
+		const ta = new Date(a?.datum ?? 0).getTime();
+		const tb = new Date(b?.datum ?? 0).getTime();
+		return tb - ta;
+	}),
+);
+
+async function loadOwnOrders() {
+	ordersError.value = '';
+
+	if (!props.auth?.token) {
+		ownOrders.value = [];
+		ordersLoading.value = false;
+		return;
+	}
+
+	ordersLoading.value = true;
+	try {
+		const orders = await getOwnOrders();
+		ownOrders.value = Array.isArray(orders) ? orders : [];
+	} catch (err) {
+		ownOrders.value = [];
+		ordersError.value = err?.message || 'Saját rendelések betöltése sikertelen.';
+	} finally {
+		ordersLoading.value = false;
+	}
+}
+
+watch(
+	() => props.auth?.token,
+	() => {
+		loadOwnOrders();
+	},
+	{ immediate: true },
+);
 </script>
 
 <template>
@@ -171,6 +213,39 @@ function toggleForm() {
 
 			<div class="mt-6 text-sm text-gray-600">
 				Ez a felhasználói oldalad. Később bővítheted rendelésekkel, kedvencekkel stb.
+			</div>
+
+			<div class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+				<h2 class="text-base font-semibold text-gray-900">Rendeléseim</h2>
+
+				<p v-if="ordersLoading" class="mt-3 text-sm text-gray-600">Rendelések betöltése…</p>
+				<p v-else-if="ordersError" class="mt-3 text-sm text-red-600">{{ ordersError }}</p>
+				<p v-else-if="displayedOrders.length === 0" class="mt-3 text-sm text-gray-600">
+					Még nincs saját rendelésed.
+				</p>
+
+				<div v-else class="mt-3 space-y-3">
+					<div
+						v-for="order in displayedOrders"
+						:key="order.id"
+						class="rounded-md border border-gray-200 bg-white p-3"
+					>
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<div class="text-sm font-semibold text-gray-900">#{{ order.id }}</div>
+							<div class="text-sm text-gray-600">{{ formatDateTime(order.datum) }}</div>
+						</div>
+							<div class="mt-1 flex items-center gap-2 text-sm text-gray-700">
+								Státusz:
+								<span
+									:class="[
+										'inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold',
+										getOrderStatusClasses(order.statusz),
+									]"
+								>{{ order.statusz || '-' }}</span>
+							</div>
+						<div class="mt-1 text-sm text-gray-700">Tételek: {{ formatOrderItems(order) }}</div>
+					</div>
+				</div>
 			</div>
 		</div>
 

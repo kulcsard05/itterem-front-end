@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
+	ORDER_STATUSES,
 	createCategory,
 	createDrink,
 	createIngredient,
@@ -26,6 +27,7 @@ import {
 	updateIngredient,
 	updateMenu,
 	updateMeal,
+	updateOrderStatus,
 	updateSide,
 } from '../api.js';
 import AdminTable from './AdminTable.vue';
@@ -47,7 +49,7 @@ import {
 	validateAll,
 } from '../admin-helpers.js';
 
-import { getImageSrcFromItem } from '../utils.js';
+import { formatDateTime, formatOrderItems, getImageSrcFromItem } from '../utils.js';
 
 // ── Events ──────────────────────────────────────────────────────
 const emit = defineEmits(['back', 'logout']);
@@ -134,35 +136,7 @@ function getCurrentImageFromItem(item) {
 	return getImageSrcFromItem(item, 'kep');
 }
 
-function formatDateTime(value) {
-	if (!value) return '-';
-	const d = new Date(value);
-	if (Number.isNaN(d.getTime())) return String(value);
-	return d.toLocaleString('hu-HU');
-}
-
-function getOrderItemName(entry) {
-	const mealName = String(entry?.keszetelNev ?? '').trim();
-	if (mealName) return mealName;
-
-	const drinkName = String(entry?.uditoNev ?? '').trim();
-	if (drinkName) return drinkName;
-
-	const menuName = String(entry?.menuNev ?? '').trim();
-	if (menuName) return menuName;
-
-	const sideName = String(entry?.koretNev ?? '').trim();
-	if (sideName) return sideName;
-
-	return 'Ismeretlen tétel';
-}
-
-function formatOrderItems(order) {
-	const list = Array.isArray(order?.rendelesElemeks) ? order.rendelesElemeks : [];
-	if (list.length === 0) return '-';
-
-	return list.map((entry) => `${getOrderItemName(entry)} × ${entry?.mennyiseg ?? 0}`).join(' | ');
-}
+// formatDateTime / formatOrderItems moved to utils.js
 
 // ── Image Preview ───────────────────────────────────────────────
 function clearSelectedImagePreview() {
@@ -511,17 +485,42 @@ const entityConfigs = {
 		addLabel: '',
 		hasImage: false,
 		showCreate: false,
-		showEdit: false,
+		showEdit: true,
 		showDelete: true,
-		api: { delete: deleteOrder },
+		api: { update: ({ id, status }) => updateOrderStatus(id, status), delete: deleteOrder },
 		columns: [
 			{ key: 'id', label: 'ID' },
 			{ key: 'felhasznaloNev', label: 'Felhasználó', bold: true },
 			{ key: 'datum', label: 'Dátum', format: (item) => formatDateTime(item?.datum) },
-			{ key: 'statusz', label: 'Státusz' },
+			{ key: 'statusz', label: 'Státusz', type: 'status' },
 			{ key: '_items', label: 'Tételek', format: (item) => formatOrderItems(item) },
 		],
-		messages: { delete: 'Rendelés törölve.' },
+		formFields: [
+			{
+				key: 'status',
+				label: 'Státusz',
+				type: 'select',
+				options: ORDER_STATUSES.map((status) => ({ value: status, label: status })),
+			},
+		],
+		mapItemToForm: (item) => ({
+			id: item?.id,
+			status: String(item?.statusz ?? ''),
+		}),
+		defaultForm: () => ({ status: '' }),
+		validate: (form) => {
+			const requiredError = requiredSelect(form, 'status', 'Státusz');
+			if (requiredError) return requiredError;
+			if (!ORDER_STATUSES.includes(String(form.status ?? '').trim())) {
+				return `Érvénytelen státusz. Engedélyezett értékek: ${ORDER_STATUSES.join(', ')}`;
+			}
+			return null;
+		},
+		buildPayload: (form, isCreate) => ({
+			...(isCreate ? {} : { id: form.id }),
+			status: String(form.status ?? '').trim(),
+		}),
+		messages: { update: 'Rendelés státusza frissítve.', delete: 'Rendelés törölve.' },
 	},
 };
 

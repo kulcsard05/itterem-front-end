@@ -4,6 +4,8 @@ import MenuItemPage from './components/MenuItemPage.vue';
 import UserPage from './components/UserPage.vue';
 import AdminDashboard from './components/AdminDashboard.vue';
 import NotFound from './components/NotFound.vue';
+import AboutUs from './components/AboutUs.vue';
+import { readStoredAuth } from './utils.js';
 
 const routes = [
 	{
@@ -22,17 +24,17 @@ const routes = [
 		component: UserPage,
 	},
 	{
+		path: '/about',
+		name: 'about',
+		component: AboutUs,
+	},
+	{
 		path: '/admin',
 		name: 'admin',
 		component: AdminDashboard,
 		beforeEnter: () => {
-			try {
-				const raw = localStorage.getItem('auth');
-				const auth = raw ? JSON.parse(raw) : null;
-				if (auth && auth.token && Number(auth.jogosultsag) === 3) return true;
-			} catch {
-				// fall through
-			}
+			const auth = readStoredAuth();
+			if (auth && auth.token && Number(auth.jogosultsag) === 3) return true;
 			return { name: 'menu' };
 		},
 	},
