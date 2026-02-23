@@ -82,19 +82,19 @@ function buildMenuBreakdown(menu) {
 	return [
 		{
 			key: 'meal',
-			label: 'Meal',
+			label: 'Készétel',
 			name: mealName,
 			description: mealDescription,
 		},
 		{
 			key: 'side',
-			label: 'Side',
+			label: 'Köret',
 			name: sideName,
 			description: sideDescription,
 		},
 		{
 			key: 'drink',
-			label: 'Drink',
+			label: 'Üditő',
 			name: drinkName,
 			description: '',
 		},
@@ -106,14 +106,14 @@ function getItemDescription(type, item, categoryName = '') {
 	if (desc) return desc;
 
 	if (type === 'menus') {
-		return getMenuMeta(item) || 'Menu item';
+		return getMenuMeta(item) || 'Menü elem';
 	}
 
 	if (type === 'meals' && categoryName) {
-		return `Category: ${categoryName}`;
+		return `Kategória: ${categoryName}`;
 	}
 
-	return 'No description available.';
+	return 'Nincs leírás.';
 }
 
 function openItem(type, item, categoryName = '') {
@@ -145,11 +145,11 @@ async function loadOne(key, fn, targetRef, fallbackMessage) {
 
 async function refreshAll() {
 	await Promise.allSettled([
-		loadOne('categories', getCategories, categories, 'Failed to load categories'),
-		loadOne('meals', getMeals, meals, 'Failed to load meals'),
-		loadOne('sides', getSides, sides, 'Failed to load sides'),
-		loadOne('menus', getMenus, menus, 'Failed to load menus'),
-		loadOne('drinks', getDrinks, drinks, 'Failed to load drinks'),
+		loadOne('categories', getCategories, categories, 'Kategóriák betöltése sikertelen'),
+			loadOne('meals', getMeals, meals, 'Készételek betöltése sikertelen'),
+			loadOne('sides', getSides, sides, 'Köretek betöltése sikertelen'),
+			loadOne('menus', getMenus, menus, 'Menük betöltése sikertelen'),
+			loadOne('drinks', getDrinks, drinks, 'Üditők betöltése sikertelen'),
 	]);
 }
 
@@ -215,7 +215,7 @@ const mealSections = computed(() => {
 		});
 
 		if (extras.length > 0) {
-			return [...sectionsFromNestedMeals, { id: 'uncategorized', name: 'Other', meals: extras }];
+					return [...sectionsFromNestedMeals, { id: 'uncategorized', name: 'Egyéb', meals: extras }];
 		}
 
 		return sectionsFromNestedMeals;
@@ -247,7 +247,7 @@ const mealSections = computed(() => {
 		.filter((s) => s.meals.length > 0);
 
 	if (uncategorized.length > 0) {
-		sections.push({ id: 'uncategorized', name: 'Other', meals: uncategorized });
+		sections.push({ id: 'uncategorized', name: 'Egyéb', meals: uncategorized });
 	}
 
 	return sections;
@@ -268,7 +268,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'meals'"
 				>
-					Meals
+					Készételek
 				</button>
 				<button
 					type="button"
@@ -280,7 +280,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'sides'"
 				>
-					Sides
+					Köretek
 				</button>
 				<button
 					type="button"
@@ -292,7 +292,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'menus'"
 				>
-					Menus
+					Menük
 				</button>
 				<button
 					type="button"
@@ -304,7 +304,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'drinks'"
 				>
-					Drinks
+					Üditők
 				</button>
 			</div>
 
@@ -323,7 +323,7 @@ const mealSections = computed(() => {
 				v-if="loading.meals || loading.categories"
 				class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700"
 			>
-				Loading meals…
+				Készételek betöltése…
 			</div>
 
 			<div
@@ -338,7 +338,7 @@ const mealSections = computed(() => {
 					v-if="mealSections.length === 0"
 					class="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600"
 				>
-					No meals found.
+					Nem találhatók készételek.
 				</div>
 
 				<section v-for="section in mealSections" :key="section.id">
@@ -367,7 +367,7 @@ const mealSections = computed(() => {
 								<img
 									v-if="getItemImage(item)"
 									:src="getItemImage(item)"
-									alt=""
+									:alt="item.nev || 'Étel kép'"
 									class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
 								/>
 							</div>
@@ -380,7 +380,7 @@ const mealSections = computed(() => {
 		<!-- Other types: flat list -->
 		<div v-else class="mt-6">
 			<div v-if="selectedLoading" class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-				Loading…
+				Betöltés…
 			</div>
 
 			<div v-else-if="selectedError" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -392,7 +392,7 @@ const mealSections = computed(() => {
 					v-if="selectedList.length === 0"
 					class="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600"
 				>
-					No items found.
+					Nem találhatók elemek.
 				</div>
 
 				<div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -423,7 +423,7 @@ const mealSections = computed(() => {
 							<img
 								v-if="getItemImage(item)"
 								:src="getItemImage(item)"
-								alt=""
+								:alt="item.nev || 'Étel kép'"
 								class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
 							/>
 						</div>

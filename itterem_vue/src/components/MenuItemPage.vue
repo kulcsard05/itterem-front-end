@@ -1,6 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue';
-import { findByIdOrName, readCachedList, readFirstText } from '../utils.js';
+import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { findByIdOrName, readListCache, readFirstText } from '../utils.js';
 
 const props = defineProps({
 	itemData: {
@@ -11,11 +12,19 @@ const props = defineProps({
 
 const emit = defineEmits(['back', 'add-to-cart']);
 
+const router = useRouter();
+
+onMounted(() => {
+	if (!props.itemData) {
+		router.replace({ name: 'menu' });
+	}
+});
+
 const addedMessage = ref('');
 
 const itemTitle = computed(() => props.itemData?.name ?? 'Item');
 const itemImage = computed(() => props.itemData?.image ?? '');
-const itemDescription = computed(() => props.itemData?.description ?? 'No description available.');
+const itemDescription = computed(() => props.itemData?.description ?? 'Nincs leírás.');
 const itemPrice = computed(() => props.itemData?.price);
 const itemMeta = computed(() => props.itemData?.meta ?? '');
 const itemType = computed(() => props.itemData?.type ?? 'item');
@@ -41,8 +50,8 @@ const menuBreakdown = computed(() => {
 	}
 
 	const menu = props.itemData?.item ?? {};
-	const cachedMeals = readCachedList('/api/Keszetelek');
-	const cachedSides = readCachedList('/api/Koretek');
+	const cachedMeals = readListCache('/api/Keszetelek');
+	const cachedSides = readListCache('/api/Koretek');
 
 	const matchedMeal = findByIdOrName(cachedMeals, menu?.keszetelId, menu?.keszetelNev);
 	const matchedSide = findByIdOrName(cachedSides, menu?.koretId, menu?.koretNev);
@@ -57,19 +66,19 @@ const menuBreakdown = computed(() => {
 	return [
 		{
 			key: 'meal',
-			label: 'Meal',
+			label: 'Készétel',
 			name: mealName,
 			description: mealDescription,
 		},
 		{
 			key: 'side',
-			label: 'Side',
+			label: 'Köret',
 			name: sideName,
 			description: sideDescription,
 		},
 		{
 			key: 'drink',
-			label: 'Drink',
+			label: 'Üditő',
 			name: drinkName,
 			description: '',
 		},
@@ -83,13 +92,13 @@ function addToCart() {
 </script>
 
 <template>
-	<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+	<div v-if="props.itemData" class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
 		<button
 			type="button"
 			class="rounded-md px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
 			@click="emit('back')"
 		>
-			← Back to Menu
+			← Vissza az étlaphoz
 		</button>
 
 		<div class="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -118,12 +127,14 @@ function addToCart() {
 
 				<div class="mt-6 flex items-center justify-between gap-4">
 					<p v-if="itemPrice != null" class="text-lg font-semibold text-gray-900">{{ itemPrice }} Ft</p>
+					<!-- TODO: Kosár funkció – lásd todo.md -->
 					<button
 						type="button"
-						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-						@click="addToCart"
+						class="inline-flex items-center justify-center rounded-md bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-400 shadow-sm cursor-not-allowed"
+						disabled
+						title="Hamarosan elérhető"
 					>
-						Add to cart
+						Kosárba (hamarosan)
 					</button>
 				</div>
 

@@ -3,6 +3,7 @@ import MenuView from './components/MenuView.vue';
 import MenuItemPage from './components/MenuItemPage.vue';
 import UserPage from './components/UserPage.vue';
 import AdminDashboard from './components/AdminDashboard.vue';
+import NotFound from './components/NotFound.vue';
 
 const routes = [
 	{
@@ -36,9 +37,9 @@ const routes = [
 		},
 	},
 	{
-		// Catch-all → redirect to menu
 		path: '/:pathMatch(.*)*',
-		redirect: { name: 'menu' },
+		name: 'not-found',
+		component: NotFound,
 	},
 ];
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 const router = useRouter();
@@ -7,7 +7,6 @@ const route = useRoute();
 
 const auth = ref(null);
 const selectedMenuItem = ref(null);
-const cart = ref([]);
 
 function migrateAuthShape(value) {
 	if (!value || typeof value !== 'object') return { auth: value, changed: false };
@@ -49,6 +48,42 @@ try {
 	auth.value = null;
 }
 
+// Restore selected menu item from sessionStorage (survives page refresh).
+try {
+	const raw = sessionStorage.getItem('selectedMenuItem');
+	if (raw) selectedMenuItem.value = JSON.parse(raw);
+} catch {
+	// ignore
+}
+
+// ---------------------------------------------------------------------------
+// localStorage tamper detection
+// ---------------------------------------------------------------------------
+
+function onStorageChange(event) {
+	if (event.key !== 'auth') return;
+	try {
+		const next = event.newValue ? JSON.parse(event.newValue) : null;
+		if (!next || !next.token) {
+			handleLogout();
+			return;
+		}
+		// If jogosultsag changed externally, force logout (possible tampering).
+		if (auth.value && String(next.jogosultsag) !== String(auth.value.jogosultsag)) {
+			handleLogout();
+		}
+	} catch {
+		handleLogout();
+	}
+}
+
+window.addEventListener('storage', onStorageChange);
+onUnmounted(() => window.removeEventListener('storage', onStorageChange));
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
 function handleLoginSuccess(user) {
 	localStorage.setItem('auth', JSON.stringify(user));
 	auth.value = user;
@@ -78,8 +113,13 @@ watch(
 	{ deep: true },
 );
 
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+
 function goMenu() {
 	selectedMenuItem.value = null;
+	sessionStorage.removeItem('selectedMenuItem');
 	router.push({ name: 'menu' });
 }
 
@@ -94,12 +134,12 @@ function goAdmin() {
 
 function openMenuItem(itemData) {
 	selectedMenuItem.value = itemData;
+	try {
+		sessionStorage.setItem('selectedMenuItem', JSON.stringify(itemData));
+	} catch {
+		// ignore
+	}
 	router.push({ name: 'menu-item' });
-}
-
-function addToCart(itemData) {
-	if (!itemData) return;
-	cart.value = [...cart.value, itemData];
 }
 
 const isMenuRoute = computed(() => route.name === 'menu' || route.name === 'menu-item');
@@ -120,7 +160,7 @@ const isAccountRoute = computed(() => route.name === 'account');
 						:class="isMenuRoute ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
 						@click="goMenu"
 					>
-						Menu
+						Étlap
 					</button>
 					<button
 						v-if="isLoggedIn && isAdmin"
@@ -141,7 +181,7 @@ const isAccountRoute = computed(() => route.name === 'account');
 						:class="isAccountRoute ? 'bg-gray-900 text-white hover:bg-gray-900' : ''"
 						@click="goAccount"
 					>
-						{{ auth.teljesNev || auth.email || 'User' }}
+						{{ auth.teljesNev || auth.email || 'Felhasználó' }}
 					</button>
 
 					<button
@@ -150,7 +190,7 @@ const isAccountRoute = computed(() => route.name === 'account');
 						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 						@click="handleLogout"
 					>
-						Logout
+						Kijelentkezés
 					</button>
 					<button
 						v-else
@@ -158,7 +198,7 @@ const isAccountRoute = computed(() => route.name === 'account');
 						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 						@click="goAccount"
 					>
-						Sign in
+						Bejelentkezés
 					</button>
 				</div>
 			</div>
@@ -177,7 +217,6 @@ const isAccountRoute = computed(() => route.name === 'account');
 					"
 					@open-item="openMenuItem"
 					@back="goMenu"
-					@add-to-cart="addToCart"
 					@login-success="handleLoginSuccess"
 					@logout="handleLogout"
 				/>

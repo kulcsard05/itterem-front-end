@@ -17,10 +17,10 @@ function validate() {
 	const emailValue = email.value.trim();
 	const passwordValue = password.value;
 
-	if (!emailValue) next.email = 'Email is required.';
-	else if (!isValidEmail(emailValue)) next.email = 'Please enter a valid email address.';
+	if (!emailValue) next.email = 'Email cím megadása kötelező.';
+	else if (!isValidEmail(emailValue)) next.email = 'Kérjük, adj meg egy érvényes email címet.';
 
-	if (!passwordValue) next.password = 'Password is required.';
+	if (!passwordValue) next.password = 'Jelszó megadása kötelező.';
 
 	fieldErrors.value = next;
 	return !next.email && !next.password;
@@ -38,14 +38,12 @@ watch([email, password], () => {
 	validate();
 });
 
-async function onSubmit(e) {
-	e.preventDefault();
-
+async function onSubmit() {
 	error.value = '';
 	submitAttempted.value = true;
 
 	if (!validate()) {
-		error.value = 'Please fix the highlighted fields.';
+		error.value = 'Kérjük, javítsd a kijelölt mezőket.';
 		return;
 	}
 	loading.value = true;
@@ -53,13 +51,12 @@ async function onSubmit(e) {
 	try {
 		const result = await login(email.value.trim(), password.value);
 		if (result.ok) {
-			// Let the parent decide what to do with the user/token.
 			emit('login-success', result.user);
 		} else {
-			error.value = result.message || 'Hibás név vagy jelszó';
+			error.value = result.message || 'Hibás email vagy jelszó';
 		}
 	} catch (err) {
-		error.value = err?.message || 'Login failed';
+		error.value = err?.message || 'Bejelentkezés sikertelen';
 	} finally {
 		loading.value = false;
 	}
@@ -70,14 +67,14 @@ async function onSubmit(e) {
 	<div class="w-full max-w-md bg-white rounded-lg shadow-md p-8">
 		<div class="sm:mx-auto sm:w-full sm:max-w-sm">
 			<h2 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">
-				Sign in to your account
+				Bejelentkezés
 			</h2>
 		</div>
 
 		<div class="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
-			<form class="space-y-6" action="#" method="POST" @submit="onSubmit">
+			<form class="space-y-6" @submit.prevent="onSubmit">
 				<div>
-					<label for="email" class="block text-sm font-medium leading-6 text-gray-900"> Email address </label>
+					<label for="email" class="block text-sm font-medium leading-6 text-gray-900"> Email cím </label>
 					<div class="mt-2">
 						<input
 							id="email"
@@ -100,12 +97,15 @@ async function onSubmit(e) {
 				<div>
 					<div class="flex items-center justify-between">
 						<label for="password" class="block text-sm font-medium leading-6 text-gray-900">
-							Password
+							Jelszó
 						</label>
 						<div class="text-sm">
-							<button type="button" class="font-semibold text-indigo-600 hover:text-indigo-500">
-								Forgot password?
-							</button>
+							<span
+								class="font-semibold text-gray-400 cursor-not-allowed"
+								title="Hamarosan elérhető"
+							>
+								Elfelejtett jelszó?
+							</span>
 						</div>
 					</div>
 					<div class="mt-2">
@@ -139,19 +139,19 @@ async function onSubmit(e) {
 							!loading && !canSubmit ? 'opacity-90' : '',
 						]"
 					>
-						{{ loading ? 'Signing in…' : 'Sign in' }}
+						{{ loading ? 'Bejelentkezés…' : 'Bejelentkezés' }}
 					</button>
 				</div>
 			</form>
 
 			<p class="mt-10 text-center text-sm text-gray-500">
-				Not a member?
+				Nincs még fiókod?
 				<button
 					type="button"
 					class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
 					@click="emit('switch')"
 				>
-					Register now
+					Regisztrálj most
 				</button>
 			</p>
 		</div>

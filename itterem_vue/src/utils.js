@@ -1,4 +1,26 @@
-import { getApiBaseUrl, getListCacheKey } from './api.js';
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+const DEFAULT_API_BASE_URL = 'https://localhost:7200';
+
+function stripTrailingSlashes(value) {
+	return String(value || '').replace(/\/+$/, '');
+}
+
+/**
+ * Return the API base URL from environment or fallback to default.
+ * @returns {string}
+ */
+export function getApiBaseUrl() {
+	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+	if (envBaseUrl !== undefined) return stripTrailingSlashes(envBaseUrl);
+	return stripTrailingSlashes(DEFAULT_API_BASE_URL);
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
 
 /**
  * Validate an email address.
@@ -21,6 +43,58 @@ export function isValidPhone(value) {
 	if (!/^[0-9+()\-\s.]+$/.test(raw)) return false;
 	const digits = raw.replace(/\D/g, '');
 	return digits.length >= 7;
+}
+
+// ---------------------------------------------------------------------------
+// JWT helpers
+// ---------------------------------------------------------------------------
+
+function decodeBase64Url(value) {
+	const normalized = String(value || '')
+		.replace(/-/g, '+')
+		.replace(/_/g, '/');
+
+	const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
+	const binary = atob(padded);
+
+	if (typeof TextDecoder !== 'undefined') {
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+		return new TextDecoder('utf-8').decode(bytes);
+	}
+
+	// Fallback for environments without TextDecoder.
+	try {
+		// eslint-disable-next-line no-undef
+		return decodeURIComponent(
+			binary
+				.split('')
+				.map((c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`)
+				.join(''),
+		);
+	} catch {
+		return binary;
+	}
+}
+
+/**
+ * Decode the payload of a JWT (no signature verification).
+ * @param {string} token
+ * @returns {object|null}
+ */
+export function parseJwt(token) {
+	try {
+		const raw = String(token || '').trim();
+		if (!raw) return null;
+
+		const parts = raw.split('.');
+		if (parts.length < 2) return null;
+
+		const json = decodeBase64Url(parts[1]);
+		return JSON.parse(json);
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -50,12 +124,43 @@ export function findByIdOrName(list, idValue, nameValue) {
 	);
 }
 
+// ---------------------------------------------------------------------------
+// List cache (localStorage)
+// ---------------------------------------------------------------------------
+
+const LIST_CACHE_PREFIX = 'itterem:list:';
+
 /**
- * Read a cached entity list from localStorage (written by api.js).
+ * Build the localStorage key for a given endpoint path.
+ * @param {string} endpointPath
+ * @returns {string}
+ */
+export function getListCacheKey(endpointPath) {
+	return `${LIST_CACHE_PREFIX}${String(endpointPath || '')
+		.trim()
+		.toLowerCase()}`;
+}
+
+/**
+ * Write an entity list to localStorage cache.
+ * @param {string} endpointPath
+ * @param {Array} list
+ */
+export function writeListCache(endpointPath, list) {
+	try {
+		const key = getListCacheKey(endpointPath);
+		localStorage.setItem(key, JSON.stringify(Array.isArray(list) ? list : []));
+	} catch {
+		// Ignore cache write errors.
+	}
+}
+
+/**
+ * Read a cached entity list from localStorage.
  * @param {string} endpointPath  e.g. '/api/Keszetelek'
  * @returns {Array}
  */
-export function readCachedList(endpointPath) {
+export function readListCache(endpointPath) {
 	try {
 		const key = getListCacheKey(endpointPath);
 		const raw = localStorage.getItem(key);

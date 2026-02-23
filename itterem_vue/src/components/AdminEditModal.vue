@@ -1,5 +1,4 @@
 <script setup>
-import { computed } from 'vue';
 
 const props = defineProps({
 	show: { type: Boolean, default: false },
@@ -13,12 +12,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'save', 'image-selected', 'update:form']);
-
-// Keep a local proxy so v-model bindings work — emit changes upward.
-const localForm = computed({
-	get: () => props.form,
-	set: (val) => emit('update:form', val),
-});
 
 function updateField(key, value) {
 	emit('update:form', { ...props.form, [key]: value });
@@ -75,7 +68,7 @@ function updateField(key, value) {
 						@change="updateField(field.key, $event.target.value)"
 					>
 						<option v-if="field.placeholder" value="">{{ field.placeholder }}</option>
-						<option v-for="opt in field.options()" :key="opt.value" :value="opt.value">
+						<option v-for="opt in (typeof field.options === 'function' ? field.options() : field.options)" :key="opt.value" :value="opt.value">
 							{{ opt.label }}
 						</option>
 					</select>

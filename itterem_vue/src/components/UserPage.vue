@@ -2,7 +2,8 @@
 import { computed, ref, watch } from 'vue';
 import Login from './Login.vue';
 import Register from './Register.vue';
-import { isValidPhone } from '../utils.js';
+import { updatePhone } from '../api.js';
+import { isValidPhone, parseJwt } from '../utils.js';
 
 const props = defineProps({
 	auth: { type: Object, default: null },
@@ -15,6 +16,7 @@ const isEditingPhone = ref(false);
 const phoneInput = ref('');
 const phoneError = ref('');
 const phoneSuccess = ref('');
+const phoneSaving = ref(false);
 
 function getPhoneFromAuth(auth) {
 	if (!auth) return '';
@@ -46,30 +48,52 @@ function cancelPhoneEdit() {
 	isEditingPhone.value = false;
 }
 
-function savePhone() {
+async function savePhone() {
 	phoneError.value = '';
 	phoneSuccess.value = '';
 
 	const nextPhone = phoneInput.value.trim();
 	if (!isValidPhone(nextPhone)) {
-		phoneError.value = 'Please enter a valid phone number.';
+		phoneError.value = 'Kérjük, adj meg egy érvényes telefonszámot.';
 		return;
 	}
 
-	const updatedUser = {
-		...(props.auth || {}),
-		telefonszam: nextPhone,
-	};
-
-	try {
-		localStorage.setItem('auth', JSON.stringify(updatedUser));
-	} catch {
-		// ignore storage errors and still update in-memory state via callback
+	const decodedToken = parseJwt(props.auth?.token);
+	const userId = props.auth?.id ?? props.auth?.sub ?? decodedToken?.sub ?? decodedToken?.id;
+	if (!userId) {
+		phoneError.value = 'Felhasználó azonosító nem található.';
+		return;
 	}
 
-	emit('login-success', updatedUser);
-	isEditingPhone.value = false;
-	phoneSuccess.value = 'Phone number saved.';
+	phoneSaving.value = true;
+
+	try {
+		const result = await updatePhone({ id: userId, telefonszam: nextPhone });
+
+		if (!result.ok) {
+			phoneError.value = result.message || 'Telefonszám frissítése sikertelen.';
+			return;
+		}
+
+		const updatedUser = {
+			...(props.auth || {}),
+			telefonszam: nextPhone,
+		};
+
+		try {
+			localStorage.setItem('auth', JSON.stringify(updatedUser));
+		} catch {
+			// ignore storage errors
+		}
+
+		emit('login-success', updatedUser);
+		isEditingPhone.value = false;
+		phoneSuccess.value = 'Telefonszám mentve.';
+	} catch (err) {
+		phoneError.value = err?.message || 'Telefonszám frissítése sikertelen.';
+	} finally {
+		phoneSaving.value = false;
+	}
 }
 
 function toggleForm() {
@@ -79,7 +103,7 @@ function toggleForm() {
 
 <template>
 	<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-		<h1 class="text-2xl font-bold tracking-tight text-gray-900">Account</h1>
+		<h1 class="text-2xl font-bold tracking-tight text-gray-900">Fiókom</h1>
 
 		<div
 			v-if="props.auth && props.auth.token"
@@ -87,12 +111,12 @@ function toggleForm() {
 		>
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 				<div>
-					<div class="text-sm text-gray-600">Signed in as</div>
+					<div class="text-sm text-gray-600">Bejelentkezve mint</div>
 					<div class="mt-1 text-lg font-semibold text-gray-900">{{ props.auth.teljesNev || '-' }}</div>
 					<div class="mt-1 text-sm text-gray-700">{{ props.auth.email || '-' }}</div>
 
 					<div class="mt-4">
-						<div class="text-sm text-gray-600">Phone number</div>
+						<div class="text-sm text-gray-600">Telefonszám</div>
 
 						<div v-if="!isEditingPhone" class="mt-1 flex items-center gap-3">
 							<div class="text-sm text-gray-900">{{ currentPhone || '-' }}</div>
@@ -101,7 +125,7 @@ function toggleForm() {
 								class="rounded-md px-2.5 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
 								@click="startPhoneEdit"
 							>
-								Edit
+								Szerkesztés
 							</button>
 						</div>
 
@@ -110,21 +134,24 @@ function toggleForm() {
 								v-model="phoneInput"
 								type="tel"
 								autocomplete="tel"
-								class="w-full max-w-xs rounded-md border-0 px-3 py-1.5 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600"
+								:disabled="phoneSaving"
+								class="w-full max-w-xs rounded-md border-0 px-3 py-1.5 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 disabled:opacity-50"
 							/>
 							<button
 								type="button"
-								class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500"
+								:disabled="phoneSaving"
+								class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
 								@click="savePhone"
 							>
-								Save
+								{{ phoneSaving ? 'Mentés…' : 'Mentés' }}
 							</button>
 							<button
 								type="button"
-								class="rounded-md px-3 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
+								:disabled="phoneSaving"
+								class="rounded-md px-3 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
 								@click="cancelPhoneEdit"
 							>
-								Cancel
+								Mégse
 							</button>
 						</div>
 
@@ -138,12 +165,12 @@ function toggleForm() {
 					class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 					@click="emit('logout')"
 				>
-					Logout
+					Kijelentkezés
 				</button>
 			</div>
 
 			<div class="mt-6 text-sm text-gray-600">
-				This is your user page. You can extend it with orders, favorites, etc.
+				Ez a felhasználói oldalad. Később bővítheted rendelésekkel, kedvencekkel stb.
 			</div>
 		</div>
 

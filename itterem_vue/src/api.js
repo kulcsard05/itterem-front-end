@@ -1,44 +1,33 @@
-const DEFAULT_API_BASE_URL = 'https://localhost:7200';
-const LIST_CACHE_PREFIX = 'itterem:list:';
+import { getApiBaseUrl, readListCache, writeListCache } from './utils.js';
 
-function stripTrailingSlashes(value) {
-	return String(value || '').replace(/\/+$/, '');
-}
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
 
-export function getApiBaseUrl() {
-	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
-	if (envBaseUrl !== undefined) return stripTrailingSlashes(envBaseUrl);
-	return stripTrailingSlashes(DEFAULT_API_BASE_URL);
-}
-
-export function getListCacheKey(endpointPath) {
-	return `${LIST_CACHE_PREFIX}${String(endpointPath || '')
-		.trim()
-		.toLowerCase()}`;
-}
-
-function writeListCache(endpointPath, list) {
+/**
+ * Read the JWT token from localStorage.
+ * @returns {string|null}
+ */
+function getAuthToken() {
 	try {
-		const key = getListCacheKey(endpointPath);
-		localStorage.setItem(key, JSON.stringify(Array.isArray(list) ? list : []));
+		const raw = localStorage.getItem('auth');
+		const auth = raw ? JSON.parse(raw) : null;
+		return auth?.token ?? null;
 	} catch {
-		// Ignore cache write errors.
+		return null;
 	}
 }
 
-function readListCache(endpointPath) {
-	try {
-		const key = getListCacheKey(endpointPath);
-		const raw = localStorage.getItem(key);
-		if (!raw) return [];
-
-		const parsed = JSON.parse(raw);
-		if (Array.isArray(parsed)) return parsed;
-		if (parsed && Array.isArray(parsed.data)) return parsed.data;
-		return [];
-	} catch {
-		return [];
-	}
+/**
+ * Build request headers with optional JWT Authorization.
+ * @param {Object} [extra]  Additional headers to merge.
+ * @returns {Object}
+ */
+function authHeaders(extra = {}) {
+	const headers = { accept: '*/*', ...extra };
+	const token = getAuthToken();
+	if (token) headers['Authorization'] = `Bearer ${token}`;
+	return headers;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +92,8 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 
 	// If there is a file, send as FormData; otherwise empty body for POST, none for others.
 	let body = undefined;
+	const headers = authHeaders();
+
 	if (kepFile instanceof File) {
 		const fd = new FormData();
 		fd.append('kep', kepFile, kepFile.name || 'image');
@@ -113,7 +104,7 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 
 	const response = await fetch(url, {
 		method,
-		headers: { accept: '*/*' },
+		headers,
 		body,
 	});
 
@@ -128,7 +119,7 @@ async function deletePath(endpoint, id, fallbackError) {
 	const baseUrl = getApiBaseUrl();
 	const response = await fetch(`${baseUrl}${endpoint}/${encodeURIComponent(String(id))}`, {
 		method: 'DELETE',
-		headers: { accept: '*/*' },
+		headers: authHeaders(),
 	});
 	return requestOk(response, fallbackError);
 }
@@ -150,11 +141,12 @@ export async function login(email, password) {
 
 	if (response.ok) return { ok: true, user: body };
 	if (typeof body === 'string') return { ok: false, message: body };
-	return { ok: false, message: 'Login failed' };
+	return { ok: false, message: 'Bejelentkezés sikertelen' };
 }
 
 export async function register({ teljesNev, email, password, telefonSzam }) {
 	const baseUrl = getApiBaseUrl();
+	// TODO: A backend módosítása után az adatokat JSON body-ban kell küldeni query paraméterek helyett.
 	const params = new URLSearchParams({
 		teljes_nev: String(teljesNev ?? '').trim(),
 		email: String(email ?? '').trim(),
@@ -172,7 +164,20 @@ export async function register({ teljesNev, email, password, telefonSzam }) {
 
 	if (response.ok) return { ok: true, data: body };
 	if (typeof body === 'string') return { ok: false, message: body };
-	return { ok: false, message: body?.message || 'Registration failed' };
+	return { ok: false, message: body?.message || 'Regisztráció sikertelen' };
+}
+
+/**
+ * Update the signed-in user's phone number.
+ * PUT /api/Login?id={id}&telefonszam={phone}
+ */
+export function updatePhone({ id, telefonszam }) {
+	return mutate({
+		method: 'PUT',
+		endpoint: '/api/Login',
+		params: { id, telefonszam },
+		fallbackError: 'Telefonszám frissítése sikertelen',
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +191,7 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 	try {
 		const response = await fetch(url, {
 			method: 'GET',
-			headers: { accept: '*/*' },
+			headers: authHeaders(),
 		});
 
 		const body = await readJsonOrText(response);
@@ -222,30 +227,30 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 }
 
 export function getCategories() {
-	return getList('/api/Kategoria', 'Failed to fetch categories', ['categories']);
+	return getList('/api/Kategoria', 'Kategóriák betöltése sikertelen', ['categories']);
 }
 
-/** Keszetelek = Meals */
+/** Keszetelek = Készételek */
 export function getMeals() {
-	return getList('/api/Keszetelek', 'Failed to fetch meals');
+	return getList('/api/Keszetelek', 'Készételek betöltése sikertelen');
 }
 
-/** Koretek = Sides */
+/** Koretek = Köretek */
 export function getSides() {
-	return getList('/api/Koretek', 'Failed to fetch sides');
+	return getList('/api/Koretek', 'Köretek betöltése sikertelen');
 }
 
 export function getMenus() {
-	return getList('/api/Menuk', 'Failed to fetch menus');
+	return getList('/api/Menuk', 'Menük betöltése sikertelen');
 }
 
 export function getDrinks() {
-	return getList('/api/Uditok', 'Failed to fetch drinks');
+	return getList('/api/Uditok', 'Üdítők betöltése sikertelen');
 }
 
-/** Hozzavalok = Ingredients */
+/** Hozzavalok = Hozzávalók */
 export function getIngredients() {
-	return getList('/api/Hozzavalok', 'Failed to fetch ingredients', ['hozzavalok', 'ingredients']);
+	return getList('/api/Hozzavalok', 'Hozzávalók betöltése sikertelen', ['hozzavalok', 'ingredients']);
 }
 
 // ---------------------------------------------------------------------------
@@ -257,13 +262,13 @@ export function updateIngredient({ id, nev }) {
 		method: 'PUT',
 		endpoint: '/api/Hozzavalok',
 		params: { id, nev },
-		fallbackError: 'Failed to update ingredient',
+		fallbackError: 'Hozzávaló frissítése sikertelen',
 	});
 }
 
 /** DELETE uses path param: /api/Hozzavalok/{id} */
 export function deleteIngredient(id) {
-	return deletePath('/api/Hozzavalok', id, 'Failed to delete ingredient');
+	return deletePath('/api/Hozzavalok', id, 'Hozzávaló törlése sikertelen');
 }
 
 export function createIngredient({ nev }) {
@@ -271,7 +276,7 @@ export function createIngredient({ nev }) {
 		method: 'POST',
 		endpoint: '/api/Hozzavalok',
 		params: { nev },
-		fallbackError: 'Failed to create ingredient',
+		fallbackError: 'Hozzávaló létrehozása sikertelen',
 	});
 }
 
@@ -284,13 +289,13 @@ export function updateCategory({ id, nev }) {
 		method: 'PUT',
 		endpoint: '/api/Kategoria',
 		params: { id, nev },
-		fallbackError: 'Failed to update category',
+		fallbackError: 'Kategória frissítése sikertelen',
 	});
 }
 
 /** DELETE uses path param: /api/Kategoria/{id} */
 export function deleteCategory(id) {
-	return deletePath('/api/Kategoria', id, 'Failed to delete category');
+	return deletePath('/api/Kategoria', id, 'Kategória törlése sikertelen');
 }
 
 export function createCategory({ nev }) {
@@ -298,7 +303,7 @@ export function createCategory({ nev }) {
 		method: 'POST',
 		endpoint: '/api/Kategoria',
 		params: { nev },
-		fallbackError: 'Failed to create category',
+		fallbackError: 'Kategória létrehozása sikertelen',
 	});
 }
 
@@ -310,15 +315,15 @@ export function updateMeal({ id, nev, leiras, elerheto, kategoriaId, ar, kepFile
 	return mutate({
 		method: 'PUT',
 		endpoint: '/api/Keszetelek',
-		params: { id, nev, leiras, elerheto, ar, Kategora: kategoriaId },
+		params: { id, nev, leiras, elerheto, ar, Kategoria: kategoriaId },
 		kepFile,
-		fallbackError: 'Failed to update meal',
+		fallbackError: 'Készétel frissítése sikertelen',
 	});
 }
 
 /** DELETE uses path param: /api/Keszetelek/{id} */
 export function deleteMeal(id) {
-	return deletePath('/api/Keszetelek', id, 'Failed to delete meal');
+	return deletePath('/api/Keszetelek', id, 'Készétel törlése sikertelen');
 }
 
 export function createMeal({ nev, leiras, elerheto, katid, ar, kepFile }) {
@@ -327,7 +332,7 @@ export function createMeal({ nev, leiras, elerheto, katid, ar, kepFile }) {
 		endpoint: '/api/Keszetelek',
 		params: { nev, leiras, ar, elerheto, katid },
 		kepFile,
-		fallbackError: 'Failed to create meal',
+		fallbackError: 'Készétel létrehozása sikertelen',
 	});
 }
 
@@ -341,13 +346,13 @@ export function updateSide({ id, nev, leiras, elerheto, ar, kepFile }) {
 		endpoint: '/api/Koretek',
 		params: { id, nev, leiras, elerheto, ar },
 		kepFile,
-		fallbackError: 'Failed to update side',
+		fallbackError: 'Köret frissítése sikertelen',
 	});
 }
 
 /** DELETE uses path param: /api/Koretek/{id} */
 export function deleteSide(id) {
-	return deletePath('/api/Koretek', id, 'Failed to delete side');
+	return deletePath('/api/Koretek', id, 'Köret törlése sikertelen');
 }
 
 export function createSide({ nev, leiras, elerheto, ar, kepFile }) {
@@ -356,7 +361,7 @@ export function createSide({ nev, leiras, elerheto, ar, kepFile }) {
 		endpoint: '/api/Koretek',
 		params: { nev, leiras, ar, elerheto },
 		kepFile,
-		fallbackError: 'Failed to create side',
+		fallbackError: 'Köret létrehozása sikertelen',
 	});
 }
 
@@ -370,12 +375,12 @@ export function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto
 	if (uditoId != null && String(uditoId).trim() !== '') {
 		params.uditoId = uditoId;
 	}
-	return mutate({ method: 'PUT', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Failed to update menu' });
+	return mutate({ method: 'PUT', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Menü frissítése sikertelen' });
 }
 
 /** DELETE uses path param: /api/Menuk/{id} */
 export function deleteMenu(id) {
-	return deletePath('/api/Menuk', id, 'Failed to delete menu');
+	return deletePath('/api/Menuk', id, 'Menü törlése sikertelen');
 }
 
 export function createMenu({ menuNev, ar, keszetelId, koretId, uditoId, elerheto, kepFile }) {
@@ -383,15 +388,11 @@ export function createMenu({ menuNev, ar, keszetelId, koretId, uditoId, elerheto
 	if (uditoId != null && String(uditoId).trim() !== '') {
 		params.uditoId = uditoId;
 	}
-	return mutate({ method: 'POST', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Failed to create menu' });
+	return mutate({ method: 'POST', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Menü létrehozása sikertelen' });
 }
 
 // ---------------------------------------------------------------------------
 // Drinks  (Üdítők)
-//
-// NOTE: The backend uses a DIFFERENT delete pattern for drinks.
-// Instead of /api/Uditok/{id}  (path param), it expects  /api/Uditok?id={id}  (query param).
-// This is a backend inconsistency; do NOT change without updating the backend.
 // ---------------------------------------------------------------------------
 
 export function updateDrink({ id, nev, elerheto, ar, kepFile }) {
@@ -400,21 +401,13 @@ export function updateDrink({ id, nev, elerheto, ar, kepFile }) {
 		endpoint: '/api/Uditok',
 		params: { id, nev, elerheto, ar },
 		kepFile,
-		fallbackError: 'Failed to update drink',
+		fallbackError: 'Üdítő frissítése sikertelen',
 	});
 }
 
-/**
- * DELETE uses **query param**: /api/Uditok?id={id}
- * (Unlike all other entities which use path param. This is required by the backend.)
- */
+/** DELETE uses path param: /api/Uditok/{id} */
 export function deleteDrink(id) {
-	return mutate({
-		method: 'DELETE',
-		endpoint: '/api/Uditok',
-		params: { id },
-		fallbackError: 'Failed to delete drink',
-	});
+	return deletePath('/api/Uditok', id, 'Üdítő törlése sikertelen');
 }
 
 export function createDrink({ nev, elerheto, ar, kepFile }) {
@@ -423,6 +416,6 @@ export function createDrink({ nev, elerheto, ar, kepFile }) {
 		endpoint: '/api/Uditok',
 		params: { nev, ar, elerheto },
 		kepFile,
-		fallbackError: 'Failed to create drink',
+		fallbackError: 'Üdítő létrehozása sikertelen',
 	});
 }

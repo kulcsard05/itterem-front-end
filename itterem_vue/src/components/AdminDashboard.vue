@@ -165,7 +165,7 @@ function onEditImageSelected(event) {
 // duplicated switch/if-else chains that previously existed for every
 // CRUD operation.
 
-const AVAILABLE_OPTIONS = () => [
+const AVAILABLE_OPTIONS = [
 	{ value: 1, label: 'Igen' },
 	{ value: 0, label: 'Nem' },
 ];
@@ -649,7 +649,7 @@ function cancelDelete() {
 			<div class="flex justify-between items-center gap-5 max-md:flex-col max-md:items-start">
 				<div>
 					<h1 class="text-4xl font-bold text-gray-800 mb-2">Itterem Admin Panel</h1>
-					<div class="text-gray-500">Restaurant Management System</div>
+					<div class="text-gray-500">Étterem Kezelő Rendszer</div>
 				</div>
 				<div class="flex gap-3 max-md:w-full">
 					<button
@@ -707,19 +707,18 @@ function cancelDelete() {
 				{{ actionSuccess }}
 			</div>
 
-			<!-- All tab tables — v-show keeps DOM alive for instant tab switches -->
-			<AdminTable
-				v-for="tab in tabs"
-				v-show="activeTab === tab.key"
-				:key="tab.key"
-				:columns="entityConfigs[tab.entityType].columns"
-				:items="tabItemsMap[tab.key] ?? []"
-				:title="entityConfigs[tab.entityType].tableTitle"
-				:add-label="entityConfigs[tab.entityType].addLabel"
-				@create="openModal(tab.entityType)"
-				@edit="(item) => openModal(tab.entityType, item)"
-				@delete="(item) => requestDelete(tab.entityType, item)"
-			/>
+			<template v-for="tab in tabs" :key="tab.key">
+				<AdminTable
+					v-if="activeTab === tab.key"
+					:columns="entityConfigs[tab.entityType].columns"
+					:items="tabItemsMap[tab.key] ?? []"
+					:title="entityConfigs[tab.entityType].tableTitle"
+					:add-label="entityConfigs[tab.entityType].addLabel"
+					@create="openModal(tab.entityType)"
+					@edit="(item) => openModal(tab.entityType, item)"
+					@delete="(item) => requestDelete(tab.entityType, item)"
+				/>
+			</template>
 		</div>
 
 		<!-- Edit / Create Modal -->
