@@ -29,7 +29,7 @@ const routes = [
 			try {
 				const raw = localStorage.getItem('auth');
 				const auth = raw ? JSON.parse(raw) : null;
-				if (auth && auth.token && Number(auth.jogosultsag) === 1) return true;
+				if (auth && auth.token && Number(auth.jogosultsag) === 3) return true;
 			} catch {
 				// fall through
 			}

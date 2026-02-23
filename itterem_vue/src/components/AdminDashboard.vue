@@ -12,12 +12,14 @@ import {
 	deleteIngredient,
 	deleteMenu,
 	deleteMeal,
+	deleteOrder,
 	deleteSide,
 	getCategories,
 	getDrinks,
 	getIngredients,
 	getMeals,
 	getMenus,
+	getOrders,
 	getSides,
 	updateCategory,
 	updateDrink,
@@ -59,6 +61,7 @@ const hozzavalok = ref([]);
 const keszetelek = ref([]);
 const koretek = ref([]);
 const uditok = ref([]);
+const rendelesekRaw = ref([]);
 
 const isLoading = ref(false);
 const loadError = ref('');
@@ -129,6 +132,36 @@ function getMealCategoryName(meal) {
 
 function getCurrentImageFromItem(item) {
 	return getImageSrcFromItem(item, 'kep');
+}
+
+function formatDateTime(value) {
+	if (!value) return '-';
+	const d = new Date(value);
+	if (Number.isNaN(d.getTime())) return String(value);
+	return d.toLocaleString('hu-HU');
+}
+
+function getOrderItemName(entry) {
+	const mealName = String(entry?.keszetelNev ?? '').trim();
+	if (mealName) return mealName;
+
+	const drinkName = String(entry?.uditoNev ?? '').trim();
+	if (drinkName) return drinkName;
+
+	const menuName = String(entry?.menuNev ?? '').trim();
+	if (menuName) return menuName;
+
+	const sideName = String(entry?.koretNev ?? '').trim();
+	if (sideName) return sideName;
+
+	return 'Ismeretlen tétel';
+}
+
+function formatOrderItems(order) {
+	const list = Array.isArray(order?.rendelesElemeks) ? order.rendelesElemeks : [];
+	if (list.length === 0) return '-';
+
+	return list.map((entry) => `${getOrderItemName(entry)} × ${entry?.mennyiseg ?? 0}`).join(' | ');
 }
 
 // ── Image Preview ───────────────────────────────────────────────
@@ -471,10 +504,30 @@ const entityConfigs = {
 		},
 		messages: { create: 'Menü létrehozva.', update: 'Menü frissítve.', delete: 'Menü törölve.' },
 	},
+
+	order: {
+		label: 'Rendelés',
+		tableTitle: 'Rendelések',
+		addLabel: '',
+		hasImage: false,
+		showCreate: false,
+		showEdit: false,
+		showDelete: true,
+		api: { delete: deleteOrder },
+		columns: [
+			{ key: 'id', label: 'ID' },
+			{ key: 'felhasznaloNev', label: 'Felhasználó', bold: true },
+			{ key: 'datum', label: 'Dátum', format: (item) => formatDateTime(item?.datum) },
+			{ key: 'statusz', label: 'Státusz' },
+			{ key: '_items', label: 'Tételek', format: (item) => formatOrderItems(item) },
+		],
+		messages: { delete: 'Rendelés törölve.' },
+	},
 };
 
 // ── Tabs & Table Items ──────────────────────────────────────────
 const tabs = [
+	{ key: 'rendelesek', label: 'Rendelések', entityType: 'order' },
 	{ key: 'menuk', label: 'Menük', entityType: 'menu' },
 	{ key: 'kategoriak', label: 'Kategóriák', entityType: 'category' },
 	{ key: 'hozzavalok', label: 'Hozzávalók', entityType: 'ingredient' },
@@ -482,6 +535,14 @@ const tabs = [
 	{ key: 'koretek', label: 'Köretek', entityType: 'side' },
 	{ key: 'uditok', label: 'Üdítők', entityType: 'drink' },
 ];
+
+const rendelesek = computed(() =>
+	(rendelesekRaw.value || []).slice().sort((a, b) => {
+		const ta = new Date(a?.datum ?? 0).getTime();
+		const tb = new Date(b?.datum ?? 0).getTime();
+		return tb - ta;
+	}),
+);
 
 // Menus need enrichment (display names for FK references)
 const menuk = computed(() =>
@@ -495,6 +556,7 @@ const menuk = computed(() =>
 );
 
 const tabItemsMap = computed(() => ({
+	rendelesek: rendelesek.value,
 	menuk: menuk.value,
 	kategoriak: kategoriak.value,
 	hozzavalok: hozzavalok.value,
@@ -505,6 +567,7 @@ const tabItemsMap = computed(() => ({
 
 // ── Data Loading ────────────────────────────────────────────────
 const dataLoads = [
+	{ fn: getOrders, ref: rendelesekRaw, label: 'orders' },
 	{ fn: getMenus, ref: menukRaw, label: 'menus' },
 	{ fn: getCategories, ref: kategoriak, label: 'categories' },
 	{ fn: getIngredients, ref: hozzavalok, label: 'ingredients' },
@@ -640,6 +703,11 @@ function cancelDelete() {
 	showConfirmModal.value = false;
 	deleteTarget.value = null;
 }
+
+const confirmMessage = computed(() => {
+	if (deleteTarget.value?.type === 'order') return 'Biztosan törlöd ezt a rendelést?';
+	return 'Biztosan törlöd ezt az elemet?';
+});
 </script>
 
 <template>
@@ -714,6 +782,9 @@ function cancelDelete() {
 					:items="tabItemsMap[tab.key] ?? []"
 					:title="entityConfigs[tab.entityType].tableTitle"
 					:add-label="entityConfigs[tab.entityType].addLabel"
+					:show-create="entityConfigs[tab.entityType].showCreate ?? true"
+					:show-edit="entityConfigs[tab.entityType].showEdit ?? true"
+					:show-delete="entityConfigs[tab.entityType].showDelete ?? true"
 					@create="openModal(tab.entityType)"
 					@edit="(item) => openModal(tab.entityType, item)"
 					@delete="(item) => requestDelete(tab.entityType, item)"
@@ -742,7 +813,7 @@ function cancelDelete() {
 			:show="showConfirmModal"
 			:loading="deleting"
 			title="Törlés megerősítése"
-			message="Biztosan törlöd ezt az elemet?"
+			:message="confirmMessage"
 			@confirm="confirmDelete"
 			@cancel="cancelDelete"
 		/>

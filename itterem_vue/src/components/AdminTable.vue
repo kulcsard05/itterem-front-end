@@ -1,12 +1,19 @@
 <script setup>
-defineProps({
+import { computed } from 'vue';
+
+const props = defineProps({
 	columns: { type: Array, required: true },
 	items: { type: Array, required: true },
 	title: { type: String, required: true },
-	addLabel: { type: String, required: true },
+	addLabel: { type: String, required: false, default: '' },
+	showCreate: { type: Boolean, required: false, default: true },
+	showEdit: { type: Boolean, required: false, default: true },
+	showDelete: { type: Boolean, required: false, default: true },
 });
 
 const emit = defineEmits(['create', 'edit', 'delete']);
+
+const hasActions = computed(() => props.showEdit || props.showDelete);
 </script>
 
 <template>
@@ -26,14 +33,14 @@ const emit = defineEmits(['create', 'edit', 'delete']);
 						>
 							{{ col.label }}
 						</th>
-						<th class="p-4 text-left font-semibold text-sm uppercase tracking-wide">Műveletek</th>
+						<th v-if="hasActions" class="p-4 text-left font-semibold text-sm uppercase tracking-wide">Műveletek</th>
 					</tr>
 				</thead>
 
 				<tbody>
 					<!-- Add new row -->
-					<tr class="bg-gray-50 border-b border-gray-200">
-						<td :colspan="columns.length + 1" class="p-4">
+					<tr v-if="showCreate" class="bg-gray-50 border-b border-gray-200">
+						<td :colspan="columns.length + (hasActions ? 1 : 0)" class="p-4">
 							<button
 								class="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg font-semibold text-sm hover:shadow-md transition cursor-pointer"
 								@click="emit('create')"
@@ -71,15 +78,17 @@ const emit = defineEmits(['create', 'edit', 'delete']);
 							</template>
 						</td>
 
-						<td class="p-4">
+						<td v-if="hasActions" class="p-4">
 							<div class="flex gap-2">
 								<button
+									v-if="showEdit"
 									class="px-3.5 py-1.5 rounded-md text-sm font-semibold bg-blue-100 text-blue-800 hover:bg-blue-200 transition cursor-pointer"
 									@click="emit('edit', item)"
 								>
 									Szerkeszt
 								</button>
 								<button
+									v-if="showDelete"
 									class="px-3.5 py-1.5 rounded-md text-sm font-semibold bg-red-100 text-red-800 hover:bg-red-200 transition cursor-pointer"
 									@click="emit('delete', item)"
 								>
@@ -91,7 +100,7 @@ const emit = defineEmits(['create', 'edit', 'delete']);
 
 					<!-- Empty state -->
 					<tr v-if="items.length === 0">
-						<td :colspan="columns.length + 1" class="p-8 text-center text-gray-400 text-sm">Nincs adat.</td>
+						<td :colspan="columns.length + (hasActions ? 1 : 0)" class="p-8 text-center text-gray-400 text-sm">Nincs adat.</td>
 					</tr>
 				</tbody>
 			</table>

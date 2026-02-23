@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { getCategories, getDrinks, getMeals, getMenus, getSides } from '../api.js';
 import { findByIdOrName, toImageSrc } from '../utils.js';
 
-const emit = defineEmits(['open-item']);
+const emit = defineEmits(['open-item', 'add-to-cart']);
 
 const activeType = ref('meals'); // meals | sides | menus | drinks
 
@@ -126,6 +126,18 @@ function openItem(type, item, categoryName = '') {
 		image: getItemImage(item),
 		meta: type === 'menus' ? getMenuMeta(item) : categoryName,
 		menuBreakdown: type === 'menus' ? buildMenuBreakdown(item) : [],
+	});
+}
+
+function quickAddToCart(event, type, item, categoryName = '') {
+	event.stopPropagation();
+	emit('add-to-cart', {
+		type,
+		id: item?.id,
+		item,
+		name: getItemName(type, item),
+		price: getItemPrice(item),
+		image: getItemImage(item),
 	});
 }
 
@@ -362,6 +374,13 @@ const mealSections = computed(() => {
 										>
 											{{ getItemPrice(item) }} Ft
 										</p>
+										<button
+											type="button"
+											class="mt-2 inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+											@click.stop="quickAddToCart($event, 'meals', item, section.name)"
+										>
+											+ Kosár
+										</button>
 									</div>
 								</div>
 								<img
@@ -418,6 +437,13 @@ const mealSections = computed(() => {
 									>
 										{{ getItemPrice(item) }} Ft
 									</p>
+									<button
+										type="button"
+										class="mt-2 inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+										@click.stop="quickAddToCart($event, activeType, item)"
+									>
+										+ Kosár
+									</button>
 								</div>
 							</div>
 							<img

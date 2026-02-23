@@ -87,7 +87,10 @@ const menuBreakdown = computed(() => {
 
 function addToCart() {
 	emit('add-to-cart', props.itemData);
-	addedMessage.value = `${itemTitle.value} added to cart.`;
+	addedMessage.value = `${itemTitle.value} hozzáadva a kosárhoz.`;
+	setTimeout(() => {
+		addedMessage.value = '';
+	}, 3000);
 }
 </script>
 
@@ -127,14 +130,12 @@ function addToCart() {
 
 				<div class="mt-6 flex items-center justify-between gap-4">
 					<p v-if="itemPrice != null" class="text-lg font-semibold text-gray-900">{{ itemPrice }} Ft</p>
-					<!-- TODO: Kosár funkció – lásd todo.md -->
 					<button
 						type="button"
-						class="inline-flex items-center justify-center rounded-md bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-400 shadow-sm cursor-not-allowed"
-						disabled
-						title="Hamarosan elérhető"
+						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+						@click="addToCart"
 					>
-						Kosárba (hamarosan)
+						Kosárba
 					</button>
 				</div>
 

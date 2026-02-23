@@ -248,6 +248,41 @@ export function getDrinks() {
 	return getList('/api/Uditok', 'Üdítők betöltése sikertelen');
 }
 
+// ---------------------------------------------------------------------------
+// Orders  (Rendelések)
+// ---------------------------------------------------------------------------
+
+export function getOrders() {
+	return getList('/api/Rendelesek', 'Rendelések betöltése sikertelen');
+}
+
+/**
+ * Place an order.
+ *
+ * @param {number} felhasznaloId   The logged-in user's ID.
+ * @param {Array}  orderItems      Array of order line objects, e.g.
+ *   [{ keszetelId: 1, mennyiseg: 1 }, { uditoId: 2, mennyiseg: 3 }, ...]
+ * @returns {Promise<{ok: boolean, data?: *, message?: string}>}
+ */
+export async function placeOrder(felhasznaloId, orderItems) {
+	const baseUrl = getApiBaseUrl();
+	const response = await fetch(`${baseUrl}/api/Rendelesek`, {
+		method: 'POST',
+		headers: authHeaders({ 'Content-Type': 'application/json' }),
+		body: JSON.stringify({ felhasznaloId, items: orderItems }),
+	});
+	return requestOk(response, 'Rendelés leadása sikertelen');
+}
+
+export function deleteOrder(id) {
+	return mutate({
+		method: 'DELETE',
+		endpoint: '/api/Rendelesek',
+		params: { id },
+		fallbackError: 'Rendelés törlése sikertelen',
+	});
+}
+
 /** Hozzavalok = Hozzávalók */
 export function getIngredients() {
 	return getList('/api/Hozzavalok', 'Hozzávalók betöltése sikertelen', ['hozzavalok', 'ingredients']);

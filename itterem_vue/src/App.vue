@@ -1,12 +1,17 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import CartDrawer from './components/CartDrawer.vue';
+import { useCart } from './composables/useCart.js';
 
 const router = useRouter();
 const route = useRoute();
 
 const auth = ref(null);
 const selectedMenuItem = ref(null);
+const cartOpen = ref(false);
+
+const { addItem, totalItems } = useCart();
 
 function migrateAuthShape(value) {
 	if (!value || typeof value !== 'object') return { auth: value, changed: false };
@@ -89,7 +94,7 @@ function handleLoginSuccess(user) {
 	auth.value = user;
 
 	// If the logged-in user isn't admin, redirect away from admin.
-	if (Number(user?.jogosultsag) !== 1 && route.name === 'admin') {
+	if (Number(user?.jogosultsag) !== 3 && route.name === 'admin') {
 		router.push({ name: 'menu' });
 	}
 }
@@ -101,7 +106,7 @@ function handleLogout() {
 }
 
 const isLoggedIn = computed(() => Boolean(auth.value && auth.value.token));
-const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 1);
+const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 3);
 
 watch(
 	() => auth.value,
@@ -142,6 +147,10 @@ function openMenuItem(itemData) {
 	router.push({ name: 'menu-item' });
 }
 
+function handleAddToCart(itemData) {
+	addItem(itemData);
+}
+
 const isMenuRoute = computed(() => route.name === 'menu' || route.name === 'menu-item');
 const isAdminRoute = computed(() => route.name === 'admin');
 const isAccountRoute = computed(() => route.name === 'account');
@@ -174,6 +183,22 @@ const isAccountRoute = computed(() => route.name === 'account');
 				</nav>
 
 				<div class="flex items-center gap-3">
+					<!-- Cart button (always visible) -->
+					<button
+						type="button"
+						class="relative inline-flex items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100"
+						aria-label="Kosár"
+						@click="cartOpen = true"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
+						</svg>
+						<span
+							v-if="totalItems > 0"
+							class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white"
+						>{{ totalItems }}</span>
+					</button>
+
 					<button
 						v-if="isLoggedIn"
 						type="button"
@@ -219,8 +244,11 @@ const isAccountRoute = computed(() => route.name === 'account');
 					@back="goMenu"
 					@login-success="handleLoginSuccess"
 					@logout="handleLogout"
+					@add-to-cart="handleAddToCart"
 				/>
 			</router-view>
 		</main>
+
+		<CartDrawer :open="cartOpen" :auth="auth" @close="cartOpen = false" />
 	</div>
 </template>
