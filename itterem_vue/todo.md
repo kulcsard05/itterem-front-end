@@ -2,14 +2,14 @@
 
 ## Magas prioritás
 
-- [ ] **Regisztráció & CRUD – JSON body**: Az összes `mutate()` / `register()` hívásban az adatokat jelenleg query paraméterként küldi a frontend. A backend módosítása után át kell térni JSON body küldésre. (Nincs szükség frontend módosításra a backend-változtatás előtt.)
-- [ ] **Kosár funkció implementálása**:
-  - `Cart.vue` komponens: tételek listája, darabszám, összeg
-  - `useCart` composable: állapot kezelés (localStorage-ban tárolva)
-  - „Kosárba" gomb aktiválása a `MenuItemPage.vue`-ban
-  - Rendelés leadás oldal (`OrderPage.vue`) + `POST /api/Order` vagy hasonló végpont
-  - Rendelés megerősítő visszajelzés
-- [ ] **JWT token lejárat kezelése**: A lejárt tokennel érkező 401-es API válasz esetén automatikusan ki kell jelentkeztetni a felhasználót. Megoldás: interceptor az `api.js`-ben, vagy `response.status === 401` ellenőrzés minden API hívás után.
+- [x] **Regisztráció – JSON body**: A `register()` az adatokat JSON body-ban küldi (`teljesNev`, `email`, `jelszo`, `telefonszam`) a `POST /api/Registration` végpontra.
+- [x] **Kosár funkció implementálása**:
+  - `CartDrawer.vue` komponens: tételek listája, darabszám, összeg, rendelés leadás
+  - `useCart` composable: állapot kezelés (localStorage-ban tárolva), `buildOrderItems()` segédfüggvény
+  - „Kosárba" gomb aktív a `MenuItemPage.vue`-ban (`add-to-cart` esemény)
+  - Rendelés leadás a `CartDrawer.vue`-ban + `placeOrder()` → `POST /api/Order`
+  - Rendelés megerősítő visszajelzés (siker / hiba üzenet a drawerben)
+- [x] **JWT token lejárat kezelése**: A `requestOk()` helper a 401-es válasz esetén automatikusan kijelentkezteti a felhasználót (`clearStoredAuth({ emitEvent: true })`), az `AUTH_EXPIRED_MESSAGE` üzenetet adja vissza.
 
 ## Közepes prioritás
 

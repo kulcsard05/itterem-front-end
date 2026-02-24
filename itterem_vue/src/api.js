@@ -154,18 +154,16 @@ export async function login(email, password) {
 
 export async function register({ teljesNev, email, password, telefonSzam }) {
 	const baseUrl = getApiBaseUrl();
-	// TODO: A backend módosítása után az adatokat JSON body-ban kell küldeni query paraméterek helyett.
-	const params = new URLSearchParams({
-		teljes_nev: String(teljesNev ?? '').trim(),
-		email: String(email ?? '').trim(),
-		jelszo: String(password ?? ''),
-		telefonszam: String(telefonSzam ?? '').trim(),
-	});
 
-	const response = await fetch(`${baseUrl}/api/Registration?${params.toString()}`, {
+	const response = await fetch(`${baseUrl}/api/Registration`, {
 		method: 'POST',
-		headers: { accept: '*/*' },
-		body: '',
+		headers: { accept: '*/*', 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			teljesNev: String(teljesNev ?? '').trim(),
+			email: String(email ?? '').trim(),
+			jelszo: String(password ?? ''),
+			telefonszam: String(telefonSzam ?? '').trim(),
+		}),
 	});
 
 	const body = await readJsonOrText(response);

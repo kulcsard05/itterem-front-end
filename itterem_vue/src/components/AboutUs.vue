@@ -4,7 +4,7 @@
 		<section class="mb-16 text-center">
 			<h1 class="mb-4 text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">Rólunk</h1>
 			<p class="mx-auto max-w-2xl text-lg text-gray-600">
-				Az Itterem egy szívből jövő projekt – ahol a jó ételek, a barátságos kiszolgálás és az otthoni hangulat találkozik.
+				Az Itterem egy szívből jövő projekt/étterem – ahol a jó ételek, a barátságos kiszolgálás és az otthoni hangulat találkozik.
 			</p>
 		</section>
 
