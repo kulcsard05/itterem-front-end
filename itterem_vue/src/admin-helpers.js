@@ -32,6 +32,15 @@ export function requiredSelect(form, key, label) {
 	return null;
 }
 
+/** Require at least one non-empty select value among multiple keys. */
+export function requiredAtLeastOneSelect(form, keys, label) {
+	const keyList = Array.isArray(keys) ? keys : [];
+	const hasAny = keyList.some((key) => String(form?.[key] ?? '').trim() !== '');
+	const safeLabel = String(label ?? 'Mezők').trim() || 'Mezők';
+	if (!hasAny) return `${safeLabel} közül legalább egy kötelező.`;
+	return null;
+}
+
 /**
  * Chain multiple validators — returns the first error or null.
  * Each validator is called with (form, isCreate).

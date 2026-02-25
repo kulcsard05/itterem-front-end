@@ -2,6 +2,12 @@
 
 ## Magas prioritás
 
+- [ ] **Backend szerződés egységesítése (param nevek + nullák)**:
+  - `Kategoria` legyen a kanonikus név (ne `Kategora`).
+  - `Keszetelek`: a frontend mostantól csak `kategoriaId` paramot küld create/update esetén is (backend igazodjon ehhez).
+  - `Menuk`: backend engedje a nullable `keszetelId` / `koretId` / `uditoId` mezőket (frontend validáció: készétel VAGY köret kötelező).
+  - `Menuk` listázás/frissítés mindenhol FK ID-kat adjon vissza (`keszetelId`, `koretId`, `uditoId`).
+
 - [x] **Regisztráció – JSON body**: A `register()` az adatokat JSON body-ban küldi (`teljesNev`, `email`, `jelszo`, `telefonszam`) a `POST /api/Registration` végpontra.
 - [x] **Kosár funkció implementálása**:
   - `CartDrawer.vue` komponens: tételek listája, darabszám, összeg, rendelés leadás
@@ -31,3 +37,6 @@
 - [ ] **Regisztrációnál a visszatérési forma**: Ha a backend visszaküldi az újonnan létrehozott felhasználó adatait, a `Register.vue` kezelje azt (pl. automatikus bejelentkezés regisztráció után).
 - [ ] **E2E tesztek**: Cypress vagy Playwright tesztek a bejelentkezési folyamathoz és az admin CRUD műveletekhez.
 - [ ] **Hozzáférési jogok finomhangolása**: A router guard jelenleg a `jogosultsag` mezőt ellenőrzi (`== 2` = admin). Ha több jogosultsági szint lesz, ezeket érdemes nevesített konstansokba kiszervezni.
+
+
+keszetel post/put kep nullable

@@ -46,6 +46,7 @@ import {
 	requiredPrice,
 	requiredImageOnCreate,
 	requiredSelect,
+	requiredAtLeastOneSelect,
 	validateAll,
 } from '../admin-helpers.js';
 
@@ -263,9 +264,8 @@ const entityConfigs = {
 			),
 		buildPayload: (form, isCreate) => {
 			const base = buildBasePayload(form, { includeDescription: true });
-			// Backend uses different param names for create vs update
 			return isCreate
-				? { ...base, katid: String(form.kategoriaId ?? '').trim() }
+				? { ...base, kategoriaId: String(form.kategoriaId ?? '').trim() }
 				: { ...base, id: form.id, kategoriaId: String(form.kategoriaId ?? '').trim() };
 		},
 		messages: { create: 'Készétel létrehozva.', update: 'Készétel frissítve.', delete: 'Készétel törölve.' },
@@ -432,8 +432,7 @@ const entityConfigs = {
 			validateAll(
 				[
 					(f) => requiredName(f, 'menuNev', 'Menü név'),
-					(f) => requiredSelect(f, 'keszetelId', 'Készétel'),
-					(f) => requiredSelect(f, 'koretId', 'Köret'),
+					(f) => requiredAtLeastOneSelect(f, ['keszetelId', 'koretId'], 'Készétel vagy Köret'),
 					(f) => requiredPrice(f),
 					(f, c) => requiredImageOnCreate(f, c),
 				],
@@ -441,13 +440,15 @@ const entityConfigs = {
 				isCreate,
 			),
 		buildPayload: (form, isCreate) => {
-			const uditoIdRaw = form.uditoId;
-			const uditoId = String(uditoIdRaw ?? '').trim() === '' ? null : uditoIdRaw;
+			const toNullableId = (value) => {
+				const trimmed = String(value ?? '').trim();
+				return trimmed === '' ? null : trimmed;
+			};
 			const base = {
 				menuNev: String(form.menuNev ?? '').trim(),
-				keszetelId: String(form.keszetelId ?? '').trim(),
-				koretId: String(form.koretId ?? '').trim(),
-				uditoId,
+				keszetelId: toNullableId(form.keszetelId),
+				koretId: toNullableId(form.koretId),
+				uditoId: toNullableId(form.uditoId),
 				elerheto: buildElerheto(form),
 				ar: parsePrice(form.ar),
 				kepFile: form.kepFile ?? null,
@@ -773,6 +774,7 @@ const confirmMessage = computed(() => {
 		<AdminEditModal
 			:show="showEditModal"
 			:title="editModalTitle"
+			:error="actionError"
 			:is-create-mode="isCreateMode"
 			:fields="activeFormFields"
 			:form="editForm"

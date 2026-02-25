@@ -3,6 +3,7 @@
 const props = defineProps({
 	show: { type: Boolean, default: false },
 	title: { type: String, default: 'Szerkesztés' },
+	error: { type: String, default: '' },
 	isCreateMode: { type: Boolean, default: false },
 	fields: { type: Array, default: () => [] },
 	form: { type: Object, default: () => ({}) },
@@ -38,6 +39,10 @@ function updateField(key, value) {
 
 			<!-- Body -->
 			<div class="p-5 space-y-4">
+				<div v-if="error" class="rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700" role="alert">
+					{{ error }}
+				</div>
+
 				<!-- ID (read-only, edit mode only) -->
 				<div v-if="!isCreateMode" class="space-y-2">
 					<label class="block text-sm font-semibold text-gray-700">ID</label>

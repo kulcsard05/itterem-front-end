@@ -380,7 +380,7 @@ export function updateMeal({ id, nev, leiras, elerheto, kategoriaId, ar, kepFile
 	return mutate({
 		method: 'PUT',
 		endpoint: '/api/Keszetelek',
-		params: { id, nev, leiras, elerheto, ar, Kategoria: kategoriaId },
+		params: { id, nev, leiras, elerheto, ar, kategoriaId },
 		kepFile,
 		fallbackError: 'Készétel frissítése sikertelen',
 	});
@@ -391,11 +391,12 @@ export function deleteMeal(id) {
 	return deletePath('/api/Keszetelek', id, 'Készétel törlése sikertelen');
 }
 
-export function createMeal({ nev, leiras, elerheto, katid, ar, kepFile }) {
+
+export function createMeal({ nev, leiras, elerheto, kategoriaId, ar, kepFile }) {
 	return mutate({
 		method: 'POST',
 		endpoint: '/api/Keszetelek',
-		params: { nev, leiras, ar, elerheto, katid },
+		params: { nev, leiras, ar, elerheto, kategoriaId },
 		kepFile,
 		fallbackError: 'Készétel létrehozása sikertelen',
 	});
@@ -435,11 +436,7 @@ export function createSide({ nev, leiras, elerheto, ar, kepFile }) {
 // ---------------------------------------------------------------------------
 
 export function updateMenu({ id, menuNev, keszetelId, koretId, uditoId, elerheto, ar, kepFile }) {
-	const params = { id, menuNev, keszetelId, koretId, elerheto, ar };
-	// uditoId can be NULL — only include when set.
-	if (uditoId != null && String(uditoId).trim() !== '') {
-		params.uditoId = uditoId;
-	}
+	const params = { id, menuNev, keszetelId, koretId, uditoId, elerheto, ar };
 	return mutate({ method: 'PUT', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Menü frissítése sikertelen' });
 }
 
@@ -449,10 +446,7 @@ export function deleteMenu(id) {
 }
 
 export function createMenu({ menuNev, ar, keszetelId, koretId, uditoId, elerheto, kepFile }) {
-	const params = { menuNev, ar, keszetelId, koretId, elerheto };
-	if (uditoId != null && String(uditoId).trim() !== '') {
-		params.uditoId = uditoId;
-	}
+	const params = { menuNev, ar, keszetelId, koretId, uditoId, elerheto };
 	return mutate({ method: 'POST', endpoint: '/api/Menuk', params, kepFile, fallbackError: 'Menü létrehozása sikertelen' });
 }
 
