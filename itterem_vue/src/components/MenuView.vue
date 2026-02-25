@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { getCategories, getDrinks, getMeals, getMenus, getSides } from '../api.js';
-import { findByIdOrName, getItemTypeLabel, toImageSrc } from '../utils.js';
+import { findById, getItemTypeLabel, toImageSrc } from '../utils.js';
 
 const emit = defineEmits(['open-item', 'add-to-cart']);
 
@@ -59,22 +59,28 @@ function getItemImage(item) {
 
 function getMenuMeta(menu) {
 	const parts = [];
-	const meal = menu?.keszetelNev;
-	const side = menu?.koretNev;
-	const drink = menu?.uditoNev;
-	if (meal) parts.push(String(meal));
-	if (side) parts.push(String(side));
-	if (drink) parts.push(String(drink));
+	const meal = findById(meals.value, menu?.keszetelId);
+	const side = findById(sides.value, menu?.koretId);
+	const drink = findById(drinks.value, menu?.uditoId);
+
+	const mealName = String(meal?.nev ?? '').trim();
+	const sideName = String(side?.nev ?? '').trim();
+	const drinkName = String(drink?.nev ?? '').trim();
+
+	if (mealName) parts.push(mealName);
+	if (sideName) parts.push(sideName);
+	if (drinkName) parts.push(drinkName);
 	return parts.join(' • ');
 }
 
 function buildMenuBreakdown(menu) {
-	const meal = findByIdOrName(meals.value, menu?.keszetelId, menu?.keszetelNev);
-	const side = findByIdOrName(sides.value, menu?.koretId, menu?.koretNev);
+	const meal = findById(meals.value, menu?.keszetelId);
+	const side = findById(sides.value, menu?.koretId);
+	const drink = findById(drinks.value, menu?.uditoId);
 
-	const mealName = String(menu?.keszetelNev ?? meal?.nev ?? '-');
-	const sideName = String(menu?.koretNev ?? side?.nev ?? '-');
-	const drinkName = String(menu?.uditoNev ?? '-');
+	const mealName = String(meal?.nev ?? '-');
+	const sideName = String(side?.nev ?? '-');
+	const drinkName = String(drink?.nev ?? '-');
 
 	const mealDescription = String(meal?.leiras ?? '').trim() || '-';
 	const sideDescription = String(side?.leiras ?? '').trim() || '-';

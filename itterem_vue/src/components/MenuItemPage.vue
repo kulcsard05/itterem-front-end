@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { findByIdOrName, getItemTypeLabel, readListCache, readFirstText } from '../utils.js';
+import { getItemTypeLabel, readFirstText } from '../utils.js';
 
 const props = defineProps({
 	itemData: {
@@ -51,40 +51,7 @@ const menuBreakdown = computed(() => {
 		}));
 	}
 
-	const menu = props.itemData?.item ?? {};
-	const cachedMeals = readListCache('/api/Keszetelek');
-	const cachedSides = readListCache('/api/Koretek');
-
-	const matchedMeal = findByIdOrName(cachedMeals, menu?.keszetelId, menu?.keszetelNev);
-	const matchedSide = findByIdOrName(cachedSides, menu?.koretId, menu?.koretNev);
-
-	const mealName = readFirstText([menu?.keszetelNev, matchedMeal?.nev]) || '-';
-	const sideName = readFirstText([menu?.koretNev, matchedSide?.nev]) || '-';
-	const drinkName = readFirstText([menu?.uditoNev]) || '-';
-
-	const mealDescription = readFirstText([matchedMeal?.leiras]) || '-';
-	const sideDescription = readFirstText([matchedSide?.leiras]) || '-';
-
-	return [
-		{
-			key: 'meal',
-			label: 'Készétel',
-			name: mealName,
-			description: mealDescription,
-		},
-		{
-			key: 'side',
-			label: 'Köret',
-			name: sideName,
-			description: sideDescription,
-		},
-		{
-			key: 'drink',
-			label: 'Üditő',
-			name: drinkName,
-			description: '',
-		},
-	];
+	return [];
 });
 
 function addToCart() {

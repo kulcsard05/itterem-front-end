@@ -2,9 +2,7 @@ import {
 	AUTH_EXPIRED_MESSAGE,
 	clearStoredAuth,
 	getApiBaseUrl,
-	readListCache,
 	readStoredAuth,
-	writeListCache,
 } from './utils.js';
 
 // ---------------------------------------------------------------------------
@@ -187,7 +185,7 @@ export function updatePhone({ id, telefonszam }) {
 }
 
 // ---------------------------------------------------------------------------
-// GET lists (with localStorage cache fallback)
+// GET lists
 // ---------------------------------------------------------------------------
 
 async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) {
@@ -208,8 +206,6 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 				throw new Error(AUTH_EXPIRED_MESSAGE);
 			}
 
-			const cached = readListCache(endpointPath);
-			if (cached.length > 0) return cached;
 			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
 		}
 
@@ -227,15 +223,11 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 			}
 		}
 
-		writeListCache(endpointPath, list);
 		return list;
 	} catch (error) {
 		if (error instanceof Error && error.message === AUTH_EXPIRED_MESSAGE) {
 			throw error;
 		}
-
-		const cached = readListCache(endpointPath);
-		if (cached.length > 0) return cached;
 		if (error instanceof Error) throw error;
 		throw new Error(fallbackErrorMessage);
 	}

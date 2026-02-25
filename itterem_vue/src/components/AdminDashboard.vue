@@ -49,7 +49,7 @@ import {
 	validateAll,
 } from '../admin-helpers.js';
 
-import { formatDateTime, formatOrderItems, getImageSrcFromItem } from '../utils.js';
+import { formatDateTime, formatOrderItems, getEntityNameById, getImageSrcFromItem } from '../utils.js';
 
 // ── Events ──────────────────────────────────────────────────────
 const emit = defineEmits(['back', 'logout']);
@@ -87,43 +87,21 @@ function clearFeedback() {
 	actionSuccess.value = '';
 }
 
-function resolveIdByName(list, name, nameKeys = ['nev']) {
-	const n = String(name ?? '')
-		.trim()
-		.toLowerCase();
-	if (!n) return null;
-	const found = (Array.isArray(list) ? list : []).find((item) =>
-		nameKeys.some(
-			(key) =>
-				String(item?.[key] ?? '')
-					.trim()
-					.toLowerCase() === n,
-		),
-	);
-	return found?.id ?? null;
-}
-
 function getMealCategoryId(meal) {
 	const directId = meal?.kategoriaId ?? null;
 	return directId != null ? directId : null;
 }
 
 function getMenuMealId(menu) {
-	const directId = menu?.keszetelId ?? null;
-	if (directId != null) return directId;
-	return resolveIdByName(keszetelek.value, menu?.keszetelNev);
+	return menu?.keszetelId ?? null;
 }
 
 function getMenuSideId(menu) {
-	const directId = menu?.koretId ?? null;
-	if (directId != null) return directId;
-	return resolveIdByName(koretek.value, menu?.koretNev);
+	return menu?.koretId ?? null;
 }
 
 function getMenuDrinkId(menu) {
-	const directId = menu?.uditoId ?? null;
-	if (directId != null) return directId;
-	return resolveIdByName(uditok.value, menu?.uditoNev);
+	return menu?.uditoId ?? null;
 }
 
 function getMealCategoryName(meal) {
@@ -543,14 +521,14 @@ const rendelesek = computed(() =>
 	}),
 );
 
-// Menus need enrichment (display names for FK references)
+// Menus need enrichment (display names resolved from current local FK arrays)
 const menuk = computed(() =>
 	(menukRaw.value || []).map((menu) => ({
 		...menu,
 		menuDisplayName: String(menu?.menuNev ?? '-'),
-		keszetel: String(menu?.keszetelNev ?? '-'),
-		koret: String(menu?.koretNev ?? '-'),
-		udito: String(menu?.uditoNev ?? '-'),
+		keszetel: getEntityNameById(keszetelek.value, getMenuMealId(menu)),
+		koret: getEntityNameById(koretek.value, getMenuSideId(menu)),
+		udito: getEntityNameById(uditok.value, getMenuDrinkId(menu)),
 	})),
 );
 
