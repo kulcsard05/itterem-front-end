@@ -1,9 +1,9 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import Login from './Login.vue';
 import Register from './Register.vue';
 import { getOwnOrders, updatePhone } from '../api.js';
-import { formatDateTime, formatOrderItems, getOrderStatusClasses, isValidPhone, parseJwt } from '../utils.js';
+import { formatDateTime, formatOrderItems, getApiBaseUrl, getOrderStatusClasses, isValidPhone, parseJwt } from '../utils.js';
 
 const props = defineProps({
 	auth: { type: Object, default: null },
@@ -20,6 +20,160 @@ const phoneSaving = ref(false);
 const ownOrders = ref([]);
 const ordersLoading = ref(false);
 const ordersError = ref('');
+
+// DEV helper: make it obvious that status changes arrived via SSE.
+const showSseDebug = import.meta.env.DEV;
+
+const statusSseState = ref('idle'); // idle | connecting | open | error
+const statusSseLastEventAt = ref(null);
+const statusSseLastError = ref('');
+const statusSseSeen = ref(new Map()); // orderId -> timestamp(ms)
+
+const orderDoneNotice = ref('');
+let noticeTimer = null;
+
+let statusSseClient = null;
+let statusSseReconnectTimer = null;
+let statusSseReconnectAttempt = 0;
+
+function markStatusSseOrder(orderId) {
+	const key = String(orderId ?? '').trim();
+	if (!key) return;
+	const next = new Map(statusSseSeen.value);
+	next.set(key, Date.now());
+	if (next.size > 300) {
+		const sorted = Array.from(next.entries()).sort((a, b) => a[1] - b[1]);
+		for (let i = 0; i < sorted.length - 250; i += 1) next.delete(sorted[i][0]);
+	}
+	statusSseSeen.value = next;
+}
+
+function isStatusSseMarked(orderId) {
+	const key = String(orderId ?? '').trim();
+	if (!key) return false;
+	const ts = statusSseSeen.value.get(key);
+	if (!ts) return false;
+	return Date.now() - ts < 90_000;
+}
+
+function showDoneNotice(message) {
+	orderDoneNotice.value = String(message ?? '').trim();
+	if (noticeTimer != null) window.clearTimeout(noticeTimer);
+	noticeTimer = window.setTimeout(() => {
+		orderDoneNotice.value = '';
+		noticeTimer = null;
+	}, 8000);
+}
+
+function stopStatusSse() {
+	if (statusSseReconnectTimer != null) {
+		window.clearTimeout(statusSseReconnectTimer);
+		statusSseReconnectTimer = null;
+	}
+	if (statusSseClient) {
+		try {
+			statusSseClient.close();
+		} catch {
+			// ignore
+		}
+		statusSseClient = null;
+	}
+}
+
+function scheduleStatusSseReconnect() {
+	if (statusSseReconnectTimer != null) return;
+	statusSseReconnectAttempt += 1;
+	const delay = Math.min(30_000, 750 * 2 ** Math.min(6, statusSseReconnectAttempt));
+	statusSseReconnectTimer = window.setTimeout(() => {
+		statusSseReconnectTimer = null;
+		startStatusSse();
+	}, delay);
+}
+
+function buildStatusSseUrl() {
+	const baseUrl = getApiBaseUrl();
+	const base = String(baseUrl ?? '').replace(/\/+$/, '');
+	// Intentionally WITHOUT token: backend endpoint is anonymous per your controller.
+	return `${base}/api/Rendelesek/status-stream`;
+}
+
+const ownOrderIdSet = computed(() => {
+	const set = new Set();
+	for (const o of Array.isArray(ownOrders.value) ? ownOrders.value : []) {
+		const id = String(o?.id ?? '').trim();
+		if (id) set.add(id);
+	}
+	return set;
+});
+
+function startStatusSse() {
+	if (!showSseDebug) return;
+	if (!props.auth?.token) {
+		statusSseState.value = 'idle';
+		statusSseLastError.value = '';
+		return;
+	}
+
+	stopStatusSse();
+	statusSseState.value = 'connecting';
+	statusSseLastError.value = '';
+
+	const url = buildStatusSseUrl();
+	try {
+		statusSseClient = new EventSource(url);
+	} catch (err) {
+		statusSseState.value = 'error';
+		statusSseLastError.value = err?.message || 'EventSource létrehozása sikertelen.';
+		scheduleStatusSseReconnect();
+		return;
+	}
+
+	statusSseClient.onopen = () => {
+		statusSseState.value = 'open';
+		statusSseReconnectAttempt = 0;
+		statusSseLastEventAt.value = Date.now();
+	};
+
+	statusSseClient.onmessage = (event) => {
+		statusSseState.value = 'open';
+		statusSseLastError.value = '';
+		statusSseLastEventAt.value = Date.now();
+
+		const raw = String(event?.data ?? '').trim();
+		if (!raw) return;
+
+		let payload = null;
+		try {
+			payload = JSON.parse(raw);
+		} catch {
+			payload = raw;
+		}
+
+		const orderId = payload?.id ?? payload?.orderId ?? payload?.order?.id ?? null;
+		const status = String(payload?.statusz ?? payload?.status ?? payload?.order?.statusz ?? '').trim();
+		if (orderId != null) markStatusSseOrder(orderId);
+
+		const normalizedId = String(orderId ?? '').trim();
+		if (!normalizedId) return;
+		if (!ownOrderIdSet.value.has(normalizedId)) return;
+
+		if (status === 'Átvehető' || status === 'Teljesítve') {
+			showDoneNotice(`A rendelésed elkészült: #${normalizedId} (${status}) — SSE`);
+		}
+	};
+
+	statusSseClient.onerror = () => {
+		statusSseState.value = 'error';
+		statusSseLastError.value = 'SSE kapcsolat hiba (újracsatlakozás...)';
+		try {
+			statusSseClient?.close?.();
+		} catch {
+			// ignore
+		}
+		statusSseClient = null;
+		scheduleStatusSseReconnect();
+	};
+}
 
 function getPhoneFromAuth(auth) {
 	if (!auth) return '';
@@ -138,9 +292,19 @@ watch(
 	() => props.auth?.token,
 	() => {
 		loadOwnOrders();
+		startStatusSse();
 	},
 	{ immediate: true },
 );
+
+onMounted(() => {
+	startStatusSse();
+});
+
+onUnmounted(() => {
+	stopStatusSse();
+	if (noticeTimer != null) window.clearTimeout(noticeTimer);
+});
 </script>
 
 <template>
@@ -216,7 +380,34 @@ watch(
 			</div>
 
 			<div class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-				<h2 class="text-base font-semibold text-gray-900">Rendeléseim</h2>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<h2 class="text-base font-semibold text-gray-900">Rendeléseim</h2>
+					<!-- DEV: status SSE indicator (moved next to orders) -->
+					<div
+						v-if="showSseDebug && props.auth && props.auth.token"
+						class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-[11px] font-semibold tracking-wider text-gray-900 ring-1 ring-gray-300"
+						role="status"
+						aria-live="polite"
+						title="SSE státusz stream"
+					>
+						<span
+							class="inline-flex h-2.5 w-2.5 rounded-full"
+							:class="statusSseState === 'open' ? 'bg-green-500' : statusSseState === 'connecting' ? 'bg-yellow-500' : statusSseState === 'idle' ? 'bg-gray-400' : 'bg-red-500'"
+						/>
+						<span>AZONNALI FRISSÍTÉS</span>
+						<span v-if="statusSseLastEventAt" class="font-semibold text-gray-600">({{ new Date(statusSseLastEventAt).toLocaleTimeString('hu-HU') }})</span>
+						<span v-if="statusSseLastError" class="ml-2 font-semibold text-red-700">{{ statusSseLastError }}</span>
+					</div>
+				</div>
+
+				<div
+					v-if="orderDoneNotice"
+					class="mt-3 rounded-md border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-900"
+					role="status"
+					aria-live="polite"
+				>
+					{{ orderDoneNotice }}
+				</div>
 
 				<p v-if="ordersLoading" class="mt-3 text-sm text-gray-600">Rendelések betöltése…</p>
 				<p v-else-if="ordersError" class="mt-3 text-sm text-red-600">{{ ordersError }}</p>
@@ -231,7 +422,16 @@ watch(
 						class="rounded-md border border-gray-200 bg-white p-3"
 					>
 						<div class="flex flex-wrap items-center justify-between gap-2">
-							<div class="text-sm font-semibold text-gray-900">#{{ order.id }}</div>
+							<div class="flex items-center gap-2">
+								<div class="text-sm font-semibold text-gray-900">#{{ order.id }}</div>
+								<span
+									v-if="showSseDebug && isStatusSseMarked(order.id)"
+									class="inline-flex items-center rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white"
+									title="Ez a rendelés SSE esemény miatt frissült"
+								>
+									SSE
+								</span>
+							</div>
 							<div class="text-sm text-gray-600">{{ formatDateTime(order.datum) }}</div>
 						</div>
 							<div class="mt-1 flex items-center gap-2 text-sm text-gray-700">

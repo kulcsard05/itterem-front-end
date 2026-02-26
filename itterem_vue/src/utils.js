@@ -14,6 +14,9 @@ function stripTrailingSlashes(value) {
  */
 export function getApiBaseUrl() {
 	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
+	// In dev, prefer same-origin requests so Vite's `/api` proxy can handle HTTPS backend + CORS.
+	// This makes EventSource/SSE work reliably without backend CORS tweaks.
+	if (envBaseUrl === undefined && import.meta.env.DEV) return '';
 	return stripTrailingSlashes(envBaseUrl !== undefined ? envBaseUrl : DEFAULT_API_BASE_URL);
 }
 

@@ -28,6 +28,17 @@
 
 - [ ] **Kedvencek funkció**: Étel/ital kedvencnek jelölése, külön „Kedvencek" oldal.
 - [ ] **Push / in-app értesítések**: Rendelés állapotának változásakor értesítés a felhasználónak.
+- [ ] **SSE auth átalakítás cookie-ra (később)**:
+  - Jelenleg (dev) az SSE `EventSource` JWT-t query paramként kap: `?access_token=...`.
+  - Cél: httpOnly cookie alapú auth SSE-hez (EventSource header nélkül is működik).
+  - Backend:
+    - Login után állítson be httpOnly sütit (pl. `Set-Cookie: access_token=...; HttpOnly; Secure; SameSite=None` vagy `Lax` dev/prod szerint).
+    - CORS: `AllowCredentials()` + explicit origin (nem lehet `*`).
+    - SSE endpointoknál a cookie-ból olvassa a tokent/identitást (vagy cookie auth scheme).
+  - Frontend:
+    - `EventSource(url, { withCredentials: true })`.
+    - Fetch kéréseknél opcionálisan átállás cookie auth-ra (vagy marad Bearer header, de akkor kétféle auth lesz).
+  - Megjegyzés: query param token kerülhet logokba/analyticsba; cookie-s megoldás tisztább hosszú távon.
 - [ ] **Sötét téma**: Tailwind `dark:` osztályok hozzáadása a fő komponensekhez.
 - [ ] **PWA támogatás**: `vite-plugin-pwa` és `manifest.json` konfigurálása offline elérhetőséghez.
 - [ ] **tailwind.config.cjs törlése**: A Tailwind v4 nem olvassa a config fájlt (az `@tailwindcss/postcss` plugint használja). A fájl dead code, törölhető ha nem tervez visszaváltást v3-ra.

@@ -125,6 +125,11 @@ function handleLoginSuccess(user) {
 	localStorage.setItem('auth', JSON.stringify(user));
 	auth.value = user;
 
+	if (Number(user?.jogosultsag) === 2) {
+		router.push({ name: 'employee-orders' });
+		return;
+	}
+
 	// If the logged-in user isn't admin, redirect away from admin.
 	if (Number(user?.jogosultsag) !== 3 && route.name === 'admin') {
 		router.push({ name: 'menu' });
@@ -139,10 +144,16 @@ function handleLogout() {
 
 const isLoggedIn = computed(() => Boolean(auth.value && auth.value.token));
 const isAdmin = computed(() => Number(auth.value?.jogosultsag) === 3);
+const isEmployee = computed(() => Number(auth.value?.jogosultsag) === 2);
 
 watch(
 	() => auth.value,
 	() => {
+		if (isEmployee.value && route.name !== 'employee-orders') {
+			router.push({ name: 'employee-orders' });
+			return;
+		}
+
 		if (!isAdmin.value && route.name === 'admin') {
 			router.push({ name: 'menu' });
 		}
@@ -203,7 +214,7 @@ function goAbout() {
 
 <template>
 	<div class="flex min-h-screen flex-col">
-		<header class="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur">
+		<header v-if="!isEmployee" class="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur">
 			<div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
 				<button type="button" class="text-lg font-bold text-gray-900" @click="goMenu">Itterem</button>
 
@@ -289,6 +300,8 @@ function goAbout() {
 					v-bind="
 						currentRoute.name === 'account'
 							? { auth }
+							: currentRoute.name === 'employee-orders'
+								? { auth }
 							: currentRoute.name === 'menu-item'
 								? { itemData: selectedMenuItem }
 								: {}
@@ -302,10 +315,10 @@ function goAbout() {
 			</router-view>
 		</main>
 
-		<CartDrawer :open="cartOpen" :auth="auth" @close="cartOpen = false" />
+		<CartDrawer v-if="!isEmployee" :open="cartOpen" :auth="auth" @close="cartOpen = false" />
 
 		<!-- Footer -->
-		<footer class="mt-auto border-t border-gray-200 bg-gray-50">
+		<footer v-if="!isEmployee" class="mt-auto border-t border-gray-200 bg-gray-50">
 			<div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
 				<div class="grid gap-10 md:grid-cols-2 lg:grid-cols-3">
 
