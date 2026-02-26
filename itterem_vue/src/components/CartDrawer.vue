@@ -53,7 +53,8 @@ async function submitOrder() {
 	orderSuccessMessage.value = '';
 
 	try {
-		const result = await withTimeout(placeOrder(resolvedUserId.value, buildOrderItems()), 15000);
+		const orderItems = buildOrderItems();
+		const result = await withTimeout(placeOrder(resolvedUserId.value, orderItems), 15000);
 		if (result.ok) {
 			const apiMessage = typeof result?.data?.message === 'string' ? result.data.message.trim() : '';
 			const orderId = result?.data?.orderId;

@@ -64,13 +64,16 @@ async function onSubmit() {
 		return;
 	}
 	loading.value = true;
+	const trimmedFullName = fullName.value.trim();
+	const trimmedEmail = email.value.trim();
+	const trimmedPhone = phone.value.trim();
 
 	try {
 		const result = await register({
-			teljesNev: fullName.value.trim(),
-			email: email.value.trim(),
+			teljesNev: trimmedFullName,
+			email: trimmedEmail,
 			password: password.value,
-			telefonSzam: phone.value.trim(),
+			telefonSzam: trimmedPhone,
 		});
 
 		if (result.ok) {

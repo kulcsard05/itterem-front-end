@@ -106,7 +106,7 @@ function toggleForm() {
 // formatDateTime / formatOrderItems moved to utils.js
 
 const displayedOrders = computed(() =>
-	(ownOrders.value || []).slice().sort((a, b) => {
+	[...(Array.isArray(ownOrders.value) ? ownOrders.value : [])].sort((a, b) => {
 		const ta = new Date(a?.datum ?? 0).getTime();
 		const tb = new Date(b?.datum ?? 0).getTime();
 		return tb - ta;

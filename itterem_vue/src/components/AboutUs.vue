@@ -70,7 +70,7 @@
 </template>
 
 <script setup>
-const team = [
+const team = Object.freeze([
 	{
 		name: 'Kovács Péter',
 		role: 'Alapító & Séf',
@@ -89,5 +89,5 @@ const team = [
 		emoji: '🍰',
 		bio: 'Egyedi desszertjeivel minden látogatást emlékezetessé tesz.',
 	},
-];
+]);
 </script>

@@ -13,5 +13,4 @@ app.config.errorHandler = (err, instance, info) => {
 	// You can extend this with a global toast / error-banner store later.
 };
 
-app.use(router);
-app.mount('#app');
+app.use(router).mount('#app');

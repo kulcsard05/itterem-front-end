@@ -15,6 +15,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save', 'image-selected', 'update:form']);
 
 function updateField(key, value) {
+	if (props.form?.[key] === value) return;
 	emit('update:form', { ...props.form, [key]: value });
 }
 </script>

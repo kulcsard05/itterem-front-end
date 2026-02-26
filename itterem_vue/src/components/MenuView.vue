@@ -123,9 +123,10 @@ function getItemDescription(type, item, categoryName = '') {
 }
 
 function openItem(type, item, categoryName = '') {
+	const typeLabel = getItemTypeLabel(type);
 	emit('open-item', {
 		type,
-		typeLabel: getItemTypeLabel(type),
+		typeLabel,
 		item,
 		name: getItemName(type, item),
 		description: getItemDescription(type, item, categoryName),
@@ -138,9 +139,10 @@ function openItem(type, item, categoryName = '') {
 
 function quickAddToCart(event, type, item, categoryName = '') {
 	event.stopPropagation();
+	const typeLabel = getItemTypeLabel(type);
 	emit('add-to-cart', {
 		type,
-		typeLabel: getItemTypeLabel(type),
+		typeLabel,
 		id: item?.id,
 		item,
 		name: getItemName(type, item),

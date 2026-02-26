@@ -34,8 +34,7 @@ const routes = [
 		component: AdminDashboard,
 		beforeEnter: () => {
 			const auth = readStoredAuth();
-			if (auth && auth.token && Number(auth.jogosultsag) === 3) return true;
-			return { name: 'menu' };
+			return auth?.token && Number(auth.jogosultsag) === 3 ? true : { name: 'menu' };
 		},
 	},
 	{

@@ -6,14 +6,14 @@ defineProps({
 	loading: { type: Boolean, default: false },
 });
 
-defineEmits(['confirm', 'cancel']);
+const emit = defineEmits(['confirm', 'cancel']);
 </script>
 
 <template>
 	<div
 		v-if="show"
 		class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1100] p-5"
-		@click.self="$emit('cancel')"
+		@click.self="emit('cancel')"
 	>
 		<div class="bg-white rounded-2xl shadow-xl max-w-md w-full animate-fade-in">
 			<div class="p-6">
@@ -25,14 +25,14 @@ defineEmits(['confirm', 'cancel']);
 				<button
 					class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition cursor-pointer"
 					:disabled="loading"
-					@click="$emit('cancel')"
+					@click="emit('cancel')"
 				>
 					Mégse
 				</button>
 				<button
 					class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-red-600 text-white hover:bg-red-700 transition cursor-pointer disabled:opacity-50"
 					:disabled="loading"
-					@click="$emit('confirm')"
+					@click="emit('confirm')"
 				>
 					{{ loading ? 'Törlés…' : 'Törlés' }}
 				</button>

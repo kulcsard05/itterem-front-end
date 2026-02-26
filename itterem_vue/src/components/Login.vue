@@ -47,9 +47,10 @@ async function onSubmit() {
 		return;
 	}
 	loading.value = true;
+	const trimmedEmail = email.value.trim();
 
 	try {
-		const result = await login(email.value.trim(), password.value);
+		const result = await login(trimmedEmail, password.value);
 		if (result.ok) {
 			emit('login-success', result.user);
 		} else {

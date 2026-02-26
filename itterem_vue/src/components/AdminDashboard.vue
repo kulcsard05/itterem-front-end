@@ -107,7 +107,8 @@ function getMenuDrinkId(menu) {
 
 function getMealCategoryName(meal) {
 	const catId = getMealCategoryId(meal);
-	const found = kategoriak.value.find((c) => String(c?.id ?? '') === String(catId ?? ''));
+	const list = kategoriak.value;
+	const found = list.find((c) => String(c?.id ?? '') === String(catId ?? ''));
 	return String(found?.nev ?? '-');
 }
 
@@ -132,8 +133,7 @@ onUnmounted(() => {
 const showImageUploadSection = computed(() => entityConfigs[editType.value]?.hasImage ?? false);
 
 const displayedImagePreview = computed(() => {
-	if (selectedImagePreviewUrl.value) return selectedImagePreviewUrl.value;
-	return (editForm.value?.currentImageUrl ?? '').trim();
+	return selectedImagePreviewUrl.value || String(editForm.value?.currentImageUrl ?? '').trim();
 });
 
 function onEditImageSelected(event) {
@@ -515,7 +515,7 @@ const tabs = [
 ];
 
 const rendelesek = computed(() =>
-	(rendelesekRaw.value || []).slice().sort((a, b) => {
+	[...(Array.isArray(rendelesekRaw.value) ? rendelesekRaw.value : [])].sort((a, b) => {
 		const ta = new Date(a?.datum ?? 0).getTime();
 		const tb = new Date(b?.datum ?? 0).getTime();
 		return tb - ta;

@@ -60,13 +60,13 @@ export function useCart() {
 		if (!id || !getOrderItemIdKey(type)) return;
 
 		const typeLabel = String(itemData?.typeLabel ?? '').trim() || getItemTypeLabel(type);
-
-		const existing = items.value.find((c) => c.type === type && c.id === id);
+		const list = items.value;
+		const existing = list.find((c) => c.type === type && c.id === id);
 		if (existing) {
 			existing.quantity += 1;
 			if (!String(existing.typeLabel ?? '').trim()) existing.typeLabel = typeLabel;
 		} else {
-			items.value.push({
+			list.push({
 				type,
 				typeLabel,
 				id,
@@ -76,30 +76,32 @@ export function useCart() {
 				quantity: 1,
 			});
 		}
-		saveToStorage(items.value);
+		saveToStorage(list);
 	}
 
 	/**
 	 * Remove one unit of an item from the cart.
 	 */
 	function decrementItem(type, id) {
-		const idx = items.value.findIndex((c) => c.type === type && c.id === id);
+		const list = items.value;
+		const idx = list.findIndex((c) => c.type === type && c.id === id);
 		if (idx === -1) return;
-		if (items.value[idx].quantity > 1) {
-			items.value[idx].quantity -= 1;
+		if (list[idx].quantity > 1) {
+			list[idx].quantity -= 1;
 		} else {
-			items.value.splice(idx, 1);
+			list.splice(idx, 1);
 		}
-		saveToStorage(items.value);
+		saveToStorage(list);
 	}
 
 	/**
 	 * Remove an item from the cart entirely regardless of quantity.
 	 */
 	function removeItem(type, id) {
-		const idx = items.value.findIndex((c) => c.type === type && c.id === id);
-		if (idx !== -1) items.value.splice(idx, 1);
-		saveToStorage(items.value);
+		const list = items.value;
+		const idx = list.findIndex((c) => c.type === type && c.id === id);
+		if (idx !== -1) list.splice(idx, 1);
+		saveToStorage(list);
 	}
 
 	/**

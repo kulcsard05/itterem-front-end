@@ -31,9 +31,9 @@ const itemType = computed(() => props.itemData?.type ?? 'item');
 
 const itemTypeLabel = computed(() => String(props.itemData?.typeLabel ?? '').trim() || getItemTypeLabel(itemType.value));
 
-const hideDescriptionTypes = new Set(['menus', 'menu', 'drinks', 'drink']);
+const HIDE_DESCRIPTION_TYPES = new Set(['menus', 'menu', 'drinks', 'drink']);
 const showDescription = computed(() => {
-	return !hideDescriptionTypes.has(itemType.value.toLowerCase());
+	return !HIDE_DESCRIPTION_TYPES.has(itemType.value.toLowerCase());
 });
 
 const isMenuType = computed(() => itemType.value === 'menus' || itemType.value === 'menu');

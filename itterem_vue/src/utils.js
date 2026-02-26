@@ -5,7 +5,7 @@
 const DEFAULT_API_BASE_URL = 'https://localhost:7200';
 
 function stripTrailingSlashes(value) {
-	return String(value || '').replace(/\/+$/, '');
+	return String(value ?? '').replace(/\/+$/, '');
 }
 
 /**
@@ -14,8 +14,7 @@ function stripTrailingSlashes(value) {
  */
 export function getApiBaseUrl() {
 	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
-	if (envBaseUrl !== undefined) return stripTrailingSlashes(envBaseUrl);
-	return stripTrailingSlashes(DEFAULT_API_BASE_URL);
+	return stripTrailingSlashes(envBaseUrl !== undefined ? envBaseUrl : DEFAULT_API_BASE_URL);
 }
 
 // ---------------------------------------------------------------------------
@@ -28,8 +27,7 @@ export function getApiBaseUrl() {
  * @returns {boolean}
  */
 export function isValidEmail(value) {
-	const v = String(value || '').trim();
-	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? '').trim());
 }
 
 /**
@@ -38,11 +36,9 @@ export function isValidEmail(value) {
  * @returns {boolean}
  */
 export function isValidPhone(value) {
-	const raw = String(value || '').trim();
-	if (!raw) return false;
-	if (!/^[0-9+()\-\s.]+$/.test(raw)) return false;
-	const digits = raw.replace(/\D/g, '');
-	return digits.length >= 7;
+	const raw = String(value ?? '').trim();
+	if (!raw || !/^[0-9+()\-\s.]+$/.test(raw)) return false;
+	return raw.replace(/\D/g, '').length >= 7;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +80,7 @@ function decodeBase64Url(value) {
  */
 export function parseJwt(token) {
 	try {
-		const raw = String(token || '').trim();
+		const raw = String(token ?? '').trim();
 		if (!raw) return null;
 
 		const parts = raw.split('.');
@@ -178,9 +174,8 @@ export function clearStoredAuth(options = {}) {
 export function findById(list, idValue) {
 	const normalizedId = String(idValue ?? '').trim();
 	if (!normalizedId) return null;
-	return (
-		(Array.isArray(list) ? list : []).find((item) => String(item?.id ?? '').trim() === normalizedId) ?? null
-	);
+	const items = Array.isArray(list) ? list : [];
+	return items.find((item) => String(item?.id ?? '').trim() === normalizedId) ?? null;
 }
 
 /**
@@ -271,8 +266,7 @@ export function getOrderStatusClasses(status) {
 export function formatDateTime(value, locale = 'hu-HU') {
 	if (!value) return '-';
 	const d = new Date(value);
-	if (Number.isNaN(d.getTime())) return String(value);
-	return d.toLocaleString(locale);
+	return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString(locale);
 }
 
 // ---------------------------------------------------------------------------

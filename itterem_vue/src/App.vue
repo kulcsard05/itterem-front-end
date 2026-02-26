@@ -75,17 +75,11 @@ try {
 function onStorageChange(event) {
 	if (event.key !== 'auth') return;
 	const next = readStoredAuth();
-	if (!next || !next.token) {
-		handleLogout();
-		return;
-	}
-
-	if (isJwtExpired(next.token)) {
-		handleLogout();
-		return;
-	}
-
-	if (auth.value && String(next.jogosultsag) !== String(auth.value.jogosultsag)) {
+	if (
+		!next?.token ||
+		isJwtExpired(next.token) ||
+		(auth.value && String(next.jogosultsag) !== String(auth.value.jogosultsag))
+	) {
 		handleLogout();
 	}
 }
@@ -107,19 +101,14 @@ function clearAuthExpiryTimer() {
 function scheduleAuthExpiry(token) {
 	clearAuthExpiryTimer();
 	if (!token) return;
-
-	if (isJwtExpired(token)) {
+	const expiryMs = getJwtExpirationMs(token);
+	if (expiryMs == null) return;
+	const delay = expiryMs - Date.now();
+	if (delay <= 0) {
 		handleLogout();
 		return;
 	}
-
-	const expiryMs = getJwtExpirationMs(token);
-	if (expiryMs == null) return;
-
-	const delay = Math.max(0, expiryMs - Date.now());
-	authExpiryTimer = window.setTimeout(() => {
-		handleLogout();
-	}, delay);
+	authExpiryTimer = window.setTimeout(handleLogout, delay);
 }
 
 onUnmounted(() => {

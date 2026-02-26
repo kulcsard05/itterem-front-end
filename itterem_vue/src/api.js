@@ -39,12 +39,11 @@ async function readJsonOrText(response) {
 	const raw = await response.text();
 
 	if (!raw) return '';
+	const trimmed = raw.trim();
 
 	const looksJson =
 		contentType.includes('application/json') ||
-		raw.trim().startsWith('{') ||
-		raw.trim().startsWith('[') ||
-		raw.trim().startsWith('"');
+		/^[\[{"]/.test(trimmed);
 
 	if (looksJson) {
 		try {
@@ -89,10 +88,9 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 	const baseUrl = getApiBaseUrl();
 
 	// Build query string — stringify every value so URLSearchParams is happy.
-	const searchParams = new URLSearchParams();
-	for (const [k, v] of Object.entries(params)) {
-		searchParams.set(k, String(v ?? ''));
-	}
+	const searchParams = new URLSearchParams(
+		Object.entries(params).map(([k, v]) => [k, String(v ?? '')]),
+	);
 
 	const url = `${baseUrl}${endpoint}?${searchParams.toString()}`;
 

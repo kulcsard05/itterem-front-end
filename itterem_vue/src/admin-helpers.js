@@ -62,8 +62,7 @@ export function parsePrice(value) {
 	const raw = String(value ?? '').trim();
 	if (!raw) return null;
 	const parsed = Number(raw);
-	if (!Number.isFinite(parsed) || parsed < 0) return null;
-	return Math.round(parsed);
+	return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
 
 /** Convert a price value to a form-friendly display string. */
@@ -88,8 +87,7 @@ export function normalizeAvailable(value) {
 
 /** Normalize a select value: null/undefined → '', otherwise String(). */
 export function normalizeSelectValue(value) {
-	if (value === null || value === undefined) return '';
-	return String(value);
+	return value == null ? '' : String(value);
 }
 
 /**
