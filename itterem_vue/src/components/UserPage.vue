@@ -106,6 +106,24 @@ const ownOrderIdSet = computed(() => {
 	return set;
 });
 
+function applyStatusUpdateToOwnOrders(orderId, nextStatus) {
+	const normalizedId = String(orderId ?? '').trim();
+	const status = String(nextStatus ?? '').trim();
+	if (!normalizedId || !status) return false;
+
+	const list = Array.isArray(ownOrders.value) ? ownOrders.value : [];
+	let changed = false;
+	const next = list.map((order) => {
+		if (String(order?.id ?? '').trim() !== normalizedId) return order;
+		if (String(order?.statusz ?? '').trim() === status) return order;
+		changed = true;
+		return { ...(order || {}), statusz: status };
+	});
+
+	if (changed) ownOrders.value = next;
+	return changed;
+}
+
 function startStatusSse() {
 	if (typeof EventSource === 'undefined') return;
 	if (!props.auth?.token) {
@@ -156,6 +174,9 @@ function startStatusSse() {
 		const normalizedId = String(orderId ?? '').trim();
 		if (!normalizedId) return;
 		if (!ownOrderIdSet.value.has(normalizedId)) return;
+
+		// Update the rendered list immediately (otherwise the UI keeps the old status).
+		applyStatusUpdateToOwnOrders(normalizedId, status);
 
 		if (status === 'Átvehető' || status === 'Teljesítve') {
 			showDoneNotice(`A rendelésed elkészült: #${normalizedId} (${status}) — SSE`);
