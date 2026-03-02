@@ -2,7 +2,15 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { getMeals, getMenus, getOrders, updateOrderStatus } from '../api.js';
-import { findById, formatDateTime, getApiBaseUrl, getOrderItemName, getOrderStatusClasses } from '../utils.js';
+import {
+	AUTH_EXPIRED_EVENT,
+	findById,
+	formatDateTime,
+	getApiBaseUrl,
+	getOrderItemName,
+	getOrderStatusClasses,
+	readStoredAuth,
+} from '../utils.js';
 
 const props = defineProps({
 	auth: { type: Object, default: null },
@@ -35,11 +43,19 @@ const sseSeen = ref(new Map()); // orderId -> timestamp(ms)
 const PANEL_PREFS_KEY = 'employeeOrdersPanelPrefs';
 
 let sseClient = null;
+let ordersSseAbortController = null;
+let statusSseAbortController = null;
 let sseReconnectTimer = null;
 let sseReconnectAttempt = 0;
 const ssePendingRefresh = ref(false);
 
 let sseOpenWatchdogTimer = null;
+
+function getSseToken() {
+	// NOTE: The route that renders this page does not pass `auth` as a prop.
+	// Our REST API helpers already read auth from localStorage, so SSE must do the same.
+	return props.auth?.token ?? readStoredAuth()?.token ?? null;
+}
 
 function formatClock(ts) {
 	try {
@@ -93,6 +109,22 @@ function stopEmployeeSse() {
 		window.clearTimeout(sseReconnectTimer);
 		sseReconnectTimer = null;
 	}
+	if (ordersSseAbortController) {
+		try {
+			ordersSseAbortController.abort();
+		} catch {
+			// ignore
+		}
+		ordersSseAbortController = null;
+	}
+	if (statusSseAbortController) {
+		try {
+			statusSseAbortController.abort();
+		} catch {
+			// ignore
+		}
+		statusSseAbortController = null;
+	}
 	if (sseClient) {
 		try {
 			sseClient.close();
@@ -116,12 +148,247 @@ function scheduleSseReconnect() {
 function buildSseUrl(path) {
 	const baseUrl = getApiBaseUrl();
 	const base = String(baseUrl ?? '').replace(/\/+$/, '');
-	// Intentionally WITHOUT token: backend stream currently returns 401 with token-based EventSource auth.
 	return `${base}${path}`;
 }
 
+function parseSseEventBlock(block) {
+	// Basic SSE parser: supports multi-line data, ignores id/retry.
+	// https://html.spec.whatwg.org/multipage/server-sent-events.html
+	const lines = String(block ?? '').split(/\r?\n/);
+	let event = '';
+	let data = '';
+	for (const line of lines) {
+		if (!line) continue;
+		if (line.startsWith(':')) continue; // comment / heartbeat
+		if (line.startsWith('event:')) {
+			const value = line.slice(6);
+			event = String(value.startsWith(' ') ? value.slice(1) : value).trim();
+			continue;
+		}
+		if (line.startsWith('data:')) {
+			const value = line.slice(5);
+			data += `${value.startsWith(' ') ? value.slice(1) : value}\n`;
+		}
+	}
+	// Per spec: final newline is removed.
+	if (data.endsWith('\n')) data = data.slice(0, -1);
+	return { data, event };
+}
+
+
+async function startFetchSse({ url, token, onOpen, onMessage, onError, onController }) {
+	const controller = new AbortController();
+	onController?.(controller);
+
+	try {
+		const response = await fetch(url, {
+			method: 'GET',
+			headers: {
+				accept: 'text/event-stream',
+				Authorization: `Bearer ${token}`,
+			},
+			signal: controller.signal,
+		});
+
+		if (!response.ok) {
+			throw new Error(`SSE HTTP hiba: ${response.status}`);
+		}
+
+		if (!response.body) {
+			throw new Error('SSE válasz body hiányzik.');
+		}
+
+		onOpen?.();
+
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder('utf-8');
+		let buffer = '';
+
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
+			// Normalize line endings so we can reliably split on blank lines.
+			buffer = buffer.replace(/\r\n/g, '\n');
+
+			// SSE events are separated by a blank line.
+			let idx;
+			while ((idx = buffer.indexOf('\n\n')) !== -1) {
+				const rawBlock = buffer.slice(0, idx);
+				buffer = buffer.slice(idx + 2);
+				const evt = parseSseEventBlock(rawBlock);
+				onMessage?.(evt);
+			}
+		}
+	} catch (err) {
+		// Ignore abort errors (expected on stop/unmount).
+		if (controller.signal.aborted) return;
+		onError?.(err);
+	}
+}
+
+function readText(value) {
+	return String(value ?? '').trim();
+}
+
+function normalizeOrderEntryDto(dto) {
+	if (!dto || typeof dto !== 'object') return null;
+	return {
+		id: dto?.id ?? dto?.Id ?? null,
+		rendelesId: dto?.rendelesId ?? dto?.RendelesId ?? null,
+		keszetelId: dto?.keszetelId ?? dto?.KeszetelId ?? null,
+		uditoId: dto?.uditoId ?? dto?.UditoId ?? null,
+		menuId: dto?.menuId ?? dto?.MenuId ?? null,
+		koretId: dto?.koretId ?? dto?.KoretId ?? null,
+		keszetelNev: dto?.keszetelNev ?? dto?.KeszetelNev ?? null,
+		uditoNev: dto?.uditoNev ?? dto?.UditoNev ?? null,
+		menuNev: dto?.menuNev ?? dto?.MenuNev ?? null,
+		koretNev: dto?.koretNev ?? dto?.KoretNev ?? null,
+		mennyiseg: dto?.mennyiseg ?? dto?.Mennyiseg ?? 0,
+	};
+}
+
+function normalizeOrderDto(dto) {
+	if (!dto || typeof dto !== 'object') return null;
+	const id = dto?.id ?? dto?.Id ?? null;
+	if (id == null) return null;
+	const entriesRaw = dto?.rendelesElemeks ?? dto?.RendelesElemeks ?? dto?.rendelesElemek ?? dto?.RendelesElemek ?? [];
+	const rendelesElemeks = (Array.isArray(entriesRaw) ? entriesRaw : [])
+		.map((e) => normalizeOrderEntryDto(e))
+		.filter(Boolean);
+
+	const status = readText(dto?.statusz ?? dto?.Statusz ?? dto?.status ?? dto?.Status);
+	return {
+		id,
+		felhasznaloId: dto?.felhasznaloId ?? dto?.FelhasznaloId ?? null,
+		osszesAr: dto?.osszesAr ?? dto?.OsszesAr ?? null,
+		datum: dto?.datum ?? dto?.Datum ?? null,
+		// Default new orders to pending when backend doesn't send status yet.
+		statusz: status || 'Függőben',
+		rendelesElemeks,
+	};
+}
+
+function findOrderLocation(orderId) {
+	const idKey = String(orderId ?? '').trim();
+	if (!idKey) return null;
+
+	const lists = [
+		{ key: 'pending', ref: pendingOrders },
+		{ key: 'processing', ref: processingOrders },
+		{ key: 'ready', ref: readyOrders },
+	];
+
+	for (const list of lists) {
+		const arr = Array.isArray(list.ref.value) ? list.ref.value : [];
+		const idx = arr.findIndex((o) => String(o?.id ?? '').trim() === idKey);
+		if (idx !== -1) return { listRef: list.ref, index: idx, order: arr[idx] };
+	}
+
+	return null;
+}
+
+function listRefForStatus(statusz) {
+	const status = readText(statusz);
+	if (status === 'Folyamatban') return processingOrders;
+	if (status === 'Átvehető') return readyOrders;
+	return pendingOrders;
+}
+
+function removeOrderFromLists(orderId) {
+	const loc = findOrderLocation(orderId);
+	if (!loc) return null;
+	const arr = Array.isArray(loc.listRef.value) ? loc.listRef.value : [];
+	return arr.splice(loc.index, 1)[0] ?? null;
+}
+
+function upsertOrderIntoColumns(normalized) {
+	if (!normalized) return;
+	const idKey = String(normalized.id ?? '').trim();
+	if (!idKey) return;
+
+	const loc = findOrderLocation(idKey);
+	if (loc?.order) {
+		const prevStatus = readText(loc.order?.statusz);
+		// Merge fields; keep existing status when new payload doesn't provide one.
+		const nextStatus = readText(normalized.statusz) || prevStatus || 'Függőben';
+		const merged = {
+			...loc.order,
+			...normalized,
+			statusz: nextStatus,
+		};
+		Object.assign(loc.order, merged);
+
+		if (nextStatus === 'Teljesítve') {
+			removeOrderFromLists(idKey);
+			if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = merged;
+			return;
+		}
+
+		if (prevStatus !== nextStatus) {
+			const moved = removeOrderFromLists(idKey) ?? merged;
+			const target = listRefForStatus(nextStatus);
+			target.value.unshift(moved);
+		}
+
+		if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = loc.order;
+		return;
+	}
+
+	// Not found -> insert.
+	if (readText(normalized.statusz) === 'Teljesítve') return;
+	const target = listRefForStatus(normalized.statusz);
+	target.value.unshift(normalized);
+	if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = normalized;
+}
+
+function upsertOrdersIntoColumns(incomingList) {
+	const items = Array.isArray(incomingList) ? incomingList : [];
+	for (const dto of items) {
+		const normalized = normalizeOrderDto(dto);
+		upsertOrderIntoColumns(normalized);
+	}
+}
+
+async function applyStatusUpdate(orderId, nextStatus, label = 'SSE státusz') {
+	const idKey = String(orderId ?? '').trim();
+	const status = readText(nextStatus);
+	if (!idKey || !status) return;
+
+	sseLastEventAt.value = Date.now();
+	sseLastEventLabel.value = label;
+	markSseOrder(idKey);
+
+	const loc = findOrderLocation(idKey);
+	if (!loc?.order) {
+		// Order might not be loaded yet (or was completed and removed) -> refresh once.
+		await refreshFromSse({ orderId: idKey, label });
+		return;
+	}
+
+	const prevStatus = readText(loc.order.statusz);
+	loc.order.statusz = status;
+
+	if (status === 'Teljesítve') {
+		removeOrderFromLists(idKey);
+		if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = { ...loc.order };
+		return;
+	}
+
+	if (prevStatus !== status) {
+		const moved = removeOrderFromLists(idKey) ?? loc.order;
+		const target = listRefForStatus(status);
+		target.value.unshift(moved);
+	}
+}
+
 function startEmployeeSse() {
-	if (typeof EventSource === 'undefined') return;
+	const token = getSseToken();
+	if (!token) {
+		sseState.value = 'disabled';
+		sseLastError.value = '';
+		return;
+	}
 
 	const url = buildSseUrl('/api/Rendelesek/stream');
 	if (!url) return;
@@ -144,80 +411,139 @@ function startEmployeeSse() {
 		sseClient = null;
 	}, 8000);
 
-	try {
-		sseClient = new EventSource(url);
-	} catch (err) {
-		sseState.value = 'error';
-		sseLastError.value = err?.message || 'EventSource létrehozása sikertelen.';
-		scheduleSseReconnect();
-		return;
-	}
-
-	sseClient.onopen = () => {
-		if (sseOpenWatchdogTimer != null) {
-			window.clearTimeout(sseOpenWatchdogTimer);
-			sseOpenWatchdogTimer = null;
-		}
-		sseState.value = 'open';
-		sseReconnectAttempt = 0;
-		sseLastEventAt.value = Date.now();
-		sseLastEventLabel.value = 'SSE kapcsolódva';
+	// Keep `sseClient` as a tiny wrapper so existing stop logic can call .close().
+	sseClient = {
+		close: () => {
+			try {
+				ordersSseAbortController?.abort();
+			} catch {
+				// ignore
+			}
+		},
 	};
 
-	sseClient.onmessage = async (event) => {
-		sseState.value = 'open';
-		sseLastError.value = '';
-
-		const raw = String(event?.data ?? '').trim();
-		if (!raw) {
-			await refreshFromSse({ label: 'SSE ping' });
-			return;
-		}
-
-		let payload = null;
-		try {
-			payload = JSON.parse(raw);
-		} catch {
-			payload = raw;
-		}
-
-		// Support multiple payload shapes (snapshot/delta) — fallback to reload.
-		if (Array.isArray(payload)) {
-			normalizeOrders(payload);
-			for (const o of payload) markSseOrder(o?.id);
+	startFetchSse({
+		url,
+		token,
+		onController: (controller) => {
+			ordersSseAbortController = controller;
+		},
+		onOpen: () => {
+			if (sseOpenWatchdogTimer != null) {
+				window.clearTimeout(sseOpenWatchdogTimer);
+				sseOpenWatchdogTimer = null;
+			}
+			sseState.value = 'open';
+			sseReconnectAttempt = 0;
 			sseLastEventAt.value = Date.now();
-			sseLastEventLabel.value = 'SSE snapshot';
-			return;
-		}
+			sseLastEventLabel.value = 'SSE kapcsolódva';
+		},
+		onMessage: async (event) => {
+			sseState.value = 'open';
+			sseLastError.value = '';
 
-		const orders = payload?.orders;
-		if (Array.isArray(orders)) {
-			normalizeOrders(orders);
-			for (const o of orders) markSseOrder(o?.id);
+			const raw = String(event?.data ?? '').trim();
+			if (!raw) {
+				await refreshFromSse({ label: event?.event ? `SSE ${event.event}` : 'SSE ping' });
+				return;
+			}
+
+			let payload = null;
+			try {
+				payload = JSON.parse(raw);
+			} catch {
+				payload = raw;
+			}
+
 			sseLastEventAt.value = Date.now();
-			sseLastEventLabel.value = 'SSE orders';
-			return;
-		}
+			sseLastEventLabel.value = event?.event ? `SSE ${event.event}` : 'SSE frissítés';
 
-		const orderId = payload?.id ?? payload?.orderId ?? payload?.order?.id ?? null;
-		await refreshFromSse({ orderId, label: 'SSE frissítés' });
-	};
+			// Backend may send a single new order as a 1-element array.
+			if (Array.isArray(payload)) {
+				upsertOrdersIntoColumns(payload);
+				for (const o of payload) markSseOrder(o?.id ?? o?.Id);
+				return;
+			}
 
-	sseClient.onerror = () => {
-		if (sseOpenWatchdogTimer != null) {
-			window.clearTimeout(sseOpenWatchdogTimer);
-			sseOpenWatchdogTimer = null;
-		}
-		sseState.value = 'error';
-		sseLastError.value = 'SSE kapcsolat hiba (újracsatlakozás...)';
+			const orders = payload?.orders ?? payload?.Orders ?? null;
+			if (Array.isArray(orders)) {
+				upsertOrdersIntoColumns(orders);
+				for (const o of orders) markSseOrder(o?.id ?? o?.Id);
+				return;
+			}
+
+			// Sometimes payload itself is an order DTO.
+			const maybeOrder = normalizeOrderDto(payload);
+			if (maybeOrder) {
+				upsertOrderIntoColumns(maybeOrder);
+				markSseOrder(maybeOrder.id);
+				return;
+			}
+
+			const orderId = payload?.id ?? payload?.Id ?? payload?.orderId ?? payload?.OrderId ?? payload?.order?.id ?? payload?.order?.Id ?? null;
+			await refreshFromSse({ orderId, label: sseLastEventLabel.value || 'SSE frissítés' });
+		},
+		onError: (err) => {
+			if (sseOpenWatchdogTimer != null) {
+				window.clearTimeout(sseOpenWatchdogTimer);
+				sseOpenWatchdogTimer = null;
+			}
+			sseState.value = 'error';
+			const message = String(err?.message ?? '').trim();
+			sseLastError.value = message
+				? `SSE hiba: ${message} (újracsatlakozás...)`
+				: 'SSE kapcsolat hiba (újracsatlakozás...)';
+			sseClient = null;
+			scheduleSseReconnect();
+		},
+	});
+}
+
+function startEmployeeStatusSse() {
+	const token = getSseToken();
+	if (!token) return;
+
+	// Restart status stream only.
+	if (statusSseAbortController) {
 		try {
-			sseClient?.close?.();
+			statusSseAbortController.abort();
 		} catch {
 			// ignore
 		}
-		sseClient = null;
-		scheduleSseReconnect();
-	};
+		statusSseAbortController = null;
+	}
+
+	const url = buildSseUrl('/api/Rendelesek/status-stream');
+	if (!url) return;
+
+	startFetchSse({
+		url,
+		token,
+		onController: (controller) => {
+			statusSseAbortController = controller;
+		},
+		onMessage: async (event) => {
+			const raw = String(event?.data ?? '').trim();
+			if (!raw) return;
+
+			let payload = null;
+			try {
+				payload = JSON.parse(raw);
+			} catch {
+				payload = raw;
+			}
+
+			const orderId = payload?.id ?? payload?.Id ?? payload?.orderId ?? payload?.OrderId ?? payload?.order?.id ?? payload?.order?.Id ?? null;
+			const status = readText(
+				payload?.statusz ?? payload?.Statusz ?? payload?.status ?? payload?.Status ?? payload?.order?.statusz ?? payload?.order?.Statusz ?? payload?.order?.status ?? payload?.order?.Status,
+			);
+			if (!orderId || !status) return;
+			await applyStatusUpdate(orderId, status, event?.event ? `SSE ${event.event}` : 'SSE státusz');
+		},
+		onError: () => {
+			// Non-fatal: the main orders stream + polling still keep the board updated.
+		},
+	});
 }
 
 const columnOpen = reactive({
@@ -529,10 +855,23 @@ onMounted(async () => {
 	}, 15000);
 
 	startEmployeeSse();
+	startEmployeeStatusSse();
+
+	// Stop streams immediately when auth is cleared/expired.
+	try {
+		window.addEventListener(AUTH_EXPIRED_EVENT, stopEmployeeSse);
+	} catch {
+		// ignore
+	}
 });
 
 onUnmounted(() => {
 	stopEmployeeSse();
+	try {
+		window.removeEventListener(AUTH_EXPIRED_EVENT, stopEmployeeSse);
+	} catch {
+		// ignore
+	}
 	if (panelResizeObserver) {
 		try {
 			panelResizeObserver.disconnect();
@@ -543,6 +882,15 @@ onUnmounted(() => {
 	}
 	if (pollTimer != null) window.clearInterval(pollTimer);
 });
+
+watch(
+	() => props.auth?.token,
+	() => {
+		// Restart streams when user logs in/out or token changes.
+		startEmployeeSse();
+		startEmployeeStatusSse();
+	},
+);
 
 watch(
 	() => selectedOrder.value,
