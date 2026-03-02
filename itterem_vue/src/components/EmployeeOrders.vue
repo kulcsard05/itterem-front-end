@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
-import { getOrders, updateOrderStatus } from '../api.js';
-import { formatDateTime, getApiBaseUrl, getOrderItemName, getOrderStatusClasses } from '../utils.js';
+import { getMeals, getMenus, getOrders, updateOrderStatus } from '../api.js';
+import { findById, formatDateTime, getApiBaseUrl, getOrderItemName, getOrderStatusClasses } from '../utils.js';
 
 const props = defineProps({
 	auth: { type: Object, default: null },
@@ -16,6 +16,9 @@ const error = ref('');
 const pendingOrders = ref([]);
 const processingOrders = ref([]);
 const readyOrders = ref([]);
+
+const meals = ref([]);
+const menus = ref([]);
 
 const selectedOrderId = ref(null);
 const detailFontSize = ref(16);
@@ -244,6 +247,59 @@ function normalizeOrders(list) {
 	}
 }
 
+function getMealIngredientNames(meal) {
+	const list = Array.isArray(meal?.hozzavalok) ? meal.hozzavalok : [];
+	return list
+		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
+		.filter(Boolean);
+}
+
+function getOrderEntryIngredients(entry) {
+	if (!entry || typeof entry !== 'object') return [];
+
+	// 1) Direct meal reference/id.
+	const mealId = entry?.keszetelId ?? entry?.keszetel?.id ?? null;
+	if (mealId != null) {
+		const meal = findById(meals.value, mealId);
+		return getMealIngredientNames(meal);
+	}
+
+	// 2) Menu reference/id -> look up menu -> meal -> ingredients.
+	const menuId = entry?.menuId ?? entry?.menu?.id ?? null;
+	if (menuId != null) {
+		const menu = findById(menus.value, menuId);
+		const menuMealId = menu?.keszetelId ?? null;
+		if (menuMealId != null) {
+			const meal = findById(meals.value, menuMealId);
+			return getMealIngredientNames(meal);
+		}
+	}
+
+	// 3) Fallback: backend might not send ids, only names.
+	const mealName = String(entry?.keszetelNev ?? '').trim();
+	if (mealName) {
+		const meal = (Array.isArray(meals.value) ? meals.value : []).find((m) => String(m?.nev ?? '').trim() === mealName) ?? null;
+		return getMealIngredientNames(meal);
+	}
+
+	const menuName = String(entry?.menuNev ?? '').trim();
+	if (menuName) {
+		const menu = (Array.isArray(menus.value) ? menus.value : []).find((m) => String(m?.menuNev ?? '').trim() === menuName) ?? null;
+		const menuMealId = menu?.keszetelId ?? null;
+		if (menuMealId != null) {
+			const meal = findById(meals.value, menuMealId);
+			return getMealIngredientNames(meal);
+		}
+	}
+
+	return [];
+}
+
+function getOrderEntryIngredientsLabel(entry) {
+	const names = getOrderEntryIngredients(entry);
+	return names.length ? names.join(', ') : '';
+}
+
 async function loadOrders() {
 	error.value = '';
 	loading.value = true;
@@ -275,6 +331,8 @@ const selectedOrder = computed(() =>
 const selectedOrderSnapshot = ref(null);
 
 const visibleOrder = computed(() => selectedOrder.value ?? selectedOrderSnapshot.value);
+
+const ingredientFontSize = computed(() => Math.min(32, Math.max(12, detailFontSize.value + 2)));
 
 function closePanel() {
 	selectedOrderId.value = null;
@@ -454,6 +512,14 @@ onMounted(async () => {
 	}
 
 	await loadOrders();
+	try {
+		const [mealsRes, menusRes] = await Promise.allSettled([getMeals(), getMenus()]);
+		meals.value = mealsRes.status === 'fulfilled' && Array.isArray(mealsRes.value) ? mealsRes.value : [];
+		menus.value = menusRes.status === 'fulfilled' && Array.isArray(menusRes.value) ? menusRes.value : [];
+	} catch {
+		meals.value = [];
+		menus.value = [];
+	}
 	// Lightweight polling so the board updates without manual refresh.
 	pollTimer = window.setInterval(() => {
 		if (savingStatus.value) return;
@@ -789,7 +855,14 @@ watch(
 							:key="idx"
 							class="flex items-start justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2"
 						>
-							<div class="font-semibold text-gray-900">{{ getOrderItemName(entry) }}</div>
+							<div class="min-w-0">
+								<div class="font-semibold text-gray-900">{{ getOrderItemName(entry) }}</div>
+								<div v-if="getOrderEntryIngredients(entry).length" class="mt-1 text-gray-700" :style="{ fontSize: ingredientFontSize + 'px' }">
+									<ul class="space-y-0.5">
+										<li v-for="(name, i) in getOrderEntryIngredients(entry)" :key="i">{{ name }}</li>
+									</ul>
+								</div>
+							</div>
 							<div class="shrink-0 text-gray-800">× {{ entry?.mennyiseg ?? 0 }}</div>
 						</li>
 					</ul>

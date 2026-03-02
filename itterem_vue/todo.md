@@ -51,3 +51,5 @@
 
 
 keszetel post/put kep nullable
+keszetel ids get ad vissza hozzavalo idket, sima get nem
+étterem beállítások backend sql frontend

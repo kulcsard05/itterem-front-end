@@ -10,7 +10,7 @@ const props = defineProps({
 	},
 });
 
-const emit = defineEmits(['back', 'add-to-cart']);
+const emit = defineEmits(['back', 'add-to-cart', 'open-item']);
 
 const router = useRouter();
 
@@ -28,6 +28,13 @@ const itemDescription = computed(() => props.itemData?.description ?? 'Nincs le�
 const itemPrice = computed(() => props.itemData?.price);
 const itemMeta = computed(() => props.itemData?.meta ?? '');
 const itemType = computed(() => props.itemData?.type ?? 'item');
+
+const itemIngredients = computed(() => {
+	const list = Array.isArray(props.itemData?.ingredients) ? props.itemData.ingredients : [];
+	return list.map((v) => String(v ?? '').trim()).filter(Boolean);
+});
+
+const itemIngredientsLabel = computed(() => itemIngredients.value.join(', '));
 
 const itemTypeLabel = computed(() => String(props.itemData?.typeLabel ?? '').trim() || getItemTypeLabel(itemType.value));
 
@@ -48,6 +55,7 @@ const menuBreakdown = computed(() => {
 			label: String(entry?.label ?? ''),
 			name: readFirstText([entry?.name]) || '-',
 			description: readFirstText([entry?.description]),
+			openPayload: entry?.openPayload ?? null,
 		}));
 	}
 
@@ -60,6 +68,12 @@ function addToCart() {
 	setTimeout(() => {
 		addedMessage.value = '';
 	}, 3000);
+}
+
+function openBreakdownEntry(entry) {
+	const payload = entry?.openPayload;
+	if (!payload) return;
+	emit('open-item', payload);
 }
 </script>
 
@@ -89,10 +103,26 @@ function addToCart() {
 					<p class="font-semibold text-gray-900">Menü tartalma:</p>
 					<ul class="mt-2 space-y-1">
 						<li v-for="entry in menuBreakdown" :key="entry.key">
-							<span class="font-medium">{{ entry.label }}:</span> {{ entry.name }}
-							<p v-if="entry.description" class="ml-1 text-xs text-gray-500">{{ entry.description }}</p>
+							<button
+								type="button"
+								class="w-full rounded-md px-2 py-1 text-left hover:bg-white"
+								:class="entry.openPayload ? 'cursor-pointer' : 'cursor-default'"
+								:disabled="!entry.openPayload"
+								@click="openBreakdownEntry(entry)"
+							>
+								<span class="font-medium">{{ entry.label }}:</span> {{ entry.name }}
+								<p v-if="entry.description" class="ml-1 text-xs text-gray-500">{{ entry.description }}</p>
+							</button>
 						</li>
 					</ul>
+				</div>
+
+				<div
+					v-if="itemIngredients.length"
+					class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700"
+				>
+					<!-- <p class="font-semibold text-gray-900">Hozzávalók</p> -->
+					<p class="mt-1 text-sm text-gray-700">{{ itemIngredientsLabel }}</p>
 				</div>
 
 				<p v-if="showDescription" class="mt-4 text-gray-700">{{ itemDescription }}</p>

@@ -195,7 +195,7 @@ function openMenuItem(itemData) {
 	} catch {
 		// ignore
 	}
-	router.push({ name: 'menu-item' });
+	router.push({ name: 'menu-item' }).catch(() => {});
 }
 
 function handleAddToCart(itemData) {

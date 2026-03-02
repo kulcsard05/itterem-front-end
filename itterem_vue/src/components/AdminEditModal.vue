@@ -18,6 +18,15 @@ function updateField(key, value) {
 	if (props.form?.[key] === value) return;
 	emit('update:form', { ...props.form, [key]: value });
 }
+
+function toggleMultiSelect(key, optionValue, checked) {
+	const current = Array.isArray(props.form?.[key]) ? props.form[key] : [];
+	const normalizedValue = String(optionValue);
+	const set = new Set(current.map((v) => String(v)));
+	if (checked) set.add(normalizedValue);
+	else set.delete(normalizedValue);
+	updateField(key, Array.from(set));
+}
 </script>
 
 <template>
@@ -66,6 +75,23 @@ function updateField(key, value) {
 						class="w-full px-3.5 py-2.5 border-2 border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition"
 						@input="updateField(field.key, $event.target.value)"
 					/>
+
+					<div v-else-if="field.type === 'multiselect'" class="space-y-2">
+						<div class="max-h-44 overflow-auto rounded-lg border-2 border-gray-200 bg-white">
+							<label
+								v-for="opt in (typeof field.options === 'function' ? field.options() : field.options)"
+								:key="opt.value"
+								class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
+							>
+								<input
+									type="checkbox"
+									:checked="Array.isArray(form[field.key]) && form[field.key].map(String).includes(String(opt.value))"
+									@change="toggleMultiSelect(field.key, opt.value, $event.target.checked)"
+								/>
+								<span>{{ opt.label }}</span>
+							</label>
+						</div>
+					</div>
 
 					<select
 						v-else-if="field.type === 'select'"

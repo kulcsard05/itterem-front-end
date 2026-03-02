@@ -19,6 +19,7 @@ import {
 	getDrinks,
 	getIngredients,
 	getMeals,
+	getMealById,
 	getMenus,
 	getOrders,
 	getSides,
@@ -110,6 +111,18 @@ function getMealCategoryName(meal) {
 	const list = kategoriak.value;
 	const found = list.find((c) => String(c?.id ?? '') === String(catId ?? ''));
 	return String(found?.nev ?? '-');
+}
+
+function getMealIngredients(item) {
+	const list = Array.isArray(item?.hozzavalok) ? item.hozzavalok : [];
+	return list
+		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
+		.filter(Boolean);
+}
+
+function formatMealIngredients(item) {
+	const names = getMealIngredients(item);
+	return names.length ? names.join(', ') : '-';
 }
 
 function getCurrentImageFromItem(item) {
@@ -215,6 +228,7 @@ const entityConfigs = {
 			{ key: 'id', label: 'ID' },
 			{ key: 'nev', label: 'Név', bold: true },
 			{ key: '_kategoria', label: 'Kategória', format: (item) => getMealCategoryName(item) },
+			{ key: '_hozzavalok', label: 'Hozzávalók', format: (item) => formatMealIngredients(item) },
 			{ key: 'leiras', label: 'Leírás' },
 			{ key: 'ar', label: 'Ár', format: (item) => formatPrice(item.ar) },
 			{ key: 'elerheto', label: 'Elérhető', type: 'available' },
@@ -222,6 +236,13 @@ const entityConfigs = {
 		formFields: [
 			{ key: 'nev', label: 'Név', type: 'text' },
 			{ key: 'leiras', label: 'Leírás', type: 'textarea' },
+			{
+				key: 'hozzavalokIds',
+				label: 'Hozzávalók',
+				type: 'multiselect',
+				options: () => buildSelectOptions(hozzavalok.value, { valueKey: 'id', labelKey: 'hozzavaloNev' }),
+				helpText: 'Több hozzávaló is kiválasztható.',
+			},
 			{ key: 'elerheto', label: 'Elérhető', type: 'select', options: AVAILABLE_OPTIONS },
 			{ key: 'ar', label: 'Ár (Ft)', type: 'number', min: 0, step: 1 },
 			{
@@ -236,6 +257,10 @@ const entityConfigs = {
 			id: item?.id,
 			nev: String(item?.nev ?? ''),
 			leiras: String(item?.leiras ?? ''),
+			hozzavalokIds: (Array.isArray(item?.hozzavalok) ? item.hozzavalok : [])
+				.map((h) => h?.id)
+				.filter((v) => v != null)
+				.map((v) => String(v)),
 			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
 			kategoriaId: normalizeSelectValue(getMealCategoryId(item)),
 			ar: normalizePriceValue(item?.ar),
@@ -245,6 +270,7 @@ const entityConfigs = {
 		defaultForm: () => ({
 			nev: '',
 			leiras: '',
+			hozzavalokIds: [],
 			elerheto: 1,
 			kategoriaId: '',
 			ar: '',
@@ -264,9 +290,12 @@ const entityConfigs = {
 			),
 		buildPayload: (form, isCreate) => {
 			const base = buildBasePayload(form, { includeDescription: true });
+			const hozzavalokIds = (Array.isArray(form.hozzavalokIds) ? form.hozzavalokIds : [])
+				.map((v) => String(v).trim())
+				.filter(Boolean);
 			return isCreate
-				? { ...base, kategoriaId: String(form.kategoriaId ?? '').trim() }
-				: { ...base, id: form.id, kategoriaId: String(form.kategoriaId ?? '').trim() };
+				? { ...base, kategoriaId: String(form.kategoriaId ?? '').trim(), hozzavalokIds }
+				: { ...base, id: form.id, kategoriaId: String(form.kategoriaId ?? '').trim(), hozzavalokIds };
 		},
 		messages: { create: 'Készétel létrehozva.', update: 'Készétel frissítve.', delete: 'Készétel törölve.' },
 	},
@@ -590,15 +619,28 @@ const editModalTitle = computed(() => {
 
 const activeFormFields = computed(() => entityConfigs[editType.value]?.formFields ?? []);
 
-function openModal(type, item = null) {
+async function openModal(type, item = null) {
 	clearFeedback();
 	clearSelectedImagePreview();
 	const config = entityConfigs[type];
 	if (!config) return;
 
+	let resolvedItem = item;
+	if (item && type === 'meal' && item?.id != null) {
+		try {
+			const full = await getMealById(item.id);
+			if (full && typeof full === 'object') {
+				resolvedItem = { ...item, ...full };
+			}
+		} catch {
+			// If details load fails, fall back to table snapshot.
+			resolvedItem = item;
+		}
+	}
+
 	editMode.value = item ? 'edit' : 'create';
 	editType.value = type;
-	editForm.value = item ? config.mapItemToForm(item) : config.defaultForm();
+	editForm.value = item ? config.mapItemToForm(resolvedItem) : config.defaultForm();
 	showEditModal.value = true;
 }
 

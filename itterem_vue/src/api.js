@@ -69,6 +69,19 @@ async function requestOk(response, fallbackErrorMessage) {
 	return { ok: false, message };
 }
 
+async function requestJsonOrThrow(response, fallbackErrorMessage) {
+	const body = await readJsonOrText(response);
+	if (response.ok) return body;
+
+	if (response.status === 401) {
+		clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
+		throw new Error(AUTH_EXPIRED_MESSAGE);
+	}
+
+	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
+	throw new Error(message || fallbackErrorMessage);
+}
+
 // ---------------------------------------------------------------------------
 // Generic CRUD helpers
 // ---------------------------------------------------------------------------
@@ -87,10 +100,17 @@ async function requestOk(response, fallbackErrorMessage) {
 async function mutate({ method, endpoint, params = {}, kepFile, fallbackError }) {
 	const baseUrl = getApiBaseUrl();
 
-	// Build query string — stringify every value so URLSearchParams is happy.
-	const searchParams = new URLSearchParams(
-		Object.entries(params).map(([k, v]) => [k, String(v ?? '')]),
-	);
+	// Build query string.
+	// Supports array values by appending repeated keys:
+	// { hozzavalokIds: [1,2] } -> ?hozzavalokIds=1&hozzavalokIds=2
+	const searchParams = new URLSearchParams();
+	for (const [key, rawValue] of Object.entries(params ?? {})) {
+		if (Array.isArray(rawValue)) {
+			for (const entry of rawValue) searchParams.append(key, String(entry ?? ''));
+			continue;
+		}
+		searchParams.set(key, String(rawValue ?? ''));
+	}
 
 	const url = `${baseUrl}${endpoint}?${searchParams.toString()}`;
 
@@ -113,6 +133,13 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 	});
 
 	return requestOk(response, fallbackError);
+}
+
+async function getById(endpoint, id, fallbackError) {
+	const baseUrl = getApiBaseUrl();
+	const url = `${baseUrl}${endpoint}/${encodeURIComponent(String(id ?? ''))}`;
+	const response = await fetch(url, { method: 'GET', headers: authHeaders() });
+	return requestJsonOrThrow(response, fallbackError);
 }
 
 /**
@@ -238,6 +265,10 @@ export function getCategories() {
 /** Keszetelek = Készételek */
 export function getMeals() {
 	return getList('/api/Keszetelek', 'Készételek betöltése sikertelen');
+}
+
+export function getMealById(id) {
+	return getById('/api/Keszetelek', id, 'Készétel betöltése sikertelen');
 }
 
 /** Koretek = Köretek */
@@ -374,11 +405,11 @@ export function createCategory({ nev }) {
 // Meals  (Készételek)
 // ---------------------------------------------------------------------------
 
-export function updateMeal({ id, nev, leiras, elerheto, kategoriaId, ar, kepFile }) {
+export function updateMeal({ id, nev, leiras, elerheto, kategoriaId, ar, kepFile, hozzavalokIds = [] }) {
 	return mutate({
 		method: 'PUT',
 		endpoint: '/api/Keszetelek',
-		params: { id, nev, leiras, elerheto, ar, kategoriaId },
+		params: { id, nev, leiras, elerheto, ar, kategoriaId, hozzavalokIds },
 		kepFile,
 		fallbackError: 'Készétel frissítése sikertelen',
 	});
@@ -390,11 +421,11 @@ export function deleteMeal(id) {
 }
 
 
-export function createMeal({ nev, leiras, elerheto, kategoriaId, ar, kepFile }) {
+export function createMeal({ nev, leiras, elerheto, kategoriaId, ar, kepFile, hozzavalokIds = [] }) {
 	return mutate({
 		method: 'POST',
 		endpoint: '/api/Keszetelek',
-		params: { nev, leiras, ar, elerheto, kategoriaId },
+		params: { nev, leiras, ar, elerheto, kategoriaId, hozzavalokIds },
 		kepFile,
 		fallbackError: 'Készétel létrehozása sikertelen',
 	});

@@ -107,7 +107,7 @@ const ownOrderIdSet = computed(() => {
 });
 
 function startStatusSse() {
-	if (!showSseDebug) return;
+	if (typeof EventSource === 'undefined') return;
 	if (!props.auth?.token) {
 		statusSseState.value = 'idle';
 		statusSseLastError.value = '';

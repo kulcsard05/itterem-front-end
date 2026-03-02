@@ -57,6 +57,18 @@ function getItemImage(item) {
 	return toImageSrc(item?.kep);
 }
 
+function getMealIngredientNames(meal) {
+	const list = Array.isArray(meal?.hozzavalok) ? meal.hozzavalok : [];
+	return list
+		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
+		.filter(Boolean);
+}
+
+function getMealIngredientsLabel(meal) {
+	const names = getMealIngredientNames(meal);
+	return names.length ? names.join(', ') : '';
+}
+
 function getMenuMeta(menu) {
 	const parts = [];
 	const meal = findById(meals.value, menu?.keszetelId);
@@ -85,24 +97,75 @@ function buildMenuBreakdown(menu) {
 	const mealDescription = String(meal?.leiras ?? '').trim() || '-';
 	const sideDescription = String(side?.leiras ?? '').trim() || '-';
 
+	const mealPayload = meal
+		? {
+			type: 'meals',
+			typeLabel: getItemTypeLabel('meals'),
+			item: meal,
+			id: meal?.id,
+			name: mealName,
+			description: mealDescription,
+			price: meal?.ar ?? null,
+			image: getItemImage(meal),
+			meta: '',
+			menuBreakdown: [],
+			ingredients: getMealIngredientNames(meal),
+		}
+		: null;
+
+	const sidePayload = side
+		? {
+			type: 'sides',
+			typeLabel: getItemTypeLabel('sides'),
+			item: side,
+			id: side?.id,
+			name: sideName,
+			description: sideDescription,
+			price: side?.ar ?? null,
+			image: getItemImage(side),
+			meta: '',
+			menuBreakdown: [],
+			ingredients: [],
+		}
+		: null;
+
+	const drinkPayload = drink
+		? {
+			type: 'drinks',
+			typeLabel: getItemTypeLabel('drinks'),
+			item: drink,
+			id: drink?.id,
+			name: drinkName,
+			description: '',
+			price: drink?.ar ?? null,
+			image: getItemImage(drink),
+			meta: '',
+			menuBreakdown: [],
+			ingredients: [],
+		}
+		: null;
+
 	return [
 		{
 			key: 'meal',
 			label: 'Készétel',
 			name: mealName,
 			description: mealDescription,
+			openPayload: mealPayload,
 		},
 		{
 			key: 'side',
 			label: 'Köret',
 			name: sideName,
 			description: sideDescription,
+			openPayload: sidePayload,
 		},
 		{
 			key: 'drink',
 			label: 'Üditő',
 			name: drinkName,
 			description: '',
+			openPayload: drinkPayload,
 		},
 	];
 }
@@ -124,6 +187,13 @@ function getItemDescription(type, item, categoryName = '') {
 
 function openItem(type, item, categoryName = '') {
 	const typeLabel = getItemTypeLabel(type);
+	let ingredients = [];
+	if (type === 'meals') {
+		ingredients = getMealIngredientNames(item);
+	} else if (type === 'menus') {
+		const meal = findById(meals.value, item?.keszetelId);
+		ingredients = getMealIngredientNames(meal);
+	}
 	emit('open-item', {
 		type,
 		typeLabel,
@@ -134,6 +204,7 @@ function openItem(type, item, categoryName = '') {
 		image: getItemImage(item),
 		meta: type === 'menus' ? getMenuMeta(item) : categoryName,
 		menuBreakdown: type === 'menus' ? buildMenuBreakdown(item) : [],
+		ingredients,
 	});
 }
 
@@ -377,6 +448,13 @@ const mealSections = computed(() => {
 								<div class="flex flex-col justify-between">
 									<h3 class="text-base font-semibold text-gray-900">{{ item.nev }}</h3>
 
+									<p
+										v-if="getMealIngredientsLabel(item)"
+										class="mt-1 text-xs text-gray-500"
+									>
+										{{ getMealIngredientsLabel(item) }}
+									</p>
+
 									<div>
 										<p
 											v-if="getItemPrice(item) != null"
@@ -440,6 +518,9 @@ const mealSections = computed(() => {
 								<div>
 									<p v-if="activeType === 'menus' && getMenuMeta(item)" class="text-xs text-gray-500">
 										{{ getMenuMeta(item) }}
+									</p>
+									<p v-if="activeType === 'menus' && getMealIngredientsLabel(findById(meals, item?.keszetelId))" class="mt-1 text-xs text-gray-500">
+										{{ getMealIngredientsLabel(findById(meals, item?.keszetelId)) }}
 									</p>
 									<p
 										v-if="getItemPrice(item) != null"
