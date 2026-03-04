@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
-import { register } from '../api';
-import { isValidEmail, isValidPhone } from '../utils.js';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { register } from '../../api.js';
+import { isValidEmail, isValidPhone } from '../../utils.js';
+import { PASSWORD_MIN_LENGTH } from '../../constants.js';
 
 const emit = defineEmits(['switch']);
 
@@ -13,6 +14,7 @@ const password = ref('');
 const loading = ref(false);
 const error = ref('');
 const success = ref('');
+let switchTimer = null;
 const fieldErrors = ref({ fullName: '', email: '', phone: '', password: '' });
 const submitAttempted = ref(false);
 
@@ -33,7 +35,7 @@ function validate() {
 	else if (!isValidPhone(phoneValue)) next.phone = 'Kérjük, adj meg egy érvényes telefonszámot.';
 
 	if (!passwordValue) next.password = 'Jelszó megadása kötelező.';
-	else if (passwordValue.length < 6) next.password = 'A jelszónak legalább 6 karakter hosszúnak kell lennie.';
+	else if (passwordValue.length < PASSWORD_MIN_LENGTH) next.password = `A jelszónak legalább ${PASSWORD_MIN_LENGTH} karakter hosszúnak kell lennie.`;
 
 	fieldErrors.value = next;
 	return !next.fullName && !next.email && !next.phone && !next.password;
@@ -45,7 +47,7 @@ const isFormValid = computed(() => {
 	const phoneValue = phone.value.trim();
 	const passwordValue = password.value;
 	return (
-		fullNameValue.length >= 2 && isValidEmail(emailValue) && isValidPhone(phoneValue) && passwordValue.length >= 6
+		fullNameValue.length >= 2 && isValidEmail(emailValue) && isValidPhone(phoneValue) && passwordValue.length >= PASSWORD_MIN_LENGTH
 	);
 });
 
@@ -69,31 +71,30 @@ async function onSubmit() {
 	const trimmedPhone = phone.value.trim();
 
 	try {
-		const result = await register({
+		await register({
 			teljesNev: trimmedFullName,
 			email: trimmedEmail,
 			password: password.value,
 			telefonSzam: trimmedPhone,
 		});
 
-		if (result.ok) {
-			success.value = 'Sikeres regisztráció! Kérjük, jelentkezz be.';
-			fullName.value = '';
-			email.value = '';
-			phone.value = '';
-			password.value = '';
-			submitAttempted.value = false;
-			fieldErrors.value = { fullName: '', email: '', phone: '', password: '' };
-			setTimeout(() => emit('switch'), 350);
-		} else {
-			error.value = result.message || 'Regisztráció sikertelen';
-		}
+		success.value = 'Sikeres regisztráció! Kérjük, jelentkezz be.';
+		fullName.value = '';
+		email.value = '';
+		phone.value = '';
+		password.value = '';
+		submitAttempted.value = false;
+		fieldErrors.value = { fullName: '', email: '', phone: '', password: '' };
+		clearTimeout(switchTimer);
+		switchTimer = setTimeout(() => emit('switch'), 350);
 	} catch (err) {
 		error.value = err?.message || 'Regisztráció sikertelen';
 	} finally {
 		loading.value = false;
 	}
 }
+
+onUnmounted(() => clearTimeout(switchTimer));
 </script>
 
 <template>

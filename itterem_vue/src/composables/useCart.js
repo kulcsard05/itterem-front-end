@@ -5,7 +5,9 @@ import { getItemTypeLabel, getOrderItemIdKey } from '../utils.js';
 // Module-level singleton so every component shares the same cart.
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'cart';
+import { CART_STORAGE_KEY } from '../constants.js';
+
+const STORAGE_KEY = CART_STORAGE_KEY;
 
 function loadFromStorage() {
 	try {
@@ -114,13 +116,20 @@ export function useCart() {
 
 	/**
 	 * Build the `items` array for the ordering API payload.
+	 * Items whose type has no known API id-key are skipped with a warning.
 	 * @returns {Array<{[idKey: string]: number, mennyiseg: number}>}
 	 */
 	function buildOrderItems() {
-		return items.value.map((item) => {
+		const result = [];
+		for (const item of items.value) {
 			const idKey = getOrderItemIdKey(item.type);
-			return { [idKey]: item.id, mennyiseg: item.quantity };
-		});
+			if (!idKey) {
+				console.warn(`[Cart] Unknown item type "${item.type}" — skipped from order payload.`);
+				continue;
+			}
+			result.push({ [idKey]: item.id, mennyiseg: item.quantity });
+		}
+		return result;
 	}
 
 	return {

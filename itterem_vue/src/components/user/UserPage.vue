@@ -1,9 +1,20 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import Login from './Login.vue';
 import Register from './Register.vue';
-import { getOwnOrders, updatePhone } from '../api.js';
-import { formatDateTime, formatOrderItems, getApiBaseUrl, getOrderStatusClasses, isValidPhone, parseJwt } from '../utils.js';
+import { getOwnOrders, updatePhone } from '../../api.js';
+import { startFetchSse } from '../../composables/useFetchSse.js';
+import { useSseSeen } from '../../composables/useSseSeen.js';
+import { formatDateTime, formatOrderItems, getApiBaseUrl, getOrderStatusClasses, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../utils.js';
+import {
+	SSE_MAX_RECONNECT_DELAY,
+	SSE_BASE_RECONNECT_DELAY,
+	SSE_MAX_RECONNECT_EXPONENT,
+	SSE_SEEN_MAP_LIMIT,
+	SSE_SEEN_MAP_TRIM_TO,
+	SSE_MARK_DURATION,
+	DONE_NOTICE_TIMEOUT_MS,
+} from '../../constants.js';
 
 const props = defineProps({
 	auth: { type: Object, default: null },
@@ -27,34 +38,18 @@ const showSseDebug = import.meta.env.DEV;
 const statusSseState = ref('idle'); // idle | connecting | open | error
 const statusSseLastEventAt = ref(null);
 const statusSseLastError = ref('');
-const statusSseSeen = ref(new Map()); // orderId -> timestamp(ms)
+const { markSeen: markStatusSseOrder, isSeenMarked: isStatusSseMarked } = useSseSeen({
+	limit: SSE_SEEN_MAP_LIMIT,
+	trimTo: SSE_SEEN_MAP_TRIM_TO,
+	markDuration: SSE_MARK_DURATION,
+});
 
 const orderDoneNotice = ref('');
 let noticeTimer = null;
 
-let statusSseClient = null;
+let statusSseAbortController = null;
 let statusSseReconnectTimer = null;
 let statusSseReconnectAttempt = 0;
-
-function markStatusSseOrder(orderId) {
-	const key = String(orderId ?? '').trim();
-	if (!key) return;
-	const next = new Map(statusSseSeen.value);
-	next.set(key, Date.now());
-	if (next.size > 300) {
-		const sorted = Array.from(next.entries()).sort((a, b) => a[1] - b[1]);
-		for (let i = 0; i < sorted.length - 250; i += 1) next.delete(sorted[i][0]);
-	}
-	statusSseSeen.value = next;
-}
-
-function isStatusSseMarked(orderId) {
-	const key = String(orderId ?? '').trim();
-	if (!key) return false;
-	const ts = statusSseSeen.value.get(key);
-	if (!ts) return false;
-	return Date.now() - ts < 90_000;
-}
 
 function showDoneNotice(message) {
 	orderDoneNotice.value = String(message ?? '').trim();
@@ -62,7 +57,7 @@ function showDoneNotice(message) {
 	noticeTimer = window.setTimeout(() => {
 		orderDoneNotice.value = '';
 		noticeTimer = null;
-	}, 8000);
+	}, DONE_NOTICE_TIMEOUT_MS);
 }
 
 function stopStatusSse() {
@@ -70,20 +65,20 @@ function stopStatusSse() {
 		window.clearTimeout(statusSseReconnectTimer);
 		statusSseReconnectTimer = null;
 	}
-	if (statusSseClient) {
+	if (statusSseAbortController) {
 		try {
-			statusSseClient.close();
+			statusSseAbortController.abort();
 		} catch {
 			// ignore
 		}
-		statusSseClient = null;
+		statusSseAbortController = null;
 	}
 }
 
 function scheduleStatusSseReconnect() {
 	if (statusSseReconnectTimer != null) return;
 	statusSseReconnectAttempt += 1;
-	const delay = Math.min(30_000, 750 * 2 ** Math.min(6, statusSseReconnectAttempt));
+	const delay = Math.min(SSE_MAX_RECONNECT_DELAY, SSE_BASE_RECONNECT_DELAY * 2 ** Math.min(SSE_MAX_RECONNECT_EXPONENT, statusSseReconnectAttempt));
 	statusSseReconnectTimer = window.setTimeout(() => {
 		statusSseReconnectTimer = null;
 		startStatusSse();
@@ -93,7 +88,6 @@ function scheduleStatusSseReconnect() {
 function buildStatusSseUrl() {
 	const baseUrl = getApiBaseUrl();
 	const base = String(baseUrl ?? '').replace(/\/+$/, '');
-	// Intentionally WITHOUT token: backend endpoint is anonymous per your controller.
 	return `${base}/api/Rendelesek/status-stream`;
 }
 
@@ -125,7 +119,6 @@ function applyStatusUpdateToOwnOrders(orderId, nextStatus) {
 }
 
 function startStatusSse() {
-	if (typeof EventSource === 'undefined') return;
 	if (!props.auth?.token) {
 		statusSseState.value = 'idle';
 		statusSseLastError.value = '';
@@ -137,63 +130,58 @@ function startStatusSse() {
 	statusSseLastError.value = '';
 
 	const url = buildStatusSseUrl();
-	try {
-		statusSseClient = new EventSource(url);
-	} catch (err) {
-		statusSseState.value = 'error';
-		statusSseLastError.value = err?.message || 'EventSource létrehozása sikertelen.';
-		scheduleStatusSseReconnect();
-		return;
-	}
+	const token = String(props.auth.token ?? '').trim();
 
-	statusSseClient.onopen = () => {
-		statusSseState.value = 'open';
-		statusSseReconnectAttempt = 0;
-		statusSseLastEventAt.value = Date.now();
-	};
+	startFetchSse({
+		url,
+		token,
+		onController: (controller) => {
+			statusSseAbortController = controller;
+		},
+		onOpen: () => {
+			statusSseState.value = 'open';
+			statusSseReconnectAttempt = 0;
+			statusSseLastEventAt.value = Date.now();
+		},
+		onMessage: ({ data }) => {
+			statusSseState.value = 'open';
+			statusSseLastError.value = '';
+			statusSseLastEventAt.value = Date.now();
 
-	statusSseClient.onmessage = (event) => {
-		statusSseState.value = 'open';
-		statusSseLastError.value = '';
-		statusSseLastEventAt.value = Date.now();
+			const raw = String(data ?? '').trim();
+			if (!raw) return;
 
-		const raw = String(event?.data ?? '').trim();
-		if (!raw) return;
+			let payload = null;
+			try {
+				payload = JSON.parse(raw);
+			} catch {
+				payload = raw;
+			}
 
-		let payload = null;
-		try {
-			payload = JSON.parse(raw);
-		} catch {
-			payload = raw;
-		}
+			const orderId = payload?.id ?? payload?.orderId ?? payload?.order?.id ?? null;
+			const status = String(payload?.statusz ?? payload?.status ?? payload?.order?.statusz ?? '').trim();
+			if (orderId != null) markStatusSseOrder(orderId);
 
-		const orderId = payload?.id ?? payload?.orderId ?? payload?.order?.id ?? null;
-		const status = String(payload?.statusz ?? payload?.status ?? payload?.order?.statusz ?? '').trim();
-		if (orderId != null) markStatusSseOrder(orderId);
+			const normalizedId = String(orderId ?? '').trim();
+			if (!normalizedId) return;
+			if (!ownOrderIdSet.value.has(normalizedId)) return;
 
-		const normalizedId = String(orderId ?? '').trim();
-		if (!normalizedId) return;
-		if (!ownOrderIdSet.value.has(normalizedId)) return;
+			// Update the rendered list immediately (otherwise the UI keeps the old status).
+			applyStatusUpdateToOwnOrders(normalizedId, status);
 
-		// Update the rendered list immediately (otherwise the UI keeps the old status).
-		applyStatusUpdateToOwnOrders(normalizedId, status);
-
-		if (status === 'Átvehető' || status === 'Teljesítve') {
-			showDoneNotice(`A rendelésed elkészült: #${normalizedId} (${status}) — SSE`);
-		}
-	};
-
-	statusSseClient.onerror = () => {
-		statusSseState.value = 'error';
-		statusSseLastError.value = 'SSE kapcsolat hiba (újracsatlakozás...)';
-		try {
-			statusSseClient?.close?.();
-		} catch {
-			// ignore
-		}
-		statusSseClient = null;
-		scheduleStatusSseReconnect();
-	};
+			if (status === 'Átvehető' || status === 'Teljesítve') {
+				showDoneNotice(`A rendelésed elkészült: #${normalizedId} (${status}) — SSE`);
+			}
+		},
+		onError: (err) => {
+			statusSseState.value = 'error';
+			statusSseLastError.value = err?.message || 'SSE kapcsolat hiba (újracsatlakozás...)';
+			statusSseAbortController = null;
+			scheduleStatusSseReconnect();
+		},
+	}).catch(() => {
+		// Handled by onError
+	});
 }
 
 function getPhoneFromAuth(auth) {
@@ -236,8 +224,7 @@ async function savePhone() {
 		return;
 	}
 
-	const decodedToken = parseJwt(props.auth?.token);
-	const userId = props.auth?.id ?? props.auth?.sub ?? decodedToken?.sub ?? decodedToken?.id;
+	const userId = resolveUserId(props.auth);
 	if (!userId) {
 		phoneError.value = 'Felhasználó azonosító nem található.';
 		return;
@@ -246,23 +233,12 @@ async function savePhone() {
 	phoneSaving.value = true;
 
 	try {
-		const result = await updatePhone({ id: userId, telefonszam: nextPhone });
-
-		if (!result.ok) {
-			phoneError.value = result.message || 'Telefonszám frissítése sikertelen.';
-			return;
-		}
+		await updatePhone({ id: userId, telefonszam: nextPhone });
 
 		const updatedUser = {
 			...(props.auth || {}),
 			telefonszam: nextPhone,
 		};
-
-		try {
-			localStorage.setItem('auth', JSON.stringify(updatedUser));
-		} catch {
-			// ignore storage errors
-		}
 
 		emit('login-success', updatedUser);
 		isEditingPhone.value = false;
@@ -281,11 +257,7 @@ function toggleForm() {
 // formatDateTime / formatOrderItems moved to utils.js
 
 const displayedOrders = computed(() =>
-	[...(Array.isArray(ownOrders.value) ? ownOrders.value : [])].sort((a, b) => {
-		const ta = new Date(a?.datum ?? 0).getTime();
-		const tb = new Date(b?.datum ?? 0).getTime();
-		return tb - ta;
-	}),
+	[...(Array.isArray(ownOrders.value) ? ownOrders.value : [])].sort(sortOrdersByDateDesc),
 );
 
 async function loadOwnOrders() {
@@ -317,10 +289,6 @@ watch(
 	},
 	{ immediate: true },
 );
-
-onMounted(() => {
-	startStatusSse();
-});
 
 onUnmounted(() => {
 	stopStatusSse();

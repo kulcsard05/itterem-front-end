@@ -1,0 +1,558 @@
+<script setup>
+import { computed, ref, watch } from 'vue';
+import draggable from 'vuedraggable';
+import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../api.js';
+import { useEmployeeOrdersSse } from '../../composables/useEmployeeOrdersSse.js';
+import { useEmployeeOrdersBoot } from '../../composables/useEmployeeOrdersBoot.js';
+import { useEmployeeOrderBoardColumns } from '../../composables/useEmployeeOrderBoardColumns.js';
+import { useFloatingPanel } from '../../composables/useFloatingPanel.js';
+import { useOrderIngredientsLookup } from '../../composables/useOrderIngredientsLookup.js';
+import { useOrderColumns } from '../../composables/useOrderColumns.js';
+import { useOrderStatusDnD } from '../../composables/useOrderStatusDnD.js';
+import { useSseSeen } from '../../composables/useSseSeen.js';
+import {
+	extractOrderIdFromPayload,
+	extractOrderStatusFromPayload,
+	normalizeOrderDto,
+	readText,
+} from '../../order-dto.js';
+import {
+	findById,
+	formatDateTime,
+	getApiBaseUrl,
+	getOrderItemName,
+	getOrderStatusClasses,
+	readStoredAuth,
+} from '../../utils.js';
+import {
+	AUTH_EXPIRED_EVENT,
+	SSE_MAX_RECONNECT_DELAY,
+	SSE_BASE_RECONNECT_DELAY,
+	SSE_MAX_RECONNECT_EXPONENT,
+	SSE_OPEN_WATCHDOG_TIMEOUT,
+	SSE_SEEN_MAP_LIMIT,
+	SSE_SEEN_MAP_TRIM_TO,
+	SSE_MARK_DURATION,
+	POLL_INTERVAL_MS,
+	PANEL_PREFS_KEY,
+	PANEL_MIN_WIDTH,
+	PANEL_MIN_HEIGHT,
+	PANEL_DEFAULT_WIDTH,
+	PANEL_DEFAULT_HEIGHT,
+	PANEL_FONT_MIN,
+	PANEL_FONT_MAX,
+} from '../../constants.js';
+
+const props = defineProps({
+	auth: { type: Object, default: null },
+});
+
+const emit = defineEmits(['logout']);
+
+const loading = ref(false);
+const error = ref('');
+
+const meals = ref([]);
+const menus = ref([]);
+
+const selectedOrderId = ref(null);
+const selectedOrderSnapshot = ref(null);
+
+const {
+	panelX,
+	panelY,
+	panelW,
+	panelH,
+	panelRef,
+	detailFontSize,
+	onPanelPointerDown,
+	onPanelPointerMove,
+	onPanelPointerUp,
+	decFont,
+	incFont,
+	initializePanel,
+	cleanupPanel,
+	handlePanelRefChange,
+} = useFloatingPanel({
+	prefsKey: PANEL_PREFS_KEY,
+	minWidth: PANEL_MIN_WIDTH,
+	minHeight: PANEL_MIN_HEIGHT,
+	defaultWidth: PANEL_DEFAULT_WIDTH,
+	defaultHeight: PANEL_DEFAULT_HEIGHT,
+	fontMin: PANEL_FONT_MIN,
+	fontMax: PANEL_FONT_MAX,
+});
+
+const {
+	pendingOrders,
+	processingOrders,
+	readyOrders,
+	allOrders,
+	normalizeOrders,
+	findOrderLocation,
+	listRefForStatus,
+	removeOrderFromLists,
+	upsertOrderIntoColumns,
+	upsertOrdersIntoColumns,
+	getListRef,
+} = useOrderColumns({
+	selectedOrderId,
+	selectedOrderSnapshot,
+	normalizeOrderDto,
+	readText,
+});
+
+// DEV helper: make it obvious that data arrived via SSE.
+const showSseDebug = import.meta.env.DEV;
+
+const { markSeen: markSseOrder, isSeenMarked: isSseMarked } = useSseSeen({
+	limit: SSE_SEEN_MAP_LIMIT,
+	trimTo: SSE_SEEN_MAP_TRIM_TO,
+	markDuration: SSE_MARK_DURATION,
+});
+
+const ssePendingRefresh = ref(false);
+
+function getSseToken() {
+	return props.auth?.token ?? readStoredAuth()?.token ?? null;
+}
+
+async function refreshFromSse({ orderId = null } = {}) {
+	if (orderId != null) markSseOrder(orderId);
+
+	if (savingStatus.value) {
+		ssePendingRefresh.value = true;
+		return;
+	}
+
+	await loadOrders();
+}
+
+function buildSseUrl(path) {
+	const baseUrl = getApiBaseUrl();
+	const base = String(baseUrl ?? '').replace(/\/+$/, '');
+	return `${base}${path}`;
+}
+
+async function applyStatusUpdate(orderId, nextStatus) {
+	const idKey = String(orderId ?? '').trim();
+	const status = readText(nextStatus);
+	if (!idKey || !status) return;
+
+	markSseOrder(idKey);
+
+	const loc = findOrderLocation(idKey);
+	if (!loc?.order) {
+		// Order might not be loaded yet (or was completed and removed) -> refresh once.
+		await refreshFromSse({ orderId: idKey });
+		return;
+	}
+
+	const prevStatus = readText(loc.order.statusz);
+	loc.order.statusz = status;
+
+	if (status === 'Teljesítve') {
+		removeOrderFromLists(idKey);
+		if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = { ...loc.order };
+		return;
+	}
+
+	if (prevStatus !== status) {
+		const moved = removeOrderFromLists(idKey) ?? loc.order;
+		const target = listRefForStatus(status);
+		target.value.unshift(moved);
+	}
+}
+
+const {
+	sseState,
+	startEmployeeSse,
+	startEmployeeStatusSse,
+	stopEmployeeSse,
+} = useEmployeeOrdersSse({
+	getToken: getSseToken,
+	buildUrl: buildSseUrl,
+	onRefreshFromSse: refreshFromSse,
+	onUpsertOrders: upsertOrdersIntoColumns,
+	onNormalizeOrder: normalizeOrderDto,
+	onUpsertOrder: upsertOrderIntoColumns,
+	onMarkOrder: markSseOrder,
+	onExtractOrderId: extractOrderIdFromPayload,
+	onExtractOrderStatus: extractOrderStatusFromPayload,
+	onApplyStatusUpdate: applyStatusUpdate,
+	maxReconnectDelay: SSE_MAX_RECONNECT_DELAY,
+	baseReconnectDelay: SSE_BASE_RECONNECT_DELAY,
+	maxReconnectExponent: SSE_MAX_RECONNECT_EXPONENT,
+	openWatchdogTimeout: SSE_OPEN_WATCHDOG_TIMEOUT,
+});
+
+const { columnOpen, columns, toggleColumn } = useEmployeeOrderBoardColumns();
+
+const { getOrderEntryIngredients } = useOrderIngredientsLookup({
+	meals,
+	menus,
+	findById,
+});
+
+async function loadOrders() {
+	error.value = '';
+	loading.value = true;
+	try {
+		const list = await getOrders();
+		normalizeOrders(list);
+		if (selectedOrderId.value != null && Array.isArray(list)) {
+			const found = list.find((o) => String(o?.id ?? '') === String(selectedOrderId.value ?? '')) ?? null;
+			if (found) selectedOrderSnapshot.value = found;
+		}
+	} catch (err) {
+		normalizeOrders([]);
+		error.value = err?.message || 'Rendelések betöltése sikertelen.';
+	} finally {
+		loading.value = false;
+	}
+}
+
+async function loadCatalog() {
+	try {
+		const [mealsRes, menusRes] = await Promise.allSettled([getMeals(), getMenus()]);
+		meals.value = mealsRes.status === 'fulfilled' && Array.isArray(mealsRes.value) ? mealsRes.value : [];
+		menus.value = menusRes.status === 'fulfilled' && Array.isArray(menusRes.value) ? menusRes.value : [];
+	} catch {
+		meals.value = [];
+		menus.value = [];
+	}
+}
+
+const selectedOrder = computed(() =>
+	allOrders.value.find((o) => String(o?.id ?? '') === String(selectedOrderId.value ?? '')) ?? null,
+);
+
+const visibleOrder = computed(() => selectedOrder.value ?? selectedOrderSnapshot.value);
+
+const ingredientFontSize = computed(() => Math.min(32, Math.max(12, detailFontSize.value + 2)));
+
+function closePanel() {
+	selectedOrderId.value = null;
+	selectedOrderSnapshot.value = null;
+}
+
+function formatElapsed(value) {
+	const d = new Date(value);
+	const ms = d instanceof Date ? d.getTime() : NaN;
+	if (!Number.isFinite(ms)) return '-';
+	const diff = Math.max(0, Date.now() - ms);
+	const totalMin = Math.floor(diff / 60000);
+	const hours = Math.floor(totalMin / 60);
+	const minutes = totalMin % 60;
+	if (hours <= 0) return `${minutes}p`;
+	return `${hours}ó ${minutes}p`;
+}
+
+const { savingStatus, onDraggableChange } = useOrderStatusDnD({
+	persistStatus: updateOrderStatus,
+	reloadOrders: loadOrders,
+	pendingRefreshRef: ssePendingRefresh,
+});
+
+useEmployeeOrdersBoot({
+	initializePanel,
+	cleanupPanel,
+	loadOrders,
+	loadCatalog,
+	startEmployeeSse,
+	startEmployeeStatusSse,
+	stopEmployeeSse,
+	savingStatus,
+	sseState,
+	pollIntervalMs: POLL_INTERVAL_MS,
+	authExpiredEvent: AUTH_EXPIRED_EVENT,
+	watchToken: () => props.auth?.token,
+});
+
+watch(
+	() => selectedOrder.value,
+	(next) => {
+		if (next) selectedOrderSnapshot.value = next;
+	},
+);
+
+watch(
+	() => panelRef.value,
+	(el, prev) => {
+		handlePanelRefChange(el, prev);
+	},
+);
+</script>
+
+<template>
+	<div class="relative h-[calc(100vh-0px)] overflow-hidden bg-gray-50">
+		<!-- DEV: SSE indicator (make it very obvious updates are live) -->
+		<teleport to="body">
+			<div
+				v-if="showSseDebug"
+				class="fixed left-0 top-0 z-[60]"
+				role="status"
+				aria-live="polite"
+				title="AZONNALI FRISSÍTÉS"
+				aria-label="AZONNALI FRISSÍTÉS"
+			>
+				<span
+					class="inline-flex h-3.5 w-3.5 rounded-full ring-1 ring-gray-300"
+					:class="sseState === 'open' ? 'bg-green-500' : sseState === 'connecting' ? 'bg-yellow-500' : sseState === 'disabled' ? 'bg-gray-400' : 'bg-red-500'"
+				/>
+			</div>
+		</teleport>
+
+		<!-- Minimal logout button (icon-only, bottom corner) -->
+		<button
+			type="button"
+			class="fixed bottom-4 right-4 z-[60] inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-700 ring-1 ring-gray-300 shadow-sm hover:bg-gray-50"
+			aria-label="Kijelentkezés"
+			title="Kijelentkezés"
+			@click="emit('logout')"
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+				<path
+					fill-rule="evenodd"
+					d="M10 2a1 1 0 011 1v6a1 1 0 11-2 0V3a1 1 0 011-1zM6.364 4.636a1 1 0 010 1.414A5 5 0 1013.636 6.05a1 1 0 011.414-1.414 7 7 0 11-9.9 0 1 1 0 011.214-.186z"
+					clip-rule="evenodd"
+				/>
+			</svg>
+		</button>
+
+		<div v-if="error" class="mx-auto max-w-4xl px-4 pt-4">
+			<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+				{{ error }}
+			</div>
+		</div>
+
+		<div class="flex h-full gap-4 p-4">
+			<div
+				v-for="col in columns"
+				:key="col.key"
+				:class="[
+					'flex flex-col rounded-xl border border-gray-200 shadow-sm transition-all duration-300',
+					col.headerClass,
+					columnOpen[col.key] ? 'flex-1 min-w-[16rem]' : 'w-16 flex-none',
+				]"
+			>
+				<!-- Column header -->
+				<div
+					class="flex items-center justify-between border-b border-gray-200 px-3 py-3"
+				>
+					<div v-if="columnOpen[col.key]" class="flex items-center gap-2">
+						<div class="text-sm font-semibold text-gray-900">{{ col.label }}</div>
+						<div class="rounded-full bg-gray-900 px-2 py-0.5 text-xs font-semibold text-white">
+							{{ getListRef(col.key).value.length }}
+						</div>
+					</div>
+
+					<div v-else class="flex w-full items-center justify-center">
+						<div class="-rotate-90 whitespace-nowrap text-xs font-semibold text-gray-800">
+							{{ col.label }} ({{ getListRef(col.key).value.length }})
+						</div>
+					</div>
+
+					<button
+						type="button"
+						class="ml-2 inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-white/60"
+						:title="columnOpen[col.key] ? 'Összecsukás' : 'Kinyitás'"
+						@click="toggleColumn(col.key)"
+					>
+						<svg
+							v-if="columnOpen[col.key]"
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M12.5 4.5L7.5 10l5 5.5" />
+						</svg>
+						<svg
+							v-else
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M7.5 4.5L12.5 10l-5 5.5" />
+						</svg>
+					</button>
+				</div>
+
+				<!-- Column body -->
+				<div v-show="columnOpen[col.key]" class="flex-1 overflow-y-auto p-3">
+					<p v-if="loading" class="text-sm text-gray-500">Betöltés…</p>
+
+					<draggable
+						v-else
+						:list="getListRef(col.key).value"
+						group="orders"
+						item-key="id"
+						:disabled="savingStatus"
+						ghost-class="opacity-50"
+						:animation="150"
+						class="min-h-full min-h-[4.5rem] pb-2"
+						@change="(e) => onDraggableChange(e, col.status)"
+					>
+						<template #item="{ element }">
+							<button
+								type="button"
+								class="mb-3 w-full cursor-grab rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm active:cursor-grabbing"
+								:class="
+									selectedOrderId != null && String(selectedOrderId) === String(element?.id)
+										? 'ring-2 ring-indigo-500'
+										: 'hover:bg-gray-50'
+								"
+								@click="selectedOrderId = element?.id"
+							>
+								<div class="flex items-start justify-between gap-2">
+									<div class="text-base font-bold text-gray-900">#{{ element?.id }}</div>
+									<div class="flex items-center gap-2">
+										<span
+											v-if="showSseDebug && isSseMarked(element?.id)"
+											class="inline-flex shrink-0 items-center rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white"
+											title="Ez a kártya SSE esemény miatt frissült"
+										>
+											SSE
+										</span>
+										<span
+											:class="[
+												'inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold',
+												getOrderStatusClasses(element?.statusz),
+											]"
+										>
+											{{ element?.statusz || '-' }}
+										</span>
+									</div>
+								</div>
+								<div class="mt-2 flex items-center justify-between gap-3 text-sm text-gray-700">
+									<div>Eltelt idő: <span class="font-semibold">{{ formatElapsed(element?.datum) }}</span></div>
+									<div class="text-xs text-gray-500">{{ formatDateTime(element?.datum) }}</div>
+								</div>
+								<div class="mt-2 text-sm text-gray-700">
+									Tételek: <span class="font-semibold">{{ Array.isArray(element?.rendelesElemeks) ? element.rendelesElemeks.length : 0 }}</span>
+								</div>
+							</button>
+						</template>
+						<template #footer>
+							<div
+								v-if="getListRef(col.key).value.length === 0"
+								class="rounded-md border border-dashed border-gray-200 bg-white/60 p-4 text-sm text-gray-600"
+							>
+								Nincs rendelés.
+							</div>
+							<div v-else class="h-10" aria-hidden="true" />
+						</template>
+					</draggable>
+				</div>
+			</div>
+		</div>
+
+		<!-- Floating details panel -->
+		<div
+			v-if="visibleOrder"
+			ref="panelRef"
+			class="fixed z-50 flex flex-col overflow-hidden resize rounded-xl border border-gray-200 bg-white shadow-2xl"
+			:style="{ left: panelX + 'px', top: panelY + 'px', width: panelW + 'px', height: panelH + 'px' }"
+			style="min-width: 320px; min-height: 220px;"
+		>
+			<div
+				class="flex cursor-move select-none items-center justify-between gap-3 border-b border-gray-200 bg-gray-900 px-3 py-2 text-white"
+				@pointerdown="onPanelPointerDown"
+				@pointermove="onPanelPointerMove"
+				@pointerup="onPanelPointerUp"
+				@pointercancel="onPanelPointerUp"
+			>
+				<div class="flex items-center gap-3">
+					<div class="text-sm font-semibold">#{{ visibleOrder?.id }}</div>
+					<div class="text-xs text-white/80">{{ formatDateTime(visibleOrder?.datum) }}</div>
+				</div>
+				<div class="flex items-center gap-2" data-no-drag="true">
+					<button
+						type="button"
+						class="rounded-md px-2 py-1 text-xs font-semibold ring-1 ring-white/30 hover:bg-white/10"
+						@click.stop="decFont"
+						@pointerdown.stop
+						:title="'Betűméret csökkentése'"
+					>
+						A-
+					</button>
+					<button
+						type="button"
+						class="rounded-md px-2 py-1 text-xs font-semibold ring-1 ring-white/30 hover:bg-white/10"
+						@click.stop="incFont"
+						@pointerdown.stop
+						:title="'Betűméret növelése'"
+					>
+						A+
+					</button>
+					<button
+						type="button"
+						class="rounded-md px-2 py-1 text-xs font-semibold text-red-200 ring-1 ring-white/30 hover:bg-white/10 hover:text-red-100"
+						@click.stop="closePanel"
+						@pointerdown.stop
+						title="Bezárás"
+					>
+						X
+					</button>
+				</div>
+			</div>
+
+			<div class="flex-1 overflow-auto p-4" :style="{ fontSize: detailFontSize + 'px' }">
+				<div class="flex items-center justify-between gap-3">
+					<div class="text-base font-bold text-gray-900">Tételek</div>
+					<span
+						:class="[
+							'inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold',
+							getOrderStatusClasses(visibleOrder?.statusz),
+						]"
+					>
+						{{ visibleOrder?.statusz || '-' }}
+					</span>
+				</div>
+
+				<div class="mt-3">
+					<p v-if="!Array.isArray(visibleOrder?.rendelesElemeks) || visibleOrder.rendelesElemeks.length === 0" class="text-sm text-gray-600">
+						Nincs tétel.
+					</p>
+					<ul v-else class="space-y-2">
+						<li
+							v-for="entry in visibleOrder.rendelesElemeks"
+							:key="entry.id"
+							class="flex items-start justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2"
+						>
+							<div class="min-w-0">
+								<div class="font-semibold text-gray-900">{{ getOrderItemName(entry) }}</div>
+								<div v-if="getOrderEntryIngredients(entry).length" class="mt-1 text-gray-700" :style="{ fontSize: ingredientFontSize + 'px' }">
+									<ul class="space-y-0.5">
+										<li v-for="(name, i) in getOrderEntryIngredients(entry)" :key="i">{{ name }}</li>
+									</ul>
+								</div>
+							</div>
+							<div class="shrink-0 text-gray-800">× {{ entry?.mennyiseg ?? 0 }}</div>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+</template>
+
+<style scoped>
+.status-atvehetö {
+	animation: none !important;
+	box-shadow: none !important;
+	border-width: 0 !important;
+}
+</style>

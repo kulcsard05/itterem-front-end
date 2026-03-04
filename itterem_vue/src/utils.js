@@ -1,15 +1,24 @@
+import {
+	AUTH_STORAGE_KEY,
+	AUTH_EXPIRED_EVENT,
+	AUTH_EXPIRED_MESSAGE,
+	ORDER_STATUS_CLASSES as _ORDER_STATUS_CLASSES,
+} from './constants.js';
+
+// Re-export constants so existing imports from utils.js keep working.
+export { AUTH_STORAGE_KEY, AUTH_EXPIRED_EVENT, AUTH_EXPIRED_MESSAGE };
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-
-const DEFAULT_API_BASE_URL = 'https://localhost:7200';
 
 function stripTrailingSlashes(value) {
 	return String(value ?? '').replace(/\/+$/, '');
 }
 
 /**
- * Return the API base URL from environment or fallback to default.
+ * Return the API base URL from environment.
+ * In dev mode without VITE_API_BASE_URL, returns '' so Vite's proxy handles requests.
  * @returns {string}
  */
 export function getApiBaseUrl() {
@@ -17,7 +26,11 @@ export function getApiBaseUrl() {
 	// In dev, prefer same-origin requests so Vite's `/api` proxy can handle HTTPS backend + CORS.
 	// This makes EventSource/SSE work reliably without backend CORS tweaks.
 	if (envBaseUrl === undefined && import.meta.env.DEV) return '';
-	return stripTrailingSlashes(envBaseUrl !== undefined ? envBaseUrl : DEFAULT_API_BASE_URL);
+	if (envBaseUrl === undefined) {
+		console.warn('[Itterem] VITE_API_BASE_URL is not set – configure it in .env');
+		return '';
+	}
+	return stripTrailingSlashes(envBaseUrl);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,9 +109,8 @@ export function parseJwt(token) {
 	}
 }
 
-export const AUTH_STORAGE_KEY = 'auth';
-export const AUTH_EXPIRED_EVENT = 'itterem:auth-expired';
-export const AUTH_EXPIRED_MESSAGE = 'A bejelentkezés lejárt. Kérjük, jelentkezz be újra.';
+// AUTH_STORAGE_KEY, AUTH_EXPIRED_EVENT, AUTH_EXPIRED_MESSAGE are imported
+// from constants.js and re-exported at the top of this file.
 
 /**
  * Return JWT expiration as epoch milliseconds, or null when unavailable.
@@ -193,6 +205,16 @@ export function getEntityNameById(list, idValue, nameKey = 'nev') {
 	return String(item?.[nameKey] ?? '-');
 }
 
+/**
+ * Resolve user ID from auth object, handling multiple possible field names.
+ * @param {Object} auth
+ * @returns {*}
+ */
+export function resolveUserId(auth) {
+	const decodedToken = parseJwt(auth?.token);
+	return auth?.id ?? auth?.sub ?? decodedToken?.sub ?? decodedToken?.id ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Item type helpers (UI labels + order payload mapping)
 // ---------------------------------------------------------------------------
@@ -247,12 +269,7 @@ export function readFirstText(candidates = []) {
 // Order status helpers
 // ---------------------------------------------------------------------------
 
-export const ORDER_STATUS_CLASSES = {
-	Függőben: 'bg-orange-100 text-orange-800',
-	Folyamatban: 'bg-yellow-100 text-yellow-800',
-	Átvehető: 'bg-green-100 text-green-800 status-atvehetö',
-	Átvett: 'bg-blue-100 text-blue-800',
-};
+export const ORDER_STATUS_CLASSES = _ORDER_STATUS_CLASSES;
 
 export function getOrderStatusClasses(status) {
 	return ORDER_STATUS_CLASSES[String(status ?? '').trim()] ?? 'bg-gray-100 text-gray-800';
@@ -301,6 +318,49 @@ export function formatOrderItems(order) {
 
 // ---------------------------------------------------------------------------
 // Images
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Shared entity helpers (deduplicated from components)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract ingredient names from a meal object.
+ * Works with both `hozzavaloNev` and `nev` field shapes.
+ * @param {Object} meal
+ * @returns {string[]}
+ */
+export function getMealIngredientNames(meal) {
+	const list = Array.isArray(meal?.hozzavalok) ? meal.hozzavalok : [];
+	return list
+		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
+		.filter(Boolean);
+}
+
+/**
+ * Extract the category ID from a meal, normalised to string or null.
+ * @param {Object} meal
+ * @returns {string|null}
+ */
+export function getMealCategoryId(meal) {
+	const value = meal?.kategoriaId ?? null;
+	return value == null ? null : String(value);
+}
+
+/**
+ * Sort orders descending by date (newest first).
+ * @param {Object} a
+ * @param {Object} b
+ * @returns {number}
+ */
+export function sortOrdersByDateDesc(a, b) {
+	const ta = new Date(a?.datum ?? 0).getTime();
+	const tb = new Date(b?.datum ?? 0).getTime();
+	return tb - ta;
+}
+
+// ---------------------------------------------------------------------------
+// Images (continued)
 // ---------------------------------------------------------------------------
 
 function looksLikeBase64Binary(value) {

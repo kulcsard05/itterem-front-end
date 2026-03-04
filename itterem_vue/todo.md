@@ -1,55 +1,161 @@
-# Itterem Frontend — Tennivalók
+# Backend TODO — ETag alapú menü gyorsítás (frontend már felkészítve)
 
-## Magas prioritás
+A frontend már elkészült a feltételes lekérésekhez:
+- Küldi: `If-None-Match`
+- Kezeli: `304 Not Modified`
+- ETag-eket kliensoldalon menti
 
-- [ ] **Backend szerződés egységesítése (param nevek + nullák)**:
-  - `Kategoria` legyen a kanonikus név (ne `Kategora`).
-  - `Keszetelek`: a frontend mostantól csak `kategoriaId` paramot küld create/update esetén is (backend igazodjon ehhez).
-  - `Menuk`: backend engedje a nullable `keszetelId` / `koretId` / `uditoId` mezőket (frontend validáció: készétel VAGY köret kötelező).
-  - `Menuk` listázás/frissítés mindenhol FK ID-kat adjon vissza (`keszetelId`, `koretId`, `uditoId`).
+Most a backend feladata, hogy ETag-et adjon vissza a menü adatokra.
 
-- [x] **Regisztráció – JSON body**: A `register()` az adatokat JSON body-ban küldi (`teljesNev`, `email`, `jelszo`, `telefonszam`) a `POST /api/Registration` végpontra.
-- [x] **Kosár funkció implementálása**:
-  - `CartDrawer.vue` komponens: tételek listája, darabszám, összeg, rendelés leadás
-  - `useCart` composable: állapot kezelés (localStorage-ban tárolva), `buildOrderItems()` segédfüggvény
-  - „Kosárba" gomb aktív a `MenuItemPage.vue`-ban (`add-to-cart` esemény)
-  - Rendelés leadás a `CartDrawer.vue`-ban + `placeOrder()` → `POST /api/Order`
-  - Rendelés megerősítő visszajelzés (siker / hiba üzenet a drawerben)
-- [x] **JWT token lejárat kezelése**: A `requestOk()` helper a 401-es válasz esetén automatikusan kijelentkezteti a felhasználót (`clearStoredAuth({ emitEvent: true })`), az `AUTH_EXPIRED_MESSAGE` üzenetet adja vissza.
+---
 
-## Közepes prioritás
+## 1) Érintett endpointok
 
-- [ ] **Elfelejtett jelszó funkció**: Backend végpont szükséges hozzá. Ha elkészül, a `Login.vue`-ban a szürke gomb aktiválható.
-- [ ] **Felhasználói adatok szerkesztése**: Név és e-mail cím módosítása a `UserPage.vue`-ban (backend végpont szükséges).
-- [ ] **Rendelési előzmények oldal** (`OrderHistory.vue`): A bejelentkezett felhasználó korábbi rendeléseit listázza.
-- [ ] **Admin hibakezelés – általánosítás**: Az `AdminDashboard.vue`-ban a mentési / törlési hibaüzenetek (`'Missing id.'`, `'Save failed'`, `'Delete failed'`) még angolul vannak, ezeket is magyarosítani kell.
+Az alábbi **GET** endpointoknak kell ETag támogatás:
+- `GET /api/Kategoria`
+- `GET /api/Keszetelek`
+- `GET /api/Koretek`
+- `GET /api/Menuk`
+- `GET /api/Uditok`
 
-## Alacsony prioritás
+Minden endpointnál ugyanaz az elv:
+1. Számolj aktuális verziót/hash-t (ETag)
+2. Ha request header `If-None-Match` megegyezik az aktuális ETag-gel → `304`
+3. Ha nem egyezik → `200` + normál JSON body + `ETag` response header
 
-- [ ] **Kedvencek funkció**: Étel/ital kedvencnek jelölése, külön „Kedvencek" oldal.
-- [ ] **Push / in-app értesítések**: Rendelés állapotának változásakor értesítés a felhasználónak.
-- [ ] **SSE auth átalakítás cookie-ra (később)**:
-  - Jelenleg (dev) az SSE `EventSource` JWT-t query paramként kap: `?access_token=...`.
-  - Cél: httpOnly cookie alapú auth SSE-hez (EventSource header nélkül is működik).
-  - Backend:
-    - Login után állítson be httpOnly sütit (pl. `Set-Cookie: access_token=...; HttpOnly; Secure; SameSite=None` vagy `Lax` dev/prod szerint).
-    - CORS: `AllowCredentials()` + explicit origin (nem lehet `*`).
-    - SSE endpointoknál a cookie-ból olvassa a tokent/identitást (vagy cookie auth scheme).
-  - Frontend:
-    - `EventSource(url, { withCredentials: true })`.
-    - Fetch kéréseknél opcionálisan átállás cookie auth-ra (vagy marad Bearer header, de akkor kétféle auth lesz).
-  - Megjegyzés: query param token kerülhet logokba/analyticsba; cookie-s megoldás tisztább hosszú távon.
-- [ ] **Sötét téma**: Tailwind `dark:` osztályok hozzáadása a fő komponensekhez.
-- [ ] **PWA támogatás**: `vite-plugin-pwa` és `manifest.json` konfigurálása offline elérhetőséghez.
-- [ ] **tailwind.config.cjs törlése**: A Tailwind v4 nem olvassa a config fájlt (az `@tailwindcss/postcss` plugint használja). A fájl dead code, törölhető ha nem tervez visszaváltást v3-ra.
+---
 
-## Technikai adósság
+## 2) HTTP szerződés (pontos)
 
-- [ ] **Regisztrációnál a visszatérési forma**: Ha a backend visszaküldi az újonnan létrehozott felhasználó adatait, a `Register.vue` kezelje azt (pl. automatikus bejelentkezés regisztráció után).
-- [ ] **E2E tesztek**: Cypress vagy Playwright tesztek a bejelentkezési folyamathoz és az admin CRUD műveletekhez.
-- [ ] **Hozzáférési jogok finomhangolása**: A router guard jelenleg a `jogosultsag` mezőt ellenőrzi (`== 2` = admin). Ha több jogosultsági szint lesz, ezeket érdemes nevesített konstansokba kiszervezni.
+### Kliens → Szerver
+- Header: `If-None-Match: "<etag>"`
 
+### Szerver → Kliens
+- Válasz `200 OK` esetén:
+  - `ETag: "<etag>"`
+  - normál JSON body (mint most)
+- Válasz `304 Not Modified` esetén:
+  - body **ne legyen** (vagy üres)
+  - opcionálisan ETag visszaadható, de nem kötelező
 
-keszetel post/put kep nullable
-keszetel ids get ad vissza hozzavalo idket, sima get nem
-étterem beállítások backend sql frontend
+### Fontos
+- ETag legyen **stabil** ugyanarra az adatra
+- ETag változzon bármilyen releváns adatváltozásnál
+- Használható weak ETag is: `W/"..."`, de kezdésnek egyszerű strong ETag is jó
+
+---
+
+## 3) ETag előállítás (ajánlott stratégia)
+
+## 3.1 Gyors, megbízható mintázat
+Minden endpointhoz állíts elő egy determinisztikus stringet, pl:
+- rekordszám
+- max `updatedAt` (ha van)
+- max `id`
+- opcionálisan checksum
+
+Majd erre hash:
+- `SHA-256(baseString)`
+- ETag = `"{hexHash}"`
+
+Példa base string (`/api/Keszetelek`):
+- `count=123|maxUpdatedAt=2026-03-04T10:00:00Z|maxId=456`
+
+Ha nincs `updatedAt` oszlop:
+- rövid távon: hash a rendezett rekordokból (id + fő mezők)
+- hosszú távon: érdemes minden táblába `updatedAt`-ot bevezetni
+
+## 3.2 Konkrétan mely táblák számítanak
+- `/api/Kategoria` → `Kategoria`
+- `/api/Keszetelek` → `Keszetelek` (+ ha nested/kapcsolt hozzávalók is jönnek, akkor kapcsolótábla is)
+- `/api/Koretek` → `Koretek`
+- `/api/Menuk` → `Menuk`
+- `/api/Uditok` → `Uditok`
+
+Ha a payload kapcsolt adatot is tartalmaz (pl. készételhez hozzávalók), az ETag-be **kötelező** beleszámítani azt a kapcsolatot is.
+
+---
+
+## 4) Változtatások backend kódban
+
+## 4.1 Közös helper middleware/service
+Készíts egy közös utility-t, pl:
+- `ComputeEtagForEndpoint(endpointName)`
+- `TryHandleIfNoneMatch(request, response, currentEtag)`
+
+Elvárt viselkedés:
+1. kiszámolja `currentEtag`
+2. beolvassa `If-None-Match`
+3. match esetén `304` + return
+4. különben controller folytatja, a végén `ETag` header beállítva
+
+## 4.2 Controller szintű alkalmazás
+Minden érintett GET metódus elején:
+- ETag számítás
+- conditional check
+
+Minden 200-as válasz előtt:
+- `Response.Headers["ETag"] = currentEtag`
+
+---
+
+## 5) Cache-Control beállítás
+
+Ajánlott response header:
+- `Cache-Control: private, max-age=0, must-revalidate`
+
+Miért:
+- böngésző revalidál minden alkalommal
+- ha nincs változás → olcsó `304`
+- ha változott → teljes új adat
+
+---
+
+## 6) Elfogadási kritériumok (Definition of Done)
+
+1. Az 5 endpoint mind ad `ETag` headert 200 esetén
+2. Ugyanarra az adatra két egymás utáni kérés:
+   - 1. kérés: `200` + body + ETag
+   - 2. kérés (If-None-Match): `304`
+3. Adatmódosítás után (create/update/delete):
+   - következő GET már `200` + új ETag
+4. Frontend oldalon frissítéskor (Refresh gomb):
+   - változatlan adatra nincs body letöltés (`304`)
+   - változáskor frissül a lista
+5. Nem törik auth flow:
+   - 401 továbbra is 401
+
+---
+
+## 7) Teszt forgatókönyv (kézi)
+
+1. Nyisd meg az appot, `Network` tab
+2. Menü endpointokra első kérés: 200 + ETag
+3. Nyomj `Refresh`-t a frontendben
+4. Elvárt: 304-ok (vagy legalábbis nem minden endpoint 200)
+5. Módosíts adminból egy elemet (pl. étel ár)
+6. Újra `Refresh`
+7. Elvárt: az érintett endpoint 200 + új ETag
+
+---
+
+## 8) Opcionális továbbfejlesztés (később)
+
+Ha még kevesebb kérés kell:
+- új endpoint: `GET /api/menu/version`
+- visszaad egy aggregált verziót minden menü adatra
+- frontend csak változáskor húzza be az 5 listát
+
+De jelenleg az ETag + 304 teljesen elegendő és szabványos.
+
+---
+
+## 9) Megjegyzés a jelenlegi frontend implementációról
+
+A frontend már:
+- local cache-ből azonnal renderel (`menu-cache-v1`)
+- dataset-fingerprint alapján nem cserél state-et feleslegesen
+- endpoint ETag-eket külön tárol (`menu-etags-v1`)
+- conditional loader függvényeket használ (`get*Conditional`)
+
+Tehát backend oldalon az ETag visszaadás után az optimalizáció azonnal aktiválódik.

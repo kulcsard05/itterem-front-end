@@ -1,3 +1,26 @@
+<script setup>
+const team = Object.freeze([
+	{
+		name: 'Kovács Péter',
+		role: 'Alapító & Séf',
+		emoji: '👨‍🍳',
+		bio: '15 éves tapasztalattal rendelkező séf, aki imád kísérletezni az ízekkel.',
+	},
+	{
+		name: 'Nagy Erzsébet',
+		role: 'Alapító & Manager',
+		emoji: '👩‍💼',
+		bio: 'A vendéglátás szerelmese, aki minden nap gondoskodik arról, hogy minden zökkenőmentesen menjen.',
+	},
+	{
+		name: 'Tóth Dávid',
+		role: 'Cukrász',
+		emoji: '🍰',
+		bio: 'Egyedi desszertjeivel minden látogatást emlékezetessé tesz.',
+	},
+]);
+</script>
+
 <template>
 	<div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
 		<!-- Hero -->
@@ -68,26 +91,3 @@
 		</section>
 	</div>
 </template>
-
-<script setup>
-const team = Object.freeze([
-	{
-		name: 'Kovács Péter',
-		role: 'Alapító & Séf',
-		emoji: '👨‍🍳',
-		bio: '15 éves tapasztalattal rendelkező séf, aki imád kísérletezni az ízekkel.',
-	},
-	{
-		name: 'Nagy Erzsébet',
-		role: 'Alapító & Manager',
-		emoji: '👩‍💼',
-		bio: 'A vendéglátás szerelmese, aki minden nap gondoskodik arról, hogy minden zökkenőmentesen menjen.',
-	},
-	{
-		name: 'Tóth Dávid',
-		role: 'Cukrász',
-		emoji: '🍰',
-		bio: 'Egyedi desszertjeivel minden látogatást emlékezetessé tesz.',
-	},
-]);
-</script>

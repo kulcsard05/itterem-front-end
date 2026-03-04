@@ -4,6 +4,7 @@ import {
 	getApiBaseUrl,
 	readStoredAuth,
 } from './utils.js';
+import { MENU_ETAG_STORAGE_KEY } from './constants.js';
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -56,19 +57,6 @@ async function readJsonOrText(response) {
 	return raw;
 }
 
-async function requestOk(response, fallbackErrorMessage) {
-	const body = await readJsonOrText(response);
-	if (response.ok) return { ok: true, data: body };
-
-	if (response.status === 401) {
-		clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
-		return { ok: false, message: AUTH_EXPIRED_MESSAGE };
-	}
-
-	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
-	return { ok: false, message };
-}
-
 async function requestJsonOrThrow(response, fallbackErrorMessage) {
 	const body = await readJsonOrText(response);
 	if (response.ok) return body;
@@ -95,7 +83,7 @@ async function requestJsonOrThrow(response, fallbackErrorMessage) {
  * @param {Object}               [opts.params]       Query-string key/value pairs.
  * @param {File}                  [opts.kepFile]      Optional image file to upload.
  * @param {string}                opts.fallbackError  Error message when backend doesn't provide one.
- * @returns {Promise<{ok: boolean, data?: *, message?: string}>}
+ * @returns {Promise<*>}
  */
 async function mutate({ method, endpoint, params = {}, kepFile, fallbackError }) {
 	const baseUrl = getApiBaseUrl();
@@ -132,7 +120,7 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 		body,
 	});
 
-	return requestOk(response, fallbackError);
+	return requestJsonOrThrow(response, fallbackError);
 }
 
 async function getById(endpoint, id, fallbackError) {
@@ -152,7 +140,7 @@ async function deletePath(endpoint, id, fallbackError) {
 		method: 'DELETE',
 		headers: authHeaders(),
 	});
-	return requestOk(response, fallbackError);
+	return requestJsonOrThrow(response, fallbackError);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,40 +148,53 @@ async function deletePath(endpoint, id, fallbackError) {
 // ---------------------------------------------------------------------------
 
 export async function login(email, password) {
-	const baseUrl = getApiBaseUrl();
+	try {
+		const baseUrl = getApiBaseUrl();
 
-	const response = await fetch(`${baseUrl}/api/Login`, {
-		method: 'POST',
-		headers: { accept: '*/*', 'Content-Type': 'application/json' },
-		body: JSON.stringify({ email, passwd: password }),
-	});
+		const response = await fetch(`${baseUrl}/api/Login`, {
+			method: 'POST',
+			headers: { accept: '*/*', 'Content-Type': 'application/json' },
+			body: JSON.stringify({ email, passwd: password }),
+		});
 
-	const body = await readJsonOrText(response);
+		const body = await readJsonOrText(response);
 
-	if (response.ok) return { ok: true, user: body };
-	if (typeof body === 'string') return { ok: false, message: body };
-	return { ok: false, message: 'Bejelentkezés sikertelen' };
+		if (response.ok) return body;
+		if (response.status === 401) {
+			throw new Error('Hibás email vagy jelszó');
+		}
+		if (typeof body === 'string') throw new Error(body);
+		throw new Error(body?.message || 'Bejelentkezés sikertelen');
+	} catch (error) {
+		if (error instanceof Error) throw error;
+		throw new Error('Hálózati hiba – ellenőrizd az internetkapcsolatot');
+	}
 }
 
 export async function register({ teljesNev, email, password, telefonSzam }) {
-	const baseUrl = getApiBaseUrl();
+	try {
+		const baseUrl = getApiBaseUrl();
 
-	const response = await fetch(`${baseUrl}/api/Registration`, {
-		method: 'POST',
-		headers: { accept: '*/*', 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			teljesNev: String(teljesNev ?? '').trim(),
-			email: String(email ?? '').trim(),
-			jelszo: String(password ?? ''),
-			telefonszam: String(telefonSzam ?? '').trim(),
-		}),
-	});
+		const response = await fetch(`${baseUrl}/api/Registration`, {
+			method: 'POST',
+			headers: { accept: '*/*', 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				teljesNev: String(teljesNev ?? '').trim(),
+				email: String(email ?? '').trim(),
+				jelszo: String(password ?? ''),
+				telefonszam: String(telefonSzam ?? '').trim(),
+			}),
+		});
 
-	const body = await readJsonOrText(response);
+		const body = await readJsonOrText(response);
 
-	if (response.ok) return { ok: true, data: body };
-	if (typeof body === 'string') return { ok: false, message: body };
-	return { ok: false, message: body?.message || 'Regisztráció sikertelen' };
+		if (response.ok) return body;
+		if (typeof body === 'string') throw new Error(body);
+		throw new Error(body?.message || 'Regisztráció sikertelen');
+	} catch (error) {
+		if (error instanceof Error) throw error;
+		throw new Error('Hálózati hiba – ellenőrizd az internetkapcsolatot');
+	}
 }
 
 /**
@@ -258,13 +259,102 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 	}
 }
 
+function readMenuEtags() {
+	try {
+		const raw = localStorage.getItem(MENU_ETAG_STORAGE_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw);
+		return parsed && typeof parsed === 'object' ? parsed : {};
+	} catch {
+		return {};
+	}
+}
+
+function writeMenuEtag(key, value) {
+	if (!key || !value) return;
+	try {
+		const etags = readMenuEtags();
+		etags[key] = value;
+		localStorage.setItem(MENU_ETAG_STORAGE_KEY, JSON.stringify(etags));
+	} catch {
+		// ignore storage write failures
+	}
+}
+
+function extractListFromBody(body, extraArrayKeys = []) {
+	if (Array.isArray(body)) return body;
+	if (body && Array.isArray(body.data)) return body.data;
+
+	for (const key of extraArrayKeys) {
+		if (body && Array.isArray(body[key])) return body[key];
+	}
+
+	return [];
+}
+
+/**
+ * Conditional GET using ETag.
+ * Returns an object so callers can skip state updates on 304.
+ */
+async function getListWithEtag(endpointPath, fallbackErrorMessage, extraArrayKeys = [], etagKey = '') {
+	const baseUrl = getApiBaseUrl();
+	const url = baseUrl ? `${baseUrl}${endpointPath}` : endpointPath;
+
+	try {
+		const headers = authHeaders();
+		const knownEtag = readMenuEtags()[etagKey];
+		if (knownEtag) headers['If-None-Match'] = knownEtag;
+
+		const response = await fetch(url, {
+			method: 'GET',
+			headers,
+		});
+
+		if (response.status === 304) {
+			return { notModified: true, data: null };
+		}
+
+		const body = await readJsonOrText(response);
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
+				throw new Error(AUTH_EXPIRED_MESSAGE);
+			}
+			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
+		}
+
+		const nextEtag = response.headers.get('etag');
+		if (nextEtag) writeMenuEtag(etagKey, nextEtag);
+
+		return {
+			notModified: false,
+			data: extractListFromBody(body, extraArrayKeys),
+		};
+	} catch (error) {
+		if (error instanceof Error && error.message === AUTH_EXPIRED_MESSAGE) {
+			throw error;
+		}
+		if (error instanceof Error) throw error;
+		throw new Error(fallbackErrorMessage);
+	}
+}
+
 export function getCategories() {
 	return getList('/api/Kategoria', 'Kategóriák betöltése sikertelen', ['categories']);
+}
+
+export function getCategoriesConditional() {
+	return getListWithEtag('/api/Kategoria', 'Kategóriák betöltése sikertelen', ['categories'], 'categories');
 }
 
 /** Keszetelek = Készételek */
 export function getMeals() {
 	return getList('/api/Keszetelek', 'Készételek betöltése sikertelen');
+}
+
+export function getMealsConditional() {
+	return getListWithEtag('/api/Keszetelek', 'Készételek betöltése sikertelen', [], 'meals');
 }
 
 export function getMealById(id) {
@@ -276,19 +366,32 @@ export function getSides() {
 	return getList('/api/Koretek', 'Köretek betöltése sikertelen');
 }
 
+export function getSidesConditional() {
+	return getListWithEtag('/api/Koretek', 'Köretek betöltése sikertelen', [], 'sides');
+}
+
 export function getMenus() {
 	return getList('/api/Menuk', 'Menük betöltése sikertelen');
+}
+
+export function getMenusConditional() {
+	return getListWithEtag('/api/Menuk', 'Menük betöltése sikertelen', [], 'menus');
 }
 
 export function getDrinks() {
 	return getList('/api/Uditok', 'Üdítők betöltése sikertelen');
 }
 
+export function getDrinksConditional() {
+	return getListWithEtag('/api/Uditok', 'Üdítők betöltése sikertelen', [], 'drinks');
+}
+
 // ---------------------------------------------------------------------------
 // Orders  (Rendelések)
 // ---------------------------------------------------------------------------
 
-export const ORDER_STATUSES = ['Függőben', 'Folyamatban', 'Átvehető', 'Átvett'];
+// Re-export from constants.js so existing callers keep working.
+export { ORDER_STATUSES } from './constants.js';
 
 export function getOrders() {
 	return getList('/api/Rendelesek', 'Rendelések betöltése sikertelen');
@@ -301,10 +404,7 @@ export function getOwnOrders() {
 export function updateOrderStatus(id, status) {
 	const normalizedStatus = String(status ?? '').trim();
 	if (!ORDER_STATUSES.includes(normalizedStatus)) {
-		return Promise.resolve({
-			ok: false,
-			message: `Érvénytelen státusz. Engedélyezett értékek: ${ORDER_STATUSES.join(', ')}`,
-		});
+		throw new Error(`Érvénytelen státusz. Engedélyezett értékek: ${ORDER_STATUSES.join(', ')}`);
 	}
 
 	return mutate({
@@ -321,7 +421,7 @@ export function updateOrderStatus(id, status) {
  * @param {number} felhasznaloId   The logged-in user's ID.
  * @param {Array}  orderItems      Array of order line objects, e.g.
  *   [{ keszetelId: 1, mennyiseg: 1 }, { uditoId: 2, mennyiseg: 3 }, ...]
- * @returns {Promise<{ok: boolean, data?: *, message?: string}>}
+ * @returns {Promise<*>}
  */
 export async function placeOrder(felhasznaloId, orderItems) {
 	const baseUrl = getApiBaseUrl();
@@ -330,7 +430,7 @@ export async function placeOrder(felhasznaloId, orderItems) {
 		headers: authHeaders({ 'Content-Type': 'application/json' }),
 		body: JSON.stringify({ felhasznaloId, items: orderItems }),
 	});
-	return requestOk(response, 'Rendelés leadása sikertelen');
+	return requestJsonOrThrow(response, 'Rendelés leadása sikertelen');
 }
 
 export function deleteOrder(id) {

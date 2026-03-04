@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { login } from '../api';
-import { isValidEmail } from '../utils.js';
+import { login } from '../../api.js';
+import { isValidEmail } from '../../utils.js';
 
 const emit = defineEmits(['switch', 'login-success']);
 
@@ -12,25 +12,29 @@ const error = ref('');
 const fieldErrors = ref({ email: '', password: '' });
 const submitAttempted = ref(false);
 
-function validate() {
-	const next = { email: '', password: '' };
+function checkFields() {
 	const emailValue = email.value.trim();
 	const passwordValue = password.value;
+	return {
+		email: !emailValue
+			? 'Email cím megadása kötelező.'
+			: !isValidEmail(emailValue)
+				? 'Kérjük, adj meg egy érvényes email címet.'
+				: '',
+		password: !passwordValue ? 'Jelszó megadása kötelező.' : '',
+	};
+}
 
-	if (!emailValue) next.email = 'Email cím megadása kötelező.';
-	else if (!isValidEmail(emailValue)) next.email = 'Kérjük, adj meg egy érvényes email címet.';
-
-	if (!passwordValue) next.password = 'Jelszó megadása kötelező.';
-
-	fieldErrors.value = next;
-	return !next.email && !next.password;
+function validate() {
+	const errors = checkFields();
+	fieldErrors.value = errors;
+	return !errors.email && !errors.password;
 }
 
 const canSubmit = computed(() => {
 	if (loading.value) return false;
-	const emailValue = email.value.trim();
-	const passwordValue = password.value;
-	return Boolean(emailValue && passwordValue && isValidEmail(emailValue));
+	const errors = checkFields();
+	return !errors.email && !errors.password;
 });
 
 watch([email, password], () => {
@@ -50,12 +54,8 @@ async function onSubmit() {
 	const trimmedEmail = email.value.trim();
 
 	try {
-		const result = await login(trimmedEmail, password.value);
-		if (result.ok) {
-			emit('login-success', result.user);
-		} else {
-			error.value = result.message || 'Hibás email vagy jelszó';
-		}
+		const user = await login(trimmedEmail, password.value);
+		emit('login-success', user);
 	} catch (err) {
 		error.value = err?.message || 'Bejelentkezés sikertelen';
 	} finally {

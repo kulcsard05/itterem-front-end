@@ -1,8 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { placeOrder } from '../api.js';
-import { useCart } from '../composables/useCart.js';
-import { getItemTypeLabel, parseJwt } from '../utils.js';
+import { placeOrder } from '../../api.js';
+import { useCart } from '../../composables/useCart.js';
+import { getItemTypeLabel, resolveUserId } from '../../utils.js';
+import { ORDER_TIMEOUT_MS } from '../../constants.js';
 
 const props = defineProps({
 	open: {
@@ -19,10 +20,7 @@ const emit = defineEmits(['close', 'order-success']);
 
 const { items, totalItems, totalPrice, addItem, decrementItem, removeItem, clearCart, buildOrderItems } = useCart();
 
-const resolvedUserId = computed(() => {
-	const decodedToken = parseJwt(props.auth?.token);
-	return props.auth?.id ?? props.auth?.sub ?? decodedToken?.sub ?? decodedToken?.id ?? null;
-});
+const resolvedUserId = computed(() => resolveUserId(props.auth));
 
 const ordering = ref(false);
 const orderError = ref('');
@@ -54,25 +52,21 @@ async function submitOrder() {
 
 	try {
 		const orderItems = buildOrderItems();
-		const result = await withTimeout(placeOrder(resolvedUserId.value, orderItems), 15000);
-		if (result.ok) {
-			const apiMessage = typeof result?.data?.message === 'string' ? result.data.message.trim() : '';
-			const orderId = result?.data?.orderId;
+		const result = await withTimeout(placeOrder(resolvedUserId.value, orderItems), ORDER_TIMEOUT_MS);
+		const apiMessage = typeof result?.message === 'string' ? result.message.trim() : '';
+		const orderId = result?.orderId;
 
-			if (apiMessage && orderId != null) {
-				orderSuccessMessage.value = `${apiMessage} (Rendelés azonosító: ${orderId})`;
-			} else if (apiMessage) {
-				orderSuccessMessage.value = apiMessage;
-			} else {
-				orderSuccessMessage.value = 'Rendelés leadva.';
-			}
-
-			orderSuccess.value = true;
-			clearCart();
-			emit('order-success');
+		if (apiMessage && orderId != null) {
+			orderSuccessMessage.value = `${apiMessage} (Rendelés azonosító: ${orderId})`;
+		} else if (apiMessage) {
+			orderSuccessMessage.value = apiMessage;
 		} else {
-			orderError.value = result.message || 'Rendelés leadása sikertelen.';
+			orderSuccessMessage.value = 'Rendelés leadva.';
 		}
+
+		orderSuccess.value = true;
+		clearCart();
+		emit('order-success');
 	} catch (err) {
 		orderError.value = err instanceof Error ? err.message : 'Rendelés leadása sikertelen.';
 	} finally {

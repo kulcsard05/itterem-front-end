@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 
 const props = defineProps({
 	show: { type: Boolean, default: false },
@@ -27,6 +28,16 @@ function toggleMultiSelect(key, optionValue, checked) {
 	else set.delete(normalizedValue);
 	updateField(key, Array.from(set));
 }
+
+const resolvedFieldOptions = computed(() => {
+	const map = {};
+	for (const field of props.fields) {
+		if (field.type === 'select' || field.type === 'multiselect') {
+			map[field.key] = typeof field.options === 'function' ? field.options() : (field.options ?? []);
+		}
+	}
+	return map;
+});
 </script>
 
 <template>
@@ -100,7 +111,7 @@ function toggleMultiSelect(key, optionValue, checked) {
 						@change="updateField(field.key, $event.target.value)"
 					>
 						<option v-if="field.placeholder" value="">{{ field.placeholder }}</option>
-						<option v-for="opt in (typeof field.options === 'function' ? field.options() : field.options)" :key="opt.value" :value="opt.value">
+						<option v-for="opt in resolvedFieldOptions[field.key]" :key="opt.value" :value="opt.value">
 							{{ opt.label }}
 						</option>
 					</select>

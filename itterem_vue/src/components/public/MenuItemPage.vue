@@ -1,7 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { getItemTypeLabel, readFirstText } from '../utils.js';
+import { getItemTypeLabel, readFirstText } from '../../utils.js';
 
 const props = defineProps({
 	itemData: {
@@ -21,6 +21,7 @@ onMounted(() => {
 });
 
 const addedMessage = ref('');
+let addedTimer = null;
 
 const itemTitle = computed(() => props.itemData?.name ?? 'Item');
 const itemImage = computed(() => props.itemData?.image ?? '');
@@ -65,10 +66,14 @@ const menuBreakdown = computed(() => {
 function addToCart() {
 	emit('add-to-cart', props.itemData);
 	addedMessage.value = `${itemTitle.value} hozzáadva a kosárhoz.`;
-	setTimeout(() => {
+	clearTimeout(addedTimer);
+	addedTimer = setTimeout(() => {
 		addedMessage.value = '';
+		addedTimer = null;
 	}, 3000);
 }
+
+onUnmounted(() => clearTimeout(addedTimer));
 
 function openBreakdownEntry(entry) {
 	const payload = entry?.openPayload;
@@ -93,8 +98,6 @@ function openBreakdownEntry(entry) {
 			<div class="p-6">
 				<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">{{ itemTypeLabel }}</div>
 				<h1 class="text-2xl font-bold text-gray-900">{{ itemTitle }}</h1>
-
-				<!--         <p v-if="itemMeta" class="mt-2 text-sm text-gray-600">{{ itemMeta }}</p> -->
 
 				<div
 					v-if="menuBreakdown.length"
@@ -121,8 +124,7 @@ function openBreakdownEntry(entry) {
 					v-if="itemIngredients.length"
 					class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700"
 				>
-					<!-- <p class="font-semibold text-gray-900">Hozzávalók</p> -->
-					<p class="mt-1 text-sm text-gray-700">{{ itemIngredientsLabel }}</p>
+					<p v-if="itemIngredientsLabel" class="mt-1 text-sm text-gray-700">{{ itemIngredientsLabel }}</p>
 				</div>
 
 				<p v-if="showDescription" class="mt-4 text-gray-700">{{ itemDescription }}</p>

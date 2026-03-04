@@ -1,9 +1,17 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { getCategories, getDrinks, getMeals, getMenus, getSides } from '../api.js';
-import { findById, getItemTypeLabel, toImageSrc } from '../utils.js';
+import {
+	getCategoriesConditional,
+	getDrinksConditional,
+	getMealsConditional,
+	getMenusConditional,
+	getSidesConditional,
+} from '../../api.js';
+import { findById, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, toImageSrc } from '../../utils.js';
+import { MENU_CACHE_STORAGE_KEY } from '../../constants.js';
 
 const emit = defineEmits(['open-item', 'add-to-cart']);
+const isDev = import.meta.env.DEV;
 
 const activeType = ref('meals'); // meals | sides | menus | drinks
 
@@ -12,6 +20,14 @@ const meals = ref([]);
 const sides = ref([]);
 const menus = ref([]);
 const drinks = ref([]);
+
+const menuFingerprints = ref({
+	categories: '',
+	meals: '',
+	sides: '',
+	menus: '',
+	drinks: '',
+});
 
 const loading = ref({
 	categories: false,
@@ -29,9 +45,26 @@ const errors = ref({
 	drinks: '',
 });
 
-function getMealCategoryId(meal) {
-	const value = meal?.kategoriaId ?? null;
-	return value == null ? null : String(value);
+const endpointRefreshStatus = ref({
+	categories: '-',
+	meals: '-',
+	sides: '-',
+	menus: '-',
+	drinks: '-',
+});
+
+const endpointDebugItems = computed(() => [
+	{ key: 'categories', label: 'Kategóriák' },
+	{ key: 'meals', label: 'Készételek' },
+	{ key: 'sides', label: 'Köretek' },
+	{ key: 'menus', label: 'Menük' },
+	{ key: 'drinks', label: 'Üdítők' },
+]);
+
+function getItemName(type, item) {
+	if (!item) return '-';
+	if (type === 'menus') return item?.menuNev ?? '-';
+	return item?.nev ?? '-';
 }
 
 function getCategoryName(cat) {
@@ -43,12 +76,6 @@ function getCategoryMeals(cat) {
 	return Array.isArray(value) ? value : [];
 }
 
-function getItemName(type, item) {
-	if (!item) return '-';
-	if (type === 'menus') return item?.menuNev ?? '-';
-	return item?.nev ?? '-';
-}
-
 function getItemPrice(item) {
 	return item?.ar ?? null;
 }
@@ -57,11 +84,53 @@ function getItemImage(item) {
 	return toImageSrc(item?.kep);
 }
 
-function getMealIngredientNames(meal) {
-	const list = Array.isArray(meal?.hozzavalok) ? meal.hozzavalok : [];
-	return list
-		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
-		.filter(Boolean);
+function toDatasetFingerprint(value) {
+	const list = Array.isArray(value) ? value : [];
+	try {
+		return JSON.stringify(list);
+	} catch {
+		return String(list.length);
+	}
+}
+
+function setDatasetIfChanged(key, targetRef, value) {
+	const nextList = Array.isArray(value) ? value : [];
+	const nextFingerprint = toDatasetFingerprint(nextList);
+	if (menuFingerprints.value[key] === nextFingerprint) return false;
+	targetRef.value = nextList;
+	menuFingerprints.value[key] = nextFingerprint;
+	return true;
+}
+
+function saveMenuCache() {
+	try {
+		const payload = {
+			categories: categories.value,
+			meals: meals.value,
+			sides: sides.value,
+			menus: menus.value,
+			drinks: drinks.value,
+		};
+		localStorage.setItem(MENU_CACHE_STORAGE_KEY, JSON.stringify(payload));
+	} catch {
+		// ignore cache write failures (private mode, quota, etc.)
+	}
+}
+
+function hydrateMenuCache() {
+	try {
+		const raw = localStorage.getItem(MENU_CACHE_STORAGE_KEY);
+		if (!raw) return;
+		const payload = JSON.parse(raw);
+		if (!payload || typeof payload !== 'object') return;
+		setDatasetIfChanged('categories', categories, payload.categories);
+		setDatasetIfChanged('meals', meals, payload.meals);
+		setDatasetIfChanged('sides', sides, payload.sides);
+		setDatasetIfChanged('menus', menus, payload.menus);
+		setDatasetIfChanged('drinks', drinks, payload.drinks);
+	} catch {
+		// ignore cache parse errors
+	}
 }
 
 function getMealIngredientsLabel(meal) {
@@ -162,7 +231,7 @@ function buildMenuBreakdown(menu) {
 		},
 		{
 			key: 'drink',
-			label: 'Üditő',
+			label: 'Üdítő',
 			name: drinkName,
 			description: '',
 			openPayload: drinkPayload,
@@ -225,28 +294,43 @@ function quickAddToCart(event, type, item, categoryName = '') {
 async function loadOne(key, fn, targetRef, fallbackMessage) {
 	loading.value[key] = true;
 	errors.value[key] = '';
+	endpointRefreshStatus.value[key] = '...';
 	try {
 		const result = await fn();
-		targetRef.value = Array.isArray(result) ? result : [];
+		if (result && typeof result === 'object' && 'notModified' in result) {
+			if (result.notModified) {
+				endpointRefreshStatus.value[key] = '304';
+				return false;
+			}
+			endpointRefreshStatus.value[key] = '200';
+			return setDatasetIfChanged(key, targetRef, result.data);
+		}
+		endpointRefreshStatus.value[key] = '200';
+		return setDatasetIfChanged(key, targetRef, result);
 	} catch (err) {
-		targetRef.value = [];
+		endpointRefreshStatus.value[key] = 'ERR';
 		errors.value[key] = err instanceof Error ? err.message : fallbackMessage;
+		return false;
 	} finally {
 		loading.value[key] = false;
 	}
 }
 
 async function refreshAll() {
-	await Promise.allSettled([
-		loadOne('categories', getCategories, categories, 'Kategóriák betöltése sikertelen'),
-			loadOne('meals', getMeals, meals, 'Készételek betöltése sikertelen'),
-			loadOne('sides', getSides, sides, 'Köretek betöltése sikertelen'),
-			loadOne('menus', getMenus, menus, 'Menük betöltése sikertelen'),
-			loadOne('drinks', getDrinks, drinks, 'Üditők betöltése sikertelen'),
+	const changes = await Promise.allSettled([
+		loadOne('categories', getCategoriesConditional, categories, 'Kategóriák betöltése sikertelen'),
+			loadOne('meals', getMealsConditional, meals, 'Készételek betöltése sikertelen'),
+			loadOne('sides', getSidesConditional, sides, 'Köretek betöltése sikertelen'),
+			loadOne('menus', getMenusConditional, menus, 'Menük betöltése sikertelen'),
+			loadOne('drinks', getDrinksConditional, drinks, 'Üdítők betöltése sikertelen'),
 	]);
+
+	const hasChanges = changes.some((entry) => entry.status === 'fulfilled' && entry.value === true);
+	if (hasChanges) saveMenuCache();
 }
 
 onMounted(() => {
+	hydrateMenuCache();
 	refreshAll();
 });
 
@@ -397,7 +481,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'drinks'"
 				>
-					Üditők
+					Üdítők
 				</button>
 			</div>
 
@@ -408,6 +492,16 @@ const mealSections = computed(() => {
 			>
 				Refresh
 			</button>
+		</div>
+
+		<div v-if="isDev" class="mt-2 flex flex-wrap gap-2 text-xs">
+			<span
+				v-for="item in endpointDebugItems"
+				:key="item.key"
+				class="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-gray-600"
+			>
+				{{ item.label }}: {{ endpointRefreshStatus[item.key] }}
+			</span>
 		</div>
 
 		<!-- Meals: grouped by categories -->
@@ -448,12 +542,11 @@ const mealSections = computed(() => {
 								<div class="flex flex-col justify-between">
 									<h3 class="text-base font-semibold text-gray-900">{{ item.nev }}</h3>
 
-									<p
-										v-if="getMealIngredientsLabel(item)"
-										class="mt-1 text-xs text-gray-500"
-									>
-										{{ getMealIngredientsLabel(item) }}
-									</p>
+									<template v-for="label in [getMealIngredientsLabel(item)]" :key="0">
+										<p v-if="label" class="mt-1 text-xs text-gray-500">
+											{{ label }}
+										</p>
+									</template>
 
 									<div>
 										<p
@@ -476,6 +569,7 @@ const mealSections = computed(() => {
 									:src="getItemImage(item)"
 									:alt="item.nev || 'Étel kép'"
 									class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
+									loading="lazy"
 								/>
 							</div>
 						</div>
@@ -519,9 +613,11 @@ const mealSections = computed(() => {
 									<p v-if="activeType === 'menus' && getMenuMeta(item)" class="text-xs text-gray-500">
 										{{ getMenuMeta(item) }}
 									</p>
-									<p v-if="activeType === 'menus' && getMealIngredientsLabel(findById(meals, item?.keszetelId))" class="mt-1 text-xs text-gray-500">
-										{{ getMealIngredientsLabel(findById(meals, item?.keszetelId)) }}
+								<template v-for="ingLabel in [getMealIngredientsLabel(findById(meals, item?.keszetelId))]" :key="0">
+									<p v-if="activeType === 'menus' && ingLabel" class="mt-1 text-xs text-gray-500">
+										{{ ingLabel }}
 									</p>
+								</template>
 									<p
 										v-if="getItemPrice(item) != null"
 										class="mt-auto text-sm font-medium text-gray-700"
@@ -542,6 +638,7 @@ const mealSections = computed(() => {
 								:src="getItemImage(item)"
 								:alt="item.nev || 'Étel kép'"
 								class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
+								loading="lazy"
 							/>
 						</div>
 					</div>

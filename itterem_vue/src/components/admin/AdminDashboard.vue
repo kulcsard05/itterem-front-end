@@ -30,7 +30,7 @@ import {
 	updateMeal,
 	updateOrderStatus,
 	updateSide,
-} from '../api.js';
+} from '../../api.js';
 import AdminTable from './AdminTable.vue';
 import AdminEditModal from './AdminEditModal.vue';
 import ConfirmModal from './ConfirmModal.vue';
@@ -49,9 +49,9 @@ import {
 	requiredSelect,
 	requiredAtLeastOneSelect,
 	validateAll,
-} from '../admin-helpers.js';
+} from '../../admin-helpers.js';
 
-import { formatDateTime, formatOrderItems, getEntityNameById, getImageSrcFromItem } from '../utils.js';
+import { formatDateTime, formatOrderItems, getEntityNameById, getImageSrcFromItem, getMealCategoryId as getMealCatId, getMealIngredientNames, sortOrdersByDateDesc } from '../../utils.js';
 
 // ── Events ──────────────────────────────────────────────────────
 const emit = defineEmits(['back', 'logout']);
@@ -89,11 +89,6 @@ function clearFeedback() {
 	actionSuccess.value = '';
 }
 
-function getMealCategoryId(meal) {
-	const directId = meal?.kategoriaId ?? null;
-	return directId != null ? directId : null;
-}
-
 function getMenuMealId(menu) {
 	return menu?.keszetelId ?? null;
 }
@@ -107,26 +102,15 @@ function getMenuDrinkId(menu) {
 }
 
 function getMealCategoryName(meal) {
-	const catId = getMealCategoryId(meal);
+	const catId = getMealCatId(meal);
 	const list = kategoriak.value;
 	const found = list.find((c) => String(c?.id ?? '') === String(catId ?? ''));
 	return String(found?.nev ?? '-');
 }
 
-function getMealIngredients(item) {
-	const list = Array.isArray(item?.hozzavalok) ? item.hozzavalok : [];
-	return list
-		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
-		.filter(Boolean);
-}
-
 function formatMealIngredients(item) {
-	const names = getMealIngredients(item);
+	const names = getMealIngredientNames(item);
 	return names.length ? names.join(', ') : '-';
-}
-
-function getCurrentImageFromItem(item) {
-	return getImageSrcFromItem(item, 'kep');
 }
 
 // formatDateTime / formatOrderItems moved to utils.js
@@ -262,10 +246,10 @@ const entityConfigs = {
 				.filter((v) => v != null)
 				.map((v) => String(v)),
 			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-			kategoriaId: normalizeSelectValue(getMealCategoryId(item)),
+			kategoriaId: normalizeSelectValue(getMealCatId(item)),
 			ar: normalizePriceValue(item?.ar),
 			kepFile: null,
-			currentImageUrl: getCurrentImageFromItem(item),
+			currentImageUrl: getImageSrcFromItem(item, 'kep'),
 		}),
 		defaultForm: () => ({
 			nev: '',
@@ -326,7 +310,7 @@ const entityConfigs = {
 			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
 			ar: normalizePriceValue(item?.ar),
 			kepFile: null,
-			currentImageUrl: getCurrentImageFromItem(item),
+			currentImageUrl: getImageSrcFromItem(item, 'kep'),
 		}),
 		defaultForm: () => ({
 			nev: '',
@@ -372,7 +356,7 @@ const entityConfigs = {
 			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
 			ar: normalizePriceValue(item?.ar),
 			kepFile: null,
-			currentImageUrl: getCurrentImageFromItem(item),
+			currentImageUrl: getImageSrcFromItem(item, 'kep'),
 		}),
 		defaultForm: () => ({
 			nev: '',
@@ -445,7 +429,7 @@ const entityConfigs = {
 			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
 			ar: normalizePriceValue(item?.ar),
 			kepFile: null,
-			currentImageUrl: getCurrentImageFromItem(item),
+			currentImageUrl: getImageSrcFromItem(item, 'kep'),
 		}),
 		defaultForm: () => ({
 			menuNev: '',
@@ -544,11 +528,7 @@ const tabs = [
 ];
 
 const rendelesek = computed(() =>
-	[...(Array.isArray(rendelesekRaw.value) ? rendelesekRaw.value : [])].sort((a, b) => {
-		const ta = new Date(a?.datum ?? 0).getTime();
-		const tb = new Date(b?.datum ?? 0).getTime();
-		return tb - ta;
-	}),
+	[...(Array.isArray(rendelesekRaw.value) ? rendelesekRaw.value : [])].sort(sortOrdersByDateDesc),
 );
 
 // Menus need enrichment (display names resolved from current local FK arrays)
@@ -584,6 +564,7 @@ const dataLoads = [
 ];
 
 async function loadAdminData() {
+	if (isLoading.value) return;
 	isLoading.value = true;
 	loadError.value = '';
 	clearFeedback();
@@ -664,7 +645,7 @@ async function saveEdit() {
 
 		const isCreate = isCreateMode.value;
 		if (!isCreate && !editForm.value.id && editForm.value.id !== 0) {
-			actionError.value = 'Missing id.';
+			actionError.value = 'Hiányzó azonosító.';
 			return;
 		}
 
@@ -676,14 +657,13 @@ async function saveEdit() {
 
 		const payload = config.buildPayload(editForm.value, isCreate);
 		const apiFn = isCreate ? config.api.create : config.api.update;
-		const res = await apiFn(payload);
-		if (!res.ok) throw new Error(res.message || `Failed to ${isCreate ? 'create' : 'update'}`);
+		await apiFn(payload);
 
 		actionSuccess.value = isCreate ? config.messages.create : config.messages.update;
 		showEditModal.value = false;
 		await loadAdminData();
 	} catch (err) {
-		actionError.value = err instanceof Error ? err.message : 'Save failed';
+		actionError.value = err instanceof Error ? err.message : 'Mentés sikertelen';
 	} finally {
 		saving.value = false;
 	}
@@ -706,12 +686,11 @@ async function confirmDelete() {
 	clearFeedback();
 
 	try {
-		const res = await config.api.delete(item.id);
-		if (!res.ok) throw new Error(res.message || 'Delete failed');
+		await config.api.delete(item.id);
 		actionSuccess.value = config.messages.delete;
 		await loadAdminData();
 	} catch (err) {
-		actionError.value = err instanceof Error ? err.message : 'Delete failed';
+		actionError.value = err instanceof Error ? err.message : 'Törlés sikertelen';
 	} finally {
 		deleting.value = false;
 		showConfirmModal.value = false;
