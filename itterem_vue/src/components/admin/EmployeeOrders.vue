@@ -108,7 +108,7 @@ function handleOrderPlaced(payload) {
 	}
 }
 
-function handleOrderUpdated(orderId, _message) {
+function handleOrderUpdated(orderId, status, _message) {
 	const idKey = String(orderId ?? '').trim();
 	if (!idKey) return;
 
@@ -117,8 +117,19 @@ function handleOrderUpdated(orderId, _message) {
 		return;
 	}
 
-	// We only receive orderId + message — refresh to get actual new status.
-	loadOrders();
+	const newStatus = readText(status);
+	if (newStatus) {
+		// Use the status from SignalR directly — no need for a full reload.
+		const loc = findOrderLocation(idKey);
+		if (loc?.order) {
+			upsertOrderIntoColumns({ ...loc.order, statusz: newStatus });
+		} else if (newStatus !== 'Átvett') {
+			// Order not in our lists yet — fetch all to pick it up.
+			loadOrders();
+		}
+	} else {
+		loadOrders();
+	}
 }
 
 const { columnOpen, columns, toggleColumn } = useEmployeeOrderBoardColumns();
