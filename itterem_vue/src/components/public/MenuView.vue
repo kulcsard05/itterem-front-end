@@ -1,33 +1,43 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import {
 	getCategoriesConditional,
 	getDrinksConditional,
 	getMealsConditional,
 	getMenusConditional,
 	getSidesConditional,
+	placeOrder,
 } from '../../api.js';
-import { findById, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, toImageSrc } from '../../utils.js';
-import { MENU_CACHE_STORAGE_KEY } from '../../constants.js';
+import { findById, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, resolveUserId, getOrderItemIdKey } from '../../utils.js';
+import { ORDER_TIMEOUT_MS } from '../../constants.js';
+import { getImageSrc, cacheImagesForDatasets } from '../../composables/useMenuImageCache.js';
+import { useAuth } from '../../composables/useAuth.js';
+import { useCart } from '../../composables/useCart.js';
+import { useMenuData } from '../../composables/useMenuData.js';
 
 const emit = defineEmits(['open-item', 'add-to-cart']);
 const isDev = import.meta.env.DEV;
 
-const activeType = ref('meals'); // meals | sides | menus | drinks
+// cartAnimating: true briefly after each click to re-trigger the pop animation.
+const cartAnimating = reactive({});
 
-const categories = ref([]);
-const meals = ref([]);
-const sides = ref([]);
-const menus = ref([]);
-const drinks = ref([]);
+const { auth } = useAuth();
+const { items: cartItems, rehydrateItems } = useCart();
+const {
+	categories, meals, sides, menus, drinks,
+	setDatasetIfChanged, saveMenuCache, hydrateMenuCache,
+} = useMenuData();
 
-const menuFingerprints = ref({
-	categories: '',
-	meals: '',
-	sides: '',
-	menus: '',
-	drinks: '',
+const cartCountByKey = computed(() => {
+	const map = {};
+	for (const cartItem of cartItems.value) {
+		const key = `${cartItem?.type}-${cartItem?.id}`;
+		map[key] = Number(cartItem?.quantity ?? 0) || 0;
+	}
+	return map;
 });
+
+const activeType = ref('meals'); // meals | sides | menus | drinks
 
 const loading = ref({
 	categories: false,
@@ -52,6 +62,9 @@ const endpointRefreshStatus = ref({
 	menus: '-',
 	drinks: '-',
 });
+
+// True while a background refresh is in flight (data already shown from cache).
+const refreshing = ref(false);
 
 const endpointDebugItems = computed(() => [
 	{ key: 'categories', label: 'Kategóriák' },
@@ -81,57 +94,10 @@ function getItemPrice(item) {
 }
 
 function getItemImage(item) {
-	return toImageSrc(item?.kep);
+	return getImageSrc(item?.kep);
 }
 
-function toDatasetFingerprint(value) {
-	const list = Array.isArray(value) ? value : [];
-	try {
-		return JSON.stringify(list);
-	} catch {
-		return String(list.length);
-	}
-}
 
-function setDatasetIfChanged(key, targetRef, value) {
-	const nextList = Array.isArray(value) ? value : [];
-	const nextFingerprint = toDatasetFingerprint(nextList);
-	if (menuFingerprints.value[key] === nextFingerprint) return false;
-	targetRef.value = nextList;
-	menuFingerprints.value[key] = nextFingerprint;
-	return true;
-}
-
-function saveMenuCache() {
-	try {
-		const payload = {
-			categories: categories.value,
-			meals: meals.value,
-			sides: sides.value,
-			menus: menus.value,
-			drinks: drinks.value,
-		};
-		localStorage.setItem(MENU_CACHE_STORAGE_KEY, JSON.stringify(payload));
-	} catch {
-		// ignore cache write failures (private mode, quota, etc.)
-	}
-}
-
-function hydrateMenuCache() {
-	try {
-		const raw = localStorage.getItem(MENU_CACHE_STORAGE_KEY);
-		if (!raw) return;
-		const payload = JSON.parse(raw);
-		if (!payload || typeof payload !== 'object') return;
-		setDatasetIfChanged('categories', categories, payload.categories);
-		setDatasetIfChanged('meals', meals, payload.meals);
-		setDatasetIfChanged('sides', sides, payload.sides);
-		setDatasetIfChanged('menus', menus, payload.menus);
-		setDatasetIfChanged('drinks', drinks, payload.drinks);
-	} catch {
-		// ignore cache parse errors
-	}
-}
 
 function getMealIngredientsLabel(meal) {
 	const names = getMealIngredientNames(meal);
@@ -271,6 +237,7 @@ function openItem(type, item, categoryName = '') {
 		description: getItemDescription(type, item, categoryName),
 		price: getItemPrice(item),
 		image: getItemImage(item),
+		kep: item?.kep ?? '',
 		meta: type === 'menus' ? getMenuMeta(item) : categoryName,
 		menuBreakdown: type === 'menus' ? buildMenuBreakdown(item) : [],
 		ingredients,
@@ -279,16 +246,108 @@ function openItem(type, item, categoryName = '') {
 
 function quickAddToCart(event, type, item, categoryName = '') {
 	event.stopPropagation();
+	const id = item?.id;
+	if (!id || !getOrderItemIdKey(type)) return;
 	const typeLabel = getItemTypeLabel(type);
 	emit('add-to-cart', {
 		type,
 		typeLabel,
-		id: item?.id,
+		id,
 		item,
 		name: getItemName(type, item),
 		price: getItemPrice(item),
 		image: getItemImage(item),
+		kep: item?.kep ?? '',
 	});
+
+	const key = `${type}-${id}`;
+	// Re-trigger animation on every click by removing then re-adding the flag.
+	delete cartAnimating[key];
+	requestAnimationFrame(() => {
+		cartAnimating[key] = true;
+		setTimeout(() => { delete cartAnimating[key]; }, 350);
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Quick-buy modal
+// ---------------------------------------------------------------------------
+
+const quickBuyItem = ref(null);
+const quickBuyQty = ref(1);
+const quickBuyOrdering = ref(false);
+const quickBuyError = ref('');
+const quickBuySuccess = ref(false);
+const quickBuySuccessMessage = ref('');
+
+const quickBuyTotal = computed(() => {
+	if (!quickBuyItem.value || quickBuyItem.value.price == null) return null;
+	return quickBuyItem.value.price * quickBuyQty.value;
+});
+
+function openQuickBuy(event, type, item, categoryName = '') {
+	event.stopPropagation();
+	quickBuyItem.value = {
+		type,
+		typeLabel: getItemTypeLabel(type),
+		item,
+		name: getItemName(type, item),
+		price: getItemPrice(item),
+		image: getItemImage(item),
+		kep: item?.kep ?? '',
+	};
+	quickBuyQty.value = 1;
+	quickBuyError.value = '';
+	quickBuySuccess.value = false;
+	quickBuySuccessMessage.value = '';
+	quickBuyOrdering.value = false;
+}
+
+function closeQuickBuy() {
+	quickBuyItem.value = null;
+}
+
+function withQuickBuyTimeout(promise, ms) {
+	let timeoutId;
+	const timeoutPromise = new Promise((_, reject) => {
+		timeoutId = setTimeout(() => {
+			reject(new Error('A szerver válasza túl sokáig tartott. Próbáld újra.'));
+		}, ms);
+	});
+	return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+
+async function confirmQuickBuy() {
+	const resolved = resolveUserId(auth.value);
+	if (!resolved) {
+		quickBuyError.value = 'A rendeléshez be kell jelentkezni.';
+		return;
+	}
+	const data = quickBuyItem.value;
+	if (!data) return;
+	const idKey = getOrderItemIdKey(data.type);
+	if (!idKey) return;
+
+	quickBuyOrdering.value = true;
+	quickBuyError.value = '';
+	try {
+		const payload = [{ [idKey]: data.item?.id, mennyiseg: quickBuyQty.value }];
+		const result = await withQuickBuyTimeout(placeOrder(resolved, payload), ORDER_TIMEOUT_MS);
+		const apiMessage = typeof result?.message === 'string' ? result.message.trim() : '';
+		const orderId = result?.orderId;
+		if (apiMessage && orderId != null) {
+			quickBuySuccessMessage.value = `${apiMessage} (Rendelés azonosító: ${orderId})`;
+		} else if (apiMessage) {
+			quickBuySuccessMessage.value = apiMessage;
+		} else {
+			quickBuySuccessMessage.value = 'Rendelés leadva.';
+		}
+		quickBuySuccess.value = true;
+	} catch (err) {
+		quickBuyError.value = err instanceof Error ? err.message : 'Rendelés leadása sikertelen.';
+	} finally {
+		quickBuyOrdering.value = false;
+	}
 }
 
 async function loadOne(key, fn, targetRef, fallbackMessage) {
@@ -317,6 +376,7 @@ async function loadOne(key, fn, targetRef, fallbackMessage) {
 }
 
 async function refreshAll() {
+	refreshing.value = true;
 	const changes = await Promise.allSettled([
 		loadOne('categories', getCategoriesConditional, categories, 'Kategóriák betöltése sikertelen'),
 			loadOne('meals', getMealsConditional, meals, 'Készételek betöltése sikertelen'),
@@ -327,10 +387,19 @@ async function refreshAll() {
 
 	const hasChanges = changes.some((entry) => entry.status === 'fulfilled' && entry.value === true);
 	if (hasChanges) saveMenuCache();
+
+	// Re-hydrate cart items with the latest menu data (names, prices, images).
+	rehydrateItems();
+
+	// Download and cache any new images in the background.
+	// Skips kep values that are already cached — cheap to call every time.
+	cacheImagesForDatasets(categories.value, meals.value, sides.value, menus.value, drinks.value);
+	refreshing.value = false;
 }
 
 onMounted(() => {
 	hydrateMenuCache();
+	rehydrateItems();
 	refreshAll();
 });
 
@@ -485,13 +554,20 @@ const mealSections = computed(() => {
 				</button>
 			</div>
 
-			<button
-				type="button"
-				class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-				@click="refreshAll"
-			>
-				Refresh
-			</button>
+			<div class="flex items-center gap-2">
+				<span
+					v-if="refreshing"
+					class="text-xs text-gray-400"
+				>Frissítés…</span>
+				<button
+					type="button"
+					class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60"
+					:disabled="refreshing"
+					@click="refreshAll"
+				>
+					Refresh
+				</button>
+			</div>
 		</div>
 
 		<div v-if="isDev" class="mt-2 flex flex-wrap gap-2 text-xs">
@@ -506,15 +582,16 @@ const mealSections = computed(() => {
 
 		<!-- Meals: grouped by categories -->
 		<div v-if="activeType === 'meals'" class="mt-6">
+			<!-- Only block with a spinner when there is nothing cached to show yet -->
 			<div
-				v-if="loading.meals || loading.categories"
+				v-if="(loading.meals || loading.categories) && mealSections.length === 0"
 				class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700"
 			>
 				Készételek betöltése…
 			</div>
 
 			<div
-				v-else-if="errors.meals || errors.categories"
+				v-else-if="(errors.meals || errors.categories) && mealSections.length === 0"
 				class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
 			>
 				{{ errors.meals || errors.categories }}
@@ -535,7 +612,7 @@ const mealSections = computed(() => {
 						<div
 							v-for="item in section.meals"
 							:key="item.id"
-							class="cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
+						class="group cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
 							@click="openItem('meals', item, section.name)"
 						>
 							<div class="flex items-stretch justify-between gap-3">
@@ -555,13 +632,32 @@ const mealSections = computed(() => {
 										>
 											{{ getItemPrice(item) }} Ft
 										</p>
-										<button
-											type="button"
-											class="mt-2 inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+										<div class="mt-2 flex flex-col items-start gap-1">
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 rounded-md bg-sky-400 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-300 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150"
+												@click.stop="openQuickBuy($event, 'meals', item, section.name)"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
+												</svg>
+												Gyors rendelés
+											</button>
+											<button
+												type="button"
+											:class="[
+												'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white transition-colors duration-200',
+												cartCountByKey[`meals-${item.id}`] ? 'bg-green-500' : 'bg-indigo-600 hover:bg-indigo-500',
+												cartAnimating[`meals-${item.id}`] ? 'cart-pop' : '',
+											]"
 											@click.stop="quickAddToCart($event, 'meals', item, section.name)"
 										>
-											+ Kosár
-										</button>
+											<svg v-if="cartCountByKey[`meals-${item.id}`]" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+											</svg>
+											<span>{{ cartCountByKey[`meals-${item.id}`] ? 'Hozzáadva ' + cartCountByKey[`meals-${item.id}`] + 'x' : '+ Kosár' }}</span>
+											</button>
+										</div>
 									</div>
 								</div>
 								<img
@@ -580,11 +676,12 @@ const mealSections = computed(() => {
 
 		<!-- Other types: flat list -->
 		<div v-else class="mt-6">
-			<div v-if="selectedLoading" class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
+			<!-- Only block with a spinner when there is nothing cached to show yet -->
+			<div v-if="selectedLoading && selectedList.length === 0" class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
 				Betöltés…
 			</div>
 
-			<div v-else-if="selectedError" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+			<div v-else-if="selectedError && selectedList.length === 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
 				{{ selectedError }}
 			</div>
 
@@ -600,7 +697,7 @@ const mealSections = computed(() => {
 					<div
 						v-for="item in selectedList"
 						:key="item.id"
-						class="cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
+					class="group cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
 						@click="openItem(activeType, item)"
 					>
 						<div class="flex items-stretch justify-between gap-3">
@@ -624,13 +721,32 @@ const mealSections = computed(() => {
 									>
 										{{ getItemPrice(item) }} Ft
 									</p>
-									<button
-										type="button"
-										class="mt-2 inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
+									<div class="mt-2 flex flex-col items-start gap-1">
+										<button
+											type="button"
+											class="inline-flex items-center gap-1 rounded-md bg-sky-400 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-300 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150"
+											@click.stop="openQuickBuy($event, activeType, item)"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
+											</svg>
+											Gyors rendelés
+										</button>
+										<button
+											type="button"
+											:class="[
+												'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white transition-colors duration-200',
+											cartCountByKey[`${activeType}-${item.id}`] ? 'bg-green-500' : 'bg-indigo-600 hover:bg-indigo-500',
+											cartAnimating[`${activeType}-${item.id}`] ? 'cart-pop' : '',
+										]"
 										@click.stop="quickAddToCart($event, activeType, item)"
 									>
-										+ Kosár
-									</button>
+										<svg v-if="cartCountByKey[`${activeType}-${item.id}`]" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+										</svg>
+										<span>{{ cartCountByKey[`${activeType}-${item.id}`] ? 'Hozzáadva ' + cartCountByKey[`${activeType}-${item.id}`] + 'x' : '+ Kosár' }}</span>
+										</button>
+									</div>
 								</div>
 							</div>
 							<img
@@ -646,4 +762,170 @@ const mealSections = computed(() => {
 			</div>
 		</div>
 	</div>
+
+	<!-- Quick-buy confirmation modal -->
+	<Teleport to="body">
+		<Transition name="qb-fade">
+			<div
+				v-if="quickBuyItem"
+				class="fixed inset-0 z-50 flex items-center justify-center p-4"
+				role="dialog"
+				aria-modal="true"
+				aria-label="Gyors rendelés"
+			>
+				<!-- Backdrop -->
+				<div
+					class="absolute inset-0 bg-black/50"
+					@click="closeQuickBuy"
+				/>
+
+				<!-- Panel -->
+				<div class="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+					<!-- Header -->
+					<div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+						<h2 class="text-base font-semibold text-gray-900">Gyors rendelés</h2>
+						<button
+							type="button"
+							class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+							@click="closeQuickBuy"
+							aria-label="Bezárás"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+								<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+							</svg>
+						</button>
+					</div>
+
+					<!-- Success state -->
+					<div v-if="quickBuySuccess" class="flex flex-col items-center gap-3 px-6 py-8 text-center">
+						<div class="flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+							</svg>
+						</div>
+						<p class="text-base font-semibold text-gray-900">Rendelés leadva!</p>
+						<p class="text-sm text-gray-500">{{ quickBuySuccessMessage || 'Köszönjük a rendelést.' }}</p>
+						<button
+							type="button"
+							class="mt-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+							@click="closeQuickBuy"
+						>
+							Bezárás
+						</button>
+					</div>
+
+					<!-- Order form -->
+					<div v-else class="px-6 py-5 space-y-5">
+						<!-- Item info -->
+						<div class="flex items-center gap-4">
+							<img
+								v-if="quickBuyItem.image"
+								:src="quickBuyItem.image"
+								:alt="quickBuyItem.name"
+								class="h-20 w-20 flex-shrink-0 rounded-xl object-cover"
+							/>
+							<div v-else class="h-20 w-20 flex-shrink-0 rounded-xl bg-gray-100" />
+							<div>
+								<p class="text-sm text-gray-500">{{ quickBuyItem.typeLabel }}</p>
+								<p class="text-base font-semibold text-gray-900 leading-snug">{{ quickBuyItem.name }}</p>
+								<p v-if="quickBuyItem.price != null" class="mt-1 text-sm text-gray-500">
+									Egységár: <span class="font-medium text-gray-800">{{ quickBuyItem.price }} Ft</span>
+								</p>
+							</div>
+						</div>
+
+						<!-- Quantity -->
+						<div class="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3">
+							<span class="text-sm font-medium text-gray-700">Mennyiség</span>
+							<div class="flex items-center gap-3">
+								<button
+									type="button"
+									class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+									:disabled="quickBuyQty <= 1"
+									@click="quickBuyQty > 1 && quickBuyQty--"
+									aria-label="Csökkentés"
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+									</svg>
+								</button>
+								<span class="w-8 text-center text-base font-bold text-gray-900">{{ quickBuyQty }}</span>
+								<button
+									type="button"
+									class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
+									@click="quickBuyQty++"
+									aria-label="Növelés"
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+									</svg>
+								</button>
+							</div>
+						</div>
+
+						<!-- Total price -->
+						<div v-if="quickBuyTotal != null" class="flex items-center justify-between rounded-xl bg-indigo-50 px-4 py-3">
+							<span class="text-sm font-medium text-indigo-700">Összesen</span>
+							<span class="text-xl font-bold text-indigo-700">{{ quickBuyTotal }} Ft</span>
+						</div>
+
+						<!-- Error -->
+						<p v-if="quickBuyError" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+							{{ quickBuyError }}
+						</p>
+
+						<!-- Actions -->
+						<div class="flex gap-3 pt-1">
+							<button
+								type="button"
+								class="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+								@click="closeQuickBuy"
+							>
+								Mégsem
+							</button>
+							<button
+								type="button"
+								class="flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-60"
+								:disabled="quickBuyOrdering"
+								@click="confirmQuickBuy"
+							>
+								{{ quickBuyOrdering ? 'Rendelés folyamatban…' : 'Rendelés leadása' }}
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</Transition>
+	</Teleport>
 </template>
+
+<style scoped>
+@keyframes cart-pop {
+	0%   { transform: scale(1); }
+	35%  { transform: scale(1.18); }
+	65%  { transform: scale(0.94); }
+	100% { transform: scale(1); }
+}
+
+.cart-pop {
+	animation: cart-pop 0.3s ease-out forwards;
+}
+
+.qb-fade-enter-active,
+.qb-fade-leave-active {
+	transition: opacity 0.18s ease;
+}
+.qb-fade-enter-from,
+.qb-fade-leave-to {
+	opacity: 0;
+}
+.qb-fade-enter-active .relative,
+.qb-fade-leave-active .relative {
+	transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.qb-fade-enter-from .relative,
+.qb-fade-leave-to .relative {
+	transform: scale(0.95);
+	opacity: 0;
+}
+</style>

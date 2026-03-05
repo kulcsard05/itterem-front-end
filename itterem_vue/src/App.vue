@@ -1,11 +1,14 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import CartDrawer from './components/user/CartDrawer.vue';
 import FooterSection from './components/public/FooterSection.vue';
+import ServerDiscovery from './components/ServerDiscovery.vue';
 import { useCart } from './composables/useCart.js';
 import { useAuth } from './composables/useAuth.js';
+import { checkServerReachable, getPersistedServerUrl } from './composables/useServerDiscovery.js';
 import { AUTH_EXPIRED_EVENT } from './constants.js';
+import { getApiBaseUrl } from './utils.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -25,6 +28,8 @@ const {
 
 const selectedMenuItem = ref(null);
 const cartOpen = ref(false);
+const serverDiscoveryOpen = ref(false);
+const serverReachable = ref(null); // null = unknown, true/false after check
 
 const { addItem, totalItems } = useCart();
 
@@ -47,6 +52,28 @@ onUnmounted(() => {
 	window.removeEventListener('storage', onStorageChange);
 	window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
 	clearAuthExpiryTimer();
+});
+
+// ---------------------------------------------------------------------------
+// Server discovery – startup reachability check
+// ---------------------------------------------------------------------------
+
+onMounted(async () => {
+	// Skip in dev mode: Vite proxy handles routing, no direct base URL needed.
+	if (import.meta.env.DEV) return;
+
+	const baseUrl = getApiBaseUrl();
+	if (!baseUrl) {
+		// No URL configured at all – open discovery immediately.
+		serverDiscoveryOpen.value = true;
+		return;
+	}
+
+	const reachable = await checkServerReachable(baseUrl);
+	serverReachable.value = reachable;
+	if (!reachable) {
+		serverDiscoveryOpen.value = true;
+	}
 });
 
 // ---------------------------------------------------------------------------
@@ -158,6 +185,26 @@ function goAbout() {
 				</nav>
 
 				<div class="flex items-center gap-3">
+					<!-- Server status / discovery button -->
+					<button
+						type="button"
+						class="relative inline-flex items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100"
+						:title="serverReachable === false ? 'Szerver nem elérhető – kattints a kereséshez' : 'Szerver keresése (LAN)'"
+						aria-label="Szerver keresése"
+						@click="serverDiscoveryOpen = true"
+					>
+						<!-- Signal/tower icon -->
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+						</svg>
+						<!-- Reachability dot -->
+						<span
+							v-if="serverReachable !== null"
+							class="absolute right-1 top-1 h-2 w-2 rounded-full"
+							:class="serverReachable ? 'bg-green-500' : 'bg-red-500'"
+						></span>
+					</button>
+
 					<!-- Cart button (always visible) -->
 					<button
 						type="button"
@@ -229,5 +276,11 @@ function goAbout() {
 		<CartDrawer v-if="!isEmployee" :open="cartOpen" :auth="auth" @close="cartOpen = false" />
 
 		<FooterSection v-if="!isEmployee" />
+
+		<ServerDiscovery
+			v-if="serverDiscoveryOpen"
+			@close="serverDiscoveryOpen = false"
+			@server-changed="(url) => { serverReachable = url !== null; serverDiscoveryOpen = false; }"
+		/>
 	</div>
 </template>

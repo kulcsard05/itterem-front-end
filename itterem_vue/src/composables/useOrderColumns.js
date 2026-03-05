@@ -54,7 +54,7 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 			};
 			Object.assign(loc.order, merged);
 
-			if (nextStatus === 'Teljesítve') {
+			if (nextStatus === 'Átvett') {
 				removeOrderFromLists(idKey);
 				if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = merged;
 				return;
@@ -70,7 +70,7 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 			return;
 		}
 
-		if (readText(normalized.statusz) === 'Teljesítve') return;
+		if (readText(normalized.statusz) === 'Átvett') return;
 		const target = listRefForStatus(normalized.statusz);
 		target.value.unshift(normalized);
 		if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = normalized;
@@ -92,7 +92,7 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 		const items = Array.isArray(list) ? list : [];
 		for (const order of items) {
 			const status = String(order?.statusz ?? '').trim();
-			if (status === 'Teljesítve') continue;
+			if (status === 'Átvett') continue;
 			if (status === 'Folyamatban') processingOrders.value.push(order);
 			else if (status === 'Átvehető') readyOrders.value.push(order);
 			else pendingOrders.value.push(order);
@@ -103,6 +103,29 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 		if (key === 'pending') return pendingOrders;
 		if (key === 'processing') return processingOrders;
 		return readyOrders;
+	}
+
+	/**
+	 * Ensure an order is in the column matching `targetStatus`.
+	 * No-op if it's already there; fixes it otherwise.
+	 */
+	function ensureOrderInColumn(order, targetStatus) {
+		const idKey = String(order?.id ?? '').trim();
+		if (!idKey) return;
+
+		const target = listRefForStatus(targetStatus);
+		const loc = findOrderLocation(idKey);
+
+		if (loc && loc.listRef === target) return; // already correct
+
+		// Remove from wrong column if present.
+		if (loc) {
+			const arr = Array.isArray(loc.listRef.value) ? loc.listRef.value : [];
+			arr.splice(loc.index, 1);
+		}
+
+		// Add to the correct column (at the front).
+		target.value.unshift(order);
 	}
 
 	const allOrders = computed(() => [
@@ -123,5 +146,6 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 		upsertOrderIntoColumns,
 		upsertOrdersIntoColumns,
 		getListRef,
+		ensureOrderInColumn,
 	};
 }

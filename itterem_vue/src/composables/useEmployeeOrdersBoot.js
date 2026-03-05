@@ -1,20 +1,28 @@
 import { onMounted, onUnmounted, watch } from 'vue';
+import { useSignalR } from './useSignalR.js';
 
 export function useEmployeeOrdersBoot({
 	initializePanel,
 	cleanupPanel,
 	loadOrders,
 	loadCatalog,
-	startEmployeeSse,
-	startEmployeeStatusSse,
-	stopEmployeeSse,
+	onOrderPlaced,
+	onOrderUpdated,
 	savingStatus,
-	sseState,
+	isDragCooldown,
+	connectionState,
 	pollIntervalMs,
 	authExpiredEvent,
 	watchToken,
 }) {
 	let pollTimer = null;
+	const { start, stop, on } = useSignalR();
+	let unsubPlaced = null;
+	let unsubUpdated = null;
+
+	function handleAuthExpired() {
+		stop();
+	}
 
 	onMounted(async () => {
 		initializePanel();
@@ -23,24 +31,29 @@ export function useEmployeeOrdersBoot({
 
 		pollTimer = window.setInterval(() => {
 			if (savingStatus.value) return;
-			if (sseState.value === 'open' || sseState.value === 'connecting') return;
+			if (typeof isDragCooldown === 'function' && isDragCooldown()) return;
+			if (connectionState.value === 'connected' || connectionState.value === 'connecting') return;
 			loadOrders();
 		}, pollIntervalMs);
 
-		startEmployeeSse();
-		startEmployeeStatusSse();
+		unsubPlaced = on('OrderPlaced', onOrderPlaced);
+		unsubUpdated = on('OrderUpdated', onOrderUpdated);
+
+		start();
 
 		try {
-			window.addEventListener(authExpiredEvent, stopEmployeeSse);
+			window.addEventListener(authExpiredEvent, handleAuthExpired);
 		} catch {
 			// ignore
 		}
 	});
 
 	onUnmounted(() => {
-		stopEmployeeSse();
+		if (unsubPlaced) unsubPlaced();
+		if (unsubUpdated) unsubUpdated();
+		stop();
 		try {
-			window.removeEventListener(authExpiredEvent, stopEmployeeSse);
+			window.removeEventListener(authExpiredEvent, handleAuthExpired);
 		} catch {
 			// ignore
 		}
@@ -49,7 +62,6 @@ export function useEmployeeOrdersBoot({
 	});
 
 	watch(watchToken, () => {
-		startEmployeeSse();
-		startEmployeeStatusSse();
+		start();
 	});
 }

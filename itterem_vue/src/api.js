@@ -391,7 +391,8 @@ export function getDrinksConditional() {
 // ---------------------------------------------------------------------------
 
 // Re-export from constants.js so existing callers keep working.
-export { ORDER_STATUSES } from './constants.js';
+import { ORDER_STATUSES } from './constants.js';
+export { ORDER_STATUSES };
 
 export function getOrders() {
 	return getList('/api/Rendelesek', 'Rendelések betöltése sikertelen');

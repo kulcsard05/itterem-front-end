@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => {
 					target: apiTarget,
 					changeOrigin: true,
 				},
+				'/orderHub': {
+					target: apiTarget,
+					changeOrigin: true,
+					ws: true,
+				},
 			},
 		},
 	};

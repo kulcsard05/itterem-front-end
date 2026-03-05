@@ -18,7 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'order-success']);
 
-const { items, totalItems, totalPrice, addItem, decrementItem, removeItem, clearCart, buildOrderItems } = useCart();
+const { items, totalItems, totalPrice, addItem, decrementItem, removeItem, clearCart, buildOrderItems, resolveImage } = useCart();
 
 const resolvedUserId = computed(() => resolveUserId(props.auth));
 
@@ -144,12 +144,12 @@ async function submitOrder() {
 			<ul v-else class="flex-1 divide-y divide-gray-200 overflow-y-auto">
 				<li v-for="item in items" :key="`${item.type}-${item.id}`" class="flex items-center gap-3 px-4 py-3">
 					<img
-						v-if="item.image"
-						:src="item.image"
+						v-if="resolveImage(item)"
+						:src="resolveImage(item)"
 						:alt="item.name"
 						class="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
 					/>
-					<div v-else class="h-14 w-14 flex-shrink-0 rounded-lg bg-gray-100" />
+					<div v-else-if="!resolveImage(item)" class="h-14 w-14 flex-shrink-0 rounded-lg bg-gray-100" />
 
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-medium text-gray-900">{{ item.name }}</p>

@@ -1,5 +1,7 @@
-import { computed, ref } from 'vue';
-import { getItemTypeLabel, getOrderItemIdKey } from '../utils.js';
+import { computed, ref, watch } from 'vue';
+import { getItemTypeLabel, getOrderItemIdKey, toImageSrc } from '../utils.js';
+import { warnQuotaExceeded } from '../storage-utils.js';
+import { useMenuData } from './useMenuData.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton so every component shares the same cart.
@@ -8,28 +10,133 @@ import { getItemTypeLabel, getOrderItemIdKey } from '../utils.js';
 import { CART_STORAGE_KEY } from '../constants.js';
 
 const STORAGE_KEY = CART_STORAGE_KEY;
+const SESSION_FALLBACK_KEY = `${STORAGE_KEY}:session`;
 
-function loadFromStorage() {
+// ---------------------------------------------------------------------------
+// Menu data reference – lazily initialised to avoid order-of-init issues.
+// ---------------------------------------------------------------------------
+let _menuDataRef = null;
+
+function getMenuData() {
+	if (!_menuDataRef) {
+		try {
+			_menuDataRef = useMenuData();
+		} catch {
+			return null;
+		}
+	}
+	return _menuDataRef;
+}
+
+// ---------------------------------------------------------------------------
+// Serialisation – only persist { type, id, quantity } to save localStorage space.
+// ---------------------------------------------------------------------------
+
+function toSerializableItems(value) {
+	const list = Array.isArray(value) ? value : [];
+	return list
+		.map((item) => ({
+			type: String(item?.type ?? ''),
+			id: item?.id,
+			quantity: Number(item?.quantity ?? 0) || 0,
+		}))
+		.filter((item) => item.type && item.id != null && item.quantity > 0);
+}
+
+/**
+ * Hydrate a slim stored item with display fields from the menu data store.
+ */
+function hydrateItem(slim) {
 	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (!raw) return [];
-		const parsed = JSON.parse(raw);
-		return Array.isArray(parsed) ? parsed : [];
+		const md = getMenuData();
+		return md.hydrateCartItem(slim);
 	} catch {
-		return [];
+		// Menu data not available yet – return with defaults.
+		return {
+			...slim,
+			name: slim.name || '',
+			price: slim.price ?? null,
+			kep: slim.kep || '',
+			typeLabel: slim.typeLabel || getItemTypeLabel(slim.type),
+		};
 	}
 }
 
-function saveToStorage(items) {
+function parseStoredItems(raw) {
+	if (!raw) return null;
 	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+		const parsed = JSON.parse(raw);
+		const slim = Array.isArray(parsed)
+			? parsed
+				.map((item) => ({
+					type: String(item?.type ?? ''),
+					id: item?.id,
+					quantity: Number(item?.quantity ?? 0) || 0,
+					// Accept legacy fields if present so existing carts still work.
+					name: item?.name,
+					price: item?.price,
+					kep: item?.kep,
+					typeLabel: item?.typeLabel,
+				}))
+				.filter((item) => item.type && item.id != null && item.quantity > 0)
+			: null;
+		if (!slim || slim.length === 0) return null;
+		return slim.map(hydrateItem);
 	} catch {
-		// ignore quota errors
+		return null;
+	}
+}
+
+function loadFromStorage() {
+	// Primary: localStorage
+	try {
+		const localItems = parseStoredItems(localStorage.getItem(STORAGE_KEY));
+		if (localItems) return localItems;
+	} catch {
+		// ignore and try fallback
+	}
+
+	// Fallback: sessionStorage (still survives page refresh in the same tab)
+	try {
+		const sessionItems = parseStoredItems(sessionStorage.getItem(SESSION_FALLBACK_KEY));
+		if (sessionItems) return sessionItems;
+	} catch {
+		// ignore and use empty cart
+	}
+
+	return [];
+}
+
+function saveToStorage(items) {
+	const snapshot = toSerializableItems(items);
+	const serialized = JSON.stringify(snapshot);
+	let localSaved = false;
+
+	try {
+		localStorage.setItem(STORAGE_KEY, serialized);
+		localSaved = localStorage.getItem(STORAGE_KEY) === serialized;
+	} catch (e) {
+		localSaved = false;
+		warnQuotaExceeded('[Cart]', e);
+	}
+
+	// Keep a same-tab fallback so refresh does not lose cart when localStorage is blocked.
+	try {
+		sessionStorage.setItem(SESSION_FALLBACK_KEY, serialized);
+	} catch {
+		// ignore session storage failures
+	}
+
+	if (!localSaved) {
+		console.warn('[Cart] localStorage write failed; using session fallback persistence.');
 	}
 }
 
 // items: Array<{ type: string, id: number, name: string, price: number|null, image: string, quantity: number }>
 const items = ref(loadFromStorage());
+
+// Auto-persist every change (deep watch catches nested property mutations like quantity increments).
+watch(items, (value) => saveToStorage(value), { deep: true });
 
 // Note: mapping lives in utils.js so UI and API stay consistent.
 
@@ -47,6 +154,11 @@ export function useCart() {
 		}, 0),
 	);
 
+	/** Resolve the raw kep key to a displayable image src at render time. */
+	function resolveImage(item) {
+		return toImageSrc(item?.kep);
+	}
+
 	// -------------------------------------------------------------------------
 	// Mutations
 	// -------------------------------------------------------------------------
@@ -61,6 +173,10 @@ export function useCart() {
 
 		if (!id || !getOrderItemIdKey(type)) return;
 
+		// Extract the raw kep key – prefer the original item's .kep so we never
+		// store a resolved data-URL / base64 blob in localStorage.
+		const rawKep = String(itemData?.item?.kep ?? itemData?.kep ?? '');
+
 		const typeLabel = String(itemData?.typeLabel ?? '').trim() || getItemTypeLabel(type);
 		const list = items.value;
 		const existing = list.find((c) => c.type === type && c.id === id);
@@ -74,7 +190,7 @@ export function useCart() {
 				id,
 				name: String(itemData?.name ?? ''),
 				price: itemData?.price ?? null,
-				image: itemData?.image ?? '',
+				kep: rawKep,
 				quantity: 1,
 			});
 		}
@@ -132,14 +248,34 @@ export function useCart() {
 		return result;
 	}
 
+	/**
+	 * Re-hydrate all in-memory cart items from the current menu data.
+	 * Call this after menu data has been fetched/loaded so that items loaded
+	 * from storage (which only have type + id + quantity) get their display
+	 * fields (name, price, kep, typeLabel) populated.
+	 */
+	function rehydrateItems() {
+		const md = getMenuData();
+		if (!md) return;
+		for (const item of items.value) {
+			const hydrated = md.hydrateCartItem(item);
+			if (hydrated.name) item.name = hydrated.name;
+			if (hydrated.price != null) item.price = hydrated.price;
+			if (hydrated.kep) item.kep = hydrated.kep;
+			if (hydrated.typeLabel) item.typeLabel = hydrated.typeLabel;
+		}
+	}
+
 	return {
 		items,
 		totalItems,
 		totalPrice,
+		resolveImage,
 		addItem,
 		decrementItem,
 		removeItem,
 		clearCart,
 		buildOrderItems,
+		rehydrateItems,
 	};
 }

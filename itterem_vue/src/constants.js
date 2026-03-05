@@ -23,19 +23,15 @@ export const CART_STORAGE_KEY = 'cart';
 export const PANEL_PREFS_KEY = 'employeeOrdersPanelPrefs';
 export const MENU_CACHE_STORAGE_KEY = 'menu-cache-v1';
 export const MENU_ETAG_STORAGE_KEY = 'menu-etags-v1';
+export const MENU_IMAGES_STORAGE_KEY = 'menu-images-v1';
+export const SERVER_URL_STORAGE_KEY = 'itterem-server-url';
 
 // ── Auth events ─────────────────────────────────────────────────
 export const AUTH_EXPIRED_EVENT = 'itterem:auth-expired';
 export const AUTH_EXPIRED_MESSAGE = 'A bejelentkezés lejárt. Kérjük, jelentkezz be újra.';
 
-// ── SSE configuration ───────────────────────────────────────────
-export const SSE_MAX_RECONNECT_DELAY = 30_000;
-export const SSE_BASE_RECONNECT_DELAY = 750;
-export const SSE_MAX_RECONNECT_EXPONENT = 6;
-export const SSE_OPEN_WATCHDOG_TIMEOUT = 8000;
-export const SSE_SEEN_MAP_LIMIT = 300;
-export const SSE_SEEN_MAP_TRIM_TO = 250;
-export const SSE_MARK_DURATION = 90_000;
+// ── SignalR configuration ────────────────────────────────────────
+export const SIGNALR_HUB_PATH = '/orderHub';
 
 // ── Timeouts ────────────────────────────────────────────────────
 export const ORDER_TIMEOUT_MS = 15_000;

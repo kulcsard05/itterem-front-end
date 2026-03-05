@@ -2,37 +2,25 @@
 import { computed, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../api.js';
-import { useEmployeeOrdersSse } from '../../composables/useEmployeeOrdersSse.js';
+import { useSignalR } from '../../composables/useSignalR.js';
 import { useEmployeeOrdersBoot } from '../../composables/useEmployeeOrdersBoot.js';
 import { useEmployeeOrderBoardColumns } from '../../composables/useEmployeeOrderBoardColumns.js';
 import { useFloatingPanel } from '../../composables/useFloatingPanel.js';
 import { useOrderIngredientsLookup } from '../../composables/useOrderIngredientsLookup.js';
 import { useOrderColumns } from '../../composables/useOrderColumns.js';
 import { useOrderStatusDnD } from '../../composables/useOrderStatusDnD.js';
-import { useSseSeen } from '../../composables/useSseSeen.js';
 import {
-	extractOrderIdFromPayload,
-	extractOrderStatusFromPayload,
 	normalizeOrderDto,
 	readText,
 } from '../../order-dto.js';
 import {
 	findById,
 	formatDateTime,
-	getApiBaseUrl,
 	getOrderItemName,
 	getOrderStatusClasses,
-	readStoredAuth,
 } from '../../utils.js';
 import {
 	AUTH_EXPIRED_EVENT,
-	SSE_MAX_RECONNECT_DELAY,
-	SSE_BASE_RECONNECT_DELAY,
-	SSE_MAX_RECONNECT_EXPONENT,
-	SSE_OPEN_WATCHDOG_TIMEOUT,
-	SSE_SEEN_MAP_LIMIT,
-	SSE_SEEN_MAP_TRIM_TO,
-	SSE_MARK_DURATION,
 	POLL_INTERVAL_MS,
 	PANEL_PREFS_KEY,
 	PANEL_MIN_WIDTH,
@@ -95,6 +83,7 @@ const {
 	upsertOrderIntoColumns,
 	upsertOrdersIntoColumns,
 	getListRef,
+	ensureOrderInColumn,
 } = useOrderColumns({
 	selectedOrderId,
 	selectedOrderSnapshot,
@@ -102,89 +91,35 @@ const {
 	readText,
 });
 
-// DEV helper: make it obvious that data arrived via SSE.
-const showSseDebug = import.meta.env.DEV;
+const { connectionState } = useSignalR();
 
-const { markSeen: markSseOrder, isSeenMarked: isSseMarked } = useSseSeen({
-	limit: SSE_SEEN_MAP_LIMIT,
-	trimTo: SSE_SEEN_MAP_TRIM_TO,
-	markDuration: SSE_MARK_DURATION,
-});
+// DEV helper: make it obvious that data arrived via SignalR.
+const showRealtimeDebug = import.meta.env.DEV;
 
-const ssePendingRefresh = ref(false);
+const pendingRefresh = ref(false);
 
-function getSseToken() {
-	return props.auth?.token ?? readStoredAuth()?.token ?? null;
-}
-
-async function refreshFromSse({ orderId = null } = {}) {
-	if (orderId != null) markSseOrder(orderId);
-
-	if (savingStatus.value) {
-		ssePendingRefresh.value = true;
-		return;
+function handleOrderPlaced(payload) {
+	if (!payload) return;
+	const normalized = normalizeOrderDto(payload);
+	if (normalized) {
+		upsertOrderIntoColumns(normalized);
+	} else {
+		loadOrders();
 	}
-
-	await loadOrders();
 }
 
-function buildSseUrl(path) {
-	const baseUrl = getApiBaseUrl();
-	const base = String(baseUrl ?? '').replace(/\/+$/, '');
-	return `${base}${path}`;
-}
-
-async function applyStatusUpdate(orderId, nextStatus) {
+function handleOrderUpdated(orderId, _message) {
 	const idKey = String(orderId ?? '').trim();
-	const status = readText(nextStatus);
-	if (!idKey || !status) return;
+	if (!idKey) return;
 
-	markSseOrder(idKey);
-
-	const loc = findOrderLocation(idKey);
-	if (!loc?.order) {
-		// Order might not be loaded yet (or was completed and removed) -> refresh once.
-		await refreshFromSse({ orderId: idKey });
+	if (savingStatus.value || isDragCooldown()) {
+		pendingRefresh.value = true;
 		return;
 	}
 
-	const prevStatus = readText(loc.order.statusz);
-	loc.order.statusz = status;
-
-	if (status === 'Teljesítve') {
-		removeOrderFromLists(idKey);
-		if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = { ...loc.order };
-		return;
-	}
-
-	if (prevStatus !== status) {
-		const moved = removeOrderFromLists(idKey) ?? loc.order;
-		const target = listRefForStatus(status);
-		target.value.unshift(moved);
-	}
+	// We only receive orderId + message — refresh to get actual new status.
+	loadOrders();
 }
-
-const {
-	sseState,
-	startEmployeeSse,
-	startEmployeeStatusSse,
-	stopEmployeeSse,
-} = useEmployeeOrdersSse({
-	getToken: getSseToken,
-	buildUrl: buildSseUrl,
-	onRefreshFromSse: refreshFromSse,
-	onUpsertOrders: upsertOrdersIntoColumns,
-	onNormalizeOrder: normalizeOrderDto,
-	onUpsertOrder: upsertOrderIntoColumns,
-	onMarkOrder: markSseOrder,
-	onExtractOrderId: extractOrderIdFromPayload,
-	onExtractOrderStatus: extractOrderStatusFromPayload,
-	onApplyStatusUpdate: applyStatusUpdate,
-	maxReconnectDelay: SSE_MAX_RECONNECT_DELAY,
-	baseReconnectDelay: SSE_BASE_RECONNECT_DELAY,
-	maxReconnectExponent: SSE_MAX_RECONNECT_EXPONENT,
-	openWatchdogTimeout: SSE_OPEN_WATCHDOG_TIMEOUT,
-});
 
 const { columnOpen, columns, toggleColumn } = useEmployeeOrderBoardColumns();
 
@@ -195,7 +130,6 @@ const { getOrderEntryIngredients } = useOrderIngredientsLookup({
 });
 
 async function loadOrders() {
-	error.value = '';
 	loading.value = true;
 	try {
 		const list = await getOrders();
@@ -248,10 +182,12 @@ function formatElapsed(value) {
 	return `${hours}ó ${minutes}p`;
 }
 
-const { savingStatus, onDraggableChange } = useOrderStatusDnD({
+const { savingStatus, onDraggableChange, isDragCooldown } = useOrderStatusDnD({
 	persistStatus: updateOrderStatus,
 	reloadOrders: loadOrders,
-	pendingRefreshRef: ssePendingRefresh,
+	pendingRefreshRef: pendingRefresh,
+	ensureOrderInColumn,
+	onError: (msg) => { error.value = msg; },
 });
 
 useEmployeeOrdersBoot({
@@ -259,11 +195,11 @@ useEmployeeOrdersBoot({
 	cleanupPanel,
 	loadOrders,
 	loadCatalog,
-	startEmployeeSse,
-	startEmployeeStatusSse,
-	stopEmployeeSse,
+	onOrderPlaced: handleOrderPlaced,
+	onOrderUpdated: handleOrderUpdated,
 	savingStatus,
-	sseState,
+	isDragCooldown,
+	connectionState,
 	pollIntervalMs: POLL_INTERVAL_MS,
 	authExpiredEvent: AUTH_EXPIRED_EVENT,
 	watchToken: () => props.auth?.token,
@@ -286,10 +222,10 @@ watch(
 
 <template>
 	<div class="relative h-[calc(100vh-0px)] overflow-hidden bg-gray-50">
-		<!-- DEV: SSE indicator (make it very obvious updates are live) -->
+		<!-- DEV: SignalR indicator (make it very obvious updates are live) -->
 		<teleport to="body">
 			<div
-				v-if="showSseDebug"
+				v-if="showRealtimeDebug"
 				class="fixed left-0 top-0 z-[60]"
 				role="status"
 				aria-live="polite"
@@ -298,7 +234,7 @@ watch(
 			>
 				<span
 					class="inline-flex h-3.5 w-3.5 rounded-full ring-1 ring-gray-300"
-					:class="sseState === 'open' ? 'bg-green-500' : sseState === 'connecting' ? 'bg-yellow-500' : sseState === 'disabled' ? 'bg-gray-400' : 'bg-red-500'"
+					:class="connectionState === 'connected' ? 'bg-green-500' : connectionState === 'connecting' || connectionState === 'reconnecting' ? 'bg-yellow-500' : 'bg-red-500'"
 				/>
 			</div>
 		</teleport>
@@ -392,10 +328,9 @@ watch(
 
 				<!-- Column body -->
 				<div v-show="columnOpen[col.key]" class="flex-1 overflow-y-auto p-3">
-					<p v-if="loading" class="text-sm text-gray-500">Betöltés…</p>
+					<p v-if="loading && getListRef(col.key).value.length === 0" class="text-sm text-gray-500">Betöltés…</p>
 
 					<draggable
-						v-else
 						:list="getListRef(col.key).value"
 						group="orders"
 						item-key="id"
@@ -420,13 +355,7 @@ watch(
 									<div class="text-base font-bold text-gray-900">#{{ element?.id }}</div>
 									<div class="flex items-center gap-2">
 										<span
-											v-if="showSseDebug && isSseMarked(element?.id)"
-											class="inline-flex shrink-0 items-center rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white"
-											title="Ez a kártya SSE esemény miatt frissült"
-										>
-											SSE
-										</span>
-										<span
+
 											:class="[
 												'inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold',
 												getOrderStatusClasses(element?.statusz),

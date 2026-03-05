@@ -3,6 +3,7 @@ import {
 	AUTH_EXPIRED_EVENT,
 	AUTH_EXPIRED_MESSAGE,
 	ORDER_STATUS_CLASSES as _ORDER_STATUS_CLASSES,
+	SERVER_URL_STORAGE_KEY,
 } from './constants.js';
 
 // Re-export constants so existing imports from utils.js keep working.
@@ -17,19 +18,25 @@ function stripTrailingSlashes(value) {
 }
 
 /**
- * Return the API base URL from environment.
- * In dev mode without VITE_API_BASE_URL, returns '' so Vite's proxy handles requests.
+ * Return the API base URL, in priority order:
+ *  1. URL discovered via LAN scan (stored in localStorage by useServerDiscovery)
+ *  2. VITE_API_BASE_URL from the .env file
+ *  3. Empty string in dev mode (lets Vite's /api proxy handle requests)
  * @returns {string}
  */
 export function getApiBaseUrl() {
+	// 1. LAN-discovered URL takes precedence so rescanning always takes effect.
+	const stored = localStorage.getItem(SERVER_URL_STORAGE_KEY);
+	if (stored) return stripTrailingSlashes(stored);
+
 	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
-	// In dev, prefer same-origin requests so Vite's `/api` proxy can handle HTTPS backend + CORS.
-	// This makes EventSource/SSE work reliably without backend CORS tweaks.
+	// 3. In dev, prefer same-origin requests so Vite's `/api` proxy can handle HTTPS backend + CORS.
 	if (envBaseUrl === undefined && import.meta.env.DEV) return '';
 	if (envBaseUrl === undefined) {
 		console.warn('[Itterem] VITE_API_BASE_URL is not set – configure it in .env');
 		return '';
 	}
+	// 2. Env var.
 	return stripTrailingSlashes(envBaseUrl);
 }
 

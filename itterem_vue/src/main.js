@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import './style.css';
 import App from './App.vue';
 import router from './router.js';
+import { logStorageUsage } from './storage-utils.js';
 
 const app = createApp(App);
 
@@ -14,3 +15,6 @@ app.config.errorHandler = (err, instance, info) => {
 };
 
 app.use(router).mount('#app');
+
+// Log localStorage usage breakdown in dev mode.
+logStorageUsage();
