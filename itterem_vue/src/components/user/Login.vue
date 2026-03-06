@@ -1,9 +1,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { login } from '../../api.js';
 import { isValidEmail } from '../../utils.js';
 
 const emit = defineEmits(['switch', 'login-success']);
+const { t } = useI18n();
 
 const email = ref('');
 const password = ref('');
@@ -17,11 +19,11 @@ function checkFields() {
 	const passwordValue = password.value;
 	return {
 		email: !emailValue
-			? 'Email cím megadása kötelező.'
+			? t('auth.login.validation.emailRequired')
 			: !isValidEmail(emailValue)
-				? 'Kérjük, adj meg egy érvényes email címet.'
+				? t('auth.login.validation.emailInvalid')
 				: '',
-		password: !passwordValue ? 'Jelszó megadása kötelező.' : '',
+		password: !passwordValue ? t('auth.login.validation.passwordRequired') : '',
 	};
 }
 
@@ -47,7 +49,7 @@ async function onSubmit() {
 	submitAttempted.value = true;
 
 	if (!validate()) {
-		error.value = 'Kérjük, javítsd a kijelölt mezőket.';
+		error.value = t('auth.login.fixFields');
 		return;
 	}
 	loading.value = true;
@@ -57,7 +59,7 @@ async function onSubmit() {
 		const user = await login(trimmedEmail, password.value);
 		emit('login-success', user);
 	} catch (err) {
-		error.value = err?.message || 'Bejelentkezés sikertelen';
+		error.value = err?.message || t('auth.login.failed');
 	} finally {
 		loading.value = false;
 	}
@@ -68,14 +70,14 @@ async function onSubmit() {
 	<div class="w-full max-w-md bg-white rounded-lg shadow-md p-8">
 		<div class="sm:mx-auto sm:w-full sm:max-w-sm">
 			<h2 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">
-				Bejelentkezés
+				{{ t('auth.login.title') }}
 			</h2>
 		</div>
 
 		<div class="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
 			<form class="space-y-6" @submit.prevent="onSubmit">
 				<div>
-					<label for="email" class="block text-sm font-medium leading-6 text-gray-900"> Email cím </label>
+					<label for="email" class="block text-sm font-medium leading-6 text-gray-900"> {{ t('auth.login.emailLabel') }} </label>
 					<div class="mt-2">
 						<input
 							id="email"
@@ -98,14 +100,14 @@ async function onSubmit() {
 				<div>
 					<div class="flex items-center justify-between">
 						<label for="password" class="block text-sm font-medium leading-6 text-gray-900">
-							Jelszó
+							{{ t('auth.login.passwordLabel') }}
 						</label>
 						<div class="text-sm">
 							<span
 								class="font-semibold text-gray-400 cursor-not-allowed"
-								title="Hamarosan elérhető"
+								:title="t('auth.login.forgotPasswordSoon')"
 							>
-								Elfelejtett jelszó?
+								{{ t('auth.login.forgotPassword') }}
 							</span>
 						</div>
 					</div>
@@ -140,19 +142,19 @@ async function onSubmit() {
 							!loading && !canSubmit ? 'opacity-90' : '',
 						]"
 					>
-						{{ loading ? 'Bejelentkezés…' : 'Bejelentkezés' }}
+						{{ loading ? t('auth.login.submitting') : t('auth.login.submit') }}
 					</button>
 				</div>
 			</form>
 
 			<p class="mt-10 text-center text-sm text-gray-500">
-				Nincs még fiókod?
+				{{ t('auth.login.noAccount') }}
 				<button
 					type="button"
 					class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
 					@click="emit('switch')"
 				>
-					Regisztrálj most
+					{{ t('auth.login.registerNow') }}
 				</button>
 			</p>
 		</div>

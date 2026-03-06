@@ -60,10 +60,6 @@ const resolvedFieldOptions = computed(() => {
 
 			<!-- Body -->
 			<div class="p-5 space-y-4">
-				<div v-if="error" class="rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700" role="alert">
-					{{ error }}
-				</div>
-
 				<!-- ID (read-only, edit mode only) -->
 				<div v-if="!isCreateMode" class="space-y-2">
 					<label class="block text-sm font-semibold text-gray-700">ID</label>
@@ -172,21 +168,26 @@ const resolvedFieldOptions = computed(() => {
 			</div>
 
 			<!-- Footer -->
-			<div class="flex gap-3 p-5 border-t-2 border-gray-200 justify-end">
-				<button
-					class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-gray-100 text-gray-500 hover:bg-gray-200 transition cursor-pointer"
-					:disabled="saving"
-					@click="emit('close')"
-				>
-					Mégse
-				</button>
-				<button
-					class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-lg transition cursor-pointer disabled:opacity-50"
-					:disabled="saving"
-					@click="emit('save')"
-				>
-					{{ saving ? 'Mentés…' : isCreateMode ? 'Létrehozás' : 'Mentés' }}
-				</button>
+			<div class="p-5 border-t-2 border-gray-200">
+				<div v-if="error" class="mb-3 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700" role="alert">
+					{{ error }}
+				</div>
+				<div class="flex gap-3 justify-end">
+					<button
+						class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-gray-100 text-gray-500 hover:bg-gray-200 transition cursor-pointer"
+						:disabled="saving"
+						@click="emit('close')"
+					>
+						Mégse
+					</button>
+					<button
+						class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-lg transition cursor-pointer disabled:opacity-50"
+						:disabled="saving"
+						@click="emit('save')"
+					>
+						{{ saving ? 'Mentés…' : isCreateMode ? 'Létrehozás' : 'Mentés' }}
+					</button>
+				</div>
 			</div>
 		</div>
 	</div>

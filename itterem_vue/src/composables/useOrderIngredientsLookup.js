@@ -1,6 +1,26 @@
+import { computed } from 'vue';
 import { getMealIngredientNames } from '../utils.js';
 
 export function useOrderIngredientsLookup({ meals, menus, findById }) {
+	// Memoized lookup maps for O(1) access by name.
+	const mealsByName = computed(() => {
+		const map = new Map();
+		for (const m of (Array.isArray(meals.value) ? meals.value : [])) {
+			const name = String(m?.nev ?? '').trim();
+			if (name) map.set(name, m);
+		}
+		return map;
+	});
+
+	const menusByName = computed(() => {
+		const map = new Map();
+		for (const m of (Array.isArray(menus.value) ? menus.value : [])) {
+			const name = String(m?.menuNev ?? '').trim();
+			if (name) map.set(name, m);
+		}
+		return map;
+	});
+
 	function getOrderEntryIngredients(entry) {
 		if (!entry || typeof entry !== 'object') return [];
 
@@ -22,17 +42,12 @@ export function useOrderIngredientsLookup({ meals, menus, findById }) {
 
 		const mealName = String(entry?.keszetelNev ?? '').trim();
 		if (mealName) {
-			const meal =
-				(Array.isArray(meals.value) ? meals.value : []).find((m) => String(m?.nev ?? '').trim() === mealName) ??
-				null;
-			return getMealIngredientNames(meal);
+			return getMealIngredientNames(mealsByName.value.get(mealName) ?? null);
 		}
 
 		const menuName = String(entry?.menuNev ?? '').trim();
 		if (menuName) {
-			const menu =
-				(Array.isArray(menus.value) ? menus.value : []).find((m) => String(m?.menuNev ?? '').trim() === menuName) ??
-				null;
+			const menu = menusByName.value.get(menuName) ?? null;
 			const menuMealId = menu?.keszetelId ?? null;
 			if (menuMealId != null) {
 				const meal = findById(meals.value, menuMealId);

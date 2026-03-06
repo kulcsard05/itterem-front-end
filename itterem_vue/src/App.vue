@@ -1,17 +1,19 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import CartDrawer from './components/user/CartDrawer.vue';
 import FooterSection from './components/public/FooterSection.vue';
 import ServerDiscovery from './components/ServerDiscovery.vue';
 import { useCart } from './composables/useCart.js';
 import { useAuth } from './composables/useAuth.js';
-import { checkServerReachable, getPersistedServerUrl } from './composables/useServerDiscovery.js';
-import { AUTH_EXPIRED_EVENT } from './constants.js';
-import { getApiBaseUrl } from './utils.js';
+import { useLocale } from './composables/useLocale.js';
+import { AUTH_EXPIRED_EVENT, LOCALE_QUERY_KEY } from './constants.js';
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
+const { currentLocale, supportedLocales, setLocale } = useLocale();
 
 const {
 	auth,
@@ -29,9 +31,17 @@ const {
 const selectedMenuItem = ref(null);
 const cartOpen = ref(false);
 const serverDiscoveryOpen = ref(false);
-const serverReachable = ref(null); // null = unknown, true/false after check
+const serverReachable = ref(null);
+const isDevServerDiscoveryEnabled = import.meta.env.DEV;
 
 const { addItem, totalItems } = useCart();
+
+const localeOptions = computed(() =>
+	supportedLocales.map((locale) => ({
+		value: locale,
+		label: t(`locales.${locale}`),
+	})),
+);
 
 // Restore selected menu item from sessionStorage (survives page refresh).
 try {
@@ -52,28 +62,6 @@ onUnmounted(() => {
 	window.removeEventListener('storage', onStorageChange);
 	window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
 	clearAuthExpiryTimer();
-});
-
-// ---------------------------------------------------------------------------
-// Server discovery – startup reachability check
-// ---------------------------------------------------------------------------
-
-onMounted(async () => {
-	// Skip in dev mode: Vite proxy handles routing, no direct base URL needed.
-	if (import.meta.env.DEV) return;
-
-	const baseUrl = getApiBaseUrl();
-	if (!baseUrl) {
-		// No URL configured at all – open discovery immediately.
-		serverDiscoveryOpen.value = true;
-		return;
-	}
-
-	const reachable = await checkServerReachable(baseUrl);
-	serverReachable.value = reachable;
-	if (!reachable) {
-		serverDiscoveryOpen.value = true;
-	}
 });
 
 // ---------------------------------------------------------------------------
@@ -145,8 +133,24 @@ const isAdminRoute = computed(() => route.name === 'admin');
 const isAccountRoute = computed(() => route.name === 'account');
 const isAboutRoute = computed(() => route.name === 'about');
 
+const routePropsMap = computed(() => ({
+	'account': { auth: auth.value },
+	'employee-orders': { auth: auth.value },
+	'menu-item': { itemData: selectedMenuItem.value },
+}));
+
 function goAbout() {
 	router.push({ name: 'about' });
+}
+
+function switchLocale(event) {
+	const nextLocale = setLocale(event.target.value);
+	router.replace({
+		query: {
+			...route.query,
+			[LOCALE_QUERY_KEY]: nextLocale,
+		},
+	});
 }
 </script>
 
@@ -154,7 +158,7 @@ function goAbout() {
 	<div class="flex min-h-screen flex-col">
 		<header v-if="!isEmployee" class="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur">
 			<div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-				<button type="button" class="text-lg font-bold text-gray-900" @click="goMenu">Itterem</button>
+				<button type="button" class="text-lg font-bold text-gray-900" @click="goMenu">{{ t('common.appName') }}</button>
 
 				<nav class="flex items-center gap-2">
 					<button
@@ -163,7 +167,7 @@ function goAbout() {
 						:class="isMenuRoute ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
 						@click="goMenu"
 					>
-						Étlap
+						{{ t('nav.menu') }}
 					</button>
 					<button
 						type="button"
@@ -171,7 +175,7 @@ function goAbout() {
 						:class="isAboutRoute ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
 						@click="goAbout"
 					>
-						Rólunk
+						{{ t('nav.about') }}
 					</button>
 					<button
 						v-if="isLoggedIn && isAdmin"
@@ -180,24 +184,22 @@ function goAbout() {
 						:class="isAdminRoute ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
 						@click="goAdmin"
 					>
-						Admin
+						{{ t('nav.admin') }}
 					</button>
 				</nav>
 
 				<div class="flex items-center gap-3">
-					<!-- Server status / discovery button -->
 					<button
+						v-if="isDevServerDiscoveryEnabled"
 						type="button"
 						class="relative inline-flex items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100"
-						:title="serverReachable === false ? 'Szerver nem elérhető – kattints a kereséshez' : 'Szerver keresése (LAN)'"
-						aria-label="Szerver keresése"
+						title="Developer server discovery"
+						aria-label="Developer server discovery"
 						@click="serverDiscoveryOpen = true"
 					>
-						<!-- Signal/tower icon -->
 						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
 						</svg>
-						<!-- Reachability dot -->
 						<span
 							v-if="serverReachable !== null"
 							class="absolute right-1 top-1 h-2 w-2 rounded-full"
@@ -205,11 +207,26 @@ function goAbout() {
 						></span>
 					</button>
 
+					<label class="hidden text-xs font-medium uppercase tracking-wide text-gray-500 md:block" for="app-locale">
+						{{ t('common.language') }}
+					</label>
+					<select
+						id="app-locale"
+						class="rounded-md border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+						:aria-label="t('common.language')"
+						:value="currentLocale"
+						@change="switchLocale"
+					>
+						<option v-for="option in localeOptions" :key="option.value" :value="option.value">
+							{{ option.label }}
+						</option>
+					</select>
+
 					<!-- Cart button (always visible) -->
 					<button
 						type="button"
 						class="relative inline-flex items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100"
-						aria-label="Kosár"
+						:aria-label="t('nav.cart')"
 						@click="cartOpen = true"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -228,7 +245,7 @@ function goAbout() {
 						:class="isAccountRoute ? 'bg-gray-900 text-white hover:bg-gray-900' : ''"
 						@click="goAccount"
 					>
-						{{ auth.teljesNev || auth.email || 'Felhasználó' }}
+						{{ auth.teljesNev || auth.email || t('common.user') }}
 					</button>
 
 					<button
@@ -237,7 +254,7 @@ function goAbout() {
 						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 						@click="handleLogout"
 					>
-						Kijelentkezés
+						{{ t('nav.logout') }}
 					</button>
 					<button
 						v-else
@@ -245,7 +262,7 @@ function goAbout() {
 						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 						@click="goAccount"
 					>
-						Bejelentkezés
+						{{ t('nav.login') }}
 					</button>
 				</div>
 			</div>
@@ -255,15 +272,7 @@ function goAbout() {
 			<router-view v-slot="{ Component, route: currentRoute }">
 				<component
 					:is="Component"
-					v-bind="
-						currentRoute.name === 'account'
-							? { auth }
-							: currentRoute.name === 'employee-orders'
-								? { auth }
-							: currentRoute.name === 'menu-item'
-								? { itemData: selectedMenuItem }
-								: {}
-					"
+					v-bind="routePropsMap[currentRoute.name] || {}"
 					@open-item="openMenuItem"
 					@back="goMenu"
 					@login-success="handleLoginSuccess"
@@ -278,7 +287,7 @@ function goAbout() {
 		<FooterSection v-if="!isEmployee" />
 
 		<ServerDiscovery
-			v-if="serverDiscoveryOpen"
+			v-if="isDevServerDiscoveryEnabled && serverDiscoveryOpen"
 			@close="serverDiscoveryOpen = false"
 			@server-changed="(url) => { serverReachable = url !== null; serverDiscoveryOpen = false; }"
 		/>

@@ -1,0 +1,236 @@
+{
+  "locales": {
+    "hu": "Magyar",
+    "en": "English"
+  },
+  "common": {
+    "appName": "Itterem",
+    "user": "User",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "back": "Back",
+    "loading": "Loading...",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "quantity": "Quantity",
+    "unitPrice": "Unit price",
+    "total": "Total",
+    "uncategorized": "Other",
+    "notAvailable": "-",
+    "language": "Language",
+    "orderIdLabel": "Order ID",
+    "currency": {
+      "fallback": "HUF {value}"
+    }
+  },
+  "nav": {
+    "menu": "Menu",
+    "about": "About",
+    "admin": "Admin",
+    "cart": "Cart",
+    "login": "Sign in",
+    "logout": "Sign out"
+  },
+  "itemTypes": {
+    "meal": "Main dish",
+    "side": "Side",
+    "menu": "Set menu",
+    "drink": "Drink",
+    "item": "Item"
+  },
+  "menu": {
+    "tabs": {
+      "meals": "Main dishes",
+      "sides": "Sides",
+      "menus": "Set menus",
+      "drinks": "Drinks"
+    },
+    "debug": {
+      "categories": "Categories"
+    },
+    "loadingMeals": "Loading main dishes...",
+    "loadingGeneric": "Loading...",
+    "emptyMeals": "No main dishes found.",
+    "emptyGeneric": "No items found.",
+    "quickOrder": "Quick order",
+    "addToCart": "+ Cart",
+    "addedCount": "Added {count}x",
+    "fallbackMenuItem": "Menu item",
+    "categoryPrefix": "Category: {name}",
+    "noDescription": "No description available.",
+    "loadErrors": {
+      "categories": "Failed to load categories",
+      "meals": "Failed to load main dishes",
+      "sides": "Failed to load sides",
+      "menus": "Failed to load set menus",
+      "drinks": "Failed to load drinks"
+    },
+    "alt": {
+      "foodImage": "Food image"
+    }
+  },
+  "menuItem": {
+    "fallbackTitle": "Item",
+    "backToMenu": "<- Back to menu",
+    "menuContents": "Menu contents:",
+    "ingredients": "Ingredients",
+    "addToCart": "Add to cart",
+    "addedToCart": "{name} added to cart."
+  },
+  "quickBuy": {
+    "title": "Quick order",
+    "loginRequired": "You need to sign in before ordering.",
+    "orderPlacedTitle": "Order placed!",
+    "orderPlacedFallback": "Thank you for your order.",
+    "orderPlaced": "Order placed.",
+    "orderFailed": "Failed to place order.",
+    "ordering": "Placing order...",
+    "placeOrder": "Place order",
+    "serverTimeout": "The server took too long to respond. Please try again.",
+    "decreaseQuantity": "Decrease quantity",
+    "increaseQuantity": "Increase quantity"
+  },
+  "cart": {
+    "title": "Cart ({count})",
+    "empty": "Your cart is empty.",
+    "loginRequired": "You need to sign in before ordering.",
+    "orderPlacedTitle": "Order placed!",
+    "orderPlacedFallback": "Thank you for your order.",
+    "orderPlaced": "Order placed.",
+    "orderFailed": "Failed to place order.",
+    "ordering": "Placing order...",
+    "placeOrder": "Place order",
+    "clear": "Clear cart",
+    "removeItem": "Remove {name}",
+    "decreaseQuantity": "Decrease {name} quantity",
+    "increaseQuantity": "Increase {name} quantity"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "emailLabel": "Email address",
+      "passwordLabel": "Password",
+      "forgotPassword": "Forgot password?",
+      "forgotPasswordSoon": "Coming soon",
+      "submit": "Sign in",
+      "submitting": "Signing in...",
+      "noAccount": "Don't have an account yet?",
+      "registerNow": "Create one now",
+      "failed": "Sign in failed",
+      "fixFields": "Please fix the highlighted fields.",
+      "validation": {
+        "emailRequired": "Email address is required.",
+        "emailInvalid": "Please enter a valid email address.",
+        "passwordRequired": "Password is required."
+      }
+    },
+    "register": {
+      "title": "Create a new account",
+      "fullNameLabel": "Full name",
+      "emailLabel": "Email address",
+      "phoneLabel": "Phone number",
+      "passwordLabel": "Password",
+      "passwordHint": "Your password must be at least {min} characters long.",
+      "submit": "Register",
+      "submitting": "Registering...",
+      "success": "Registration successful. Please sign in.",
+      "failed": "Registration failed",
+      "haveAccount": "Already have an account?",
+      "loginNow": "Sign in",
+      "fixFields": "Please fix the highlighted fields.",
+      "validation": {
+        "fullNameRequired": "Full name is required.",
+        "fullNameShort": "Full name is too short.",
+        "emailRequired": "Email address is required.",
+        "emailInvalid": "Please enter a valid email address.",
+        "phoneRequired": "Phone number is required.",
+        "phoneInvalid": "Please enter a valid phone number.",
+        "passwordRequired": "Password is required.",
+        "passwordMin": "Your password must be at least {min} characters long."
+      }
+    }
+  },
+  "account": {
+    "title": "My account",
+    "signedInAs": "Signed in as",
+    "adminBadge": "ADMIN",
+    "phone": "Phone number",
+    "editPhone": "Edit",
+    "savePhone": "Save",
+    "cancelPhone": "Cancel",
+    "phoneSaved": "Phone number saved.",
+    "phoneSaveFailed": "Failed to update phone number.",
+    "userIdMissing": "User ID could not be found.",
+    "profileHint": "This is your user page. You can extend it later with orders, favourites, and more.",
+    "ordersTitle": "My orders",
+    "ordersLoading": "Loading orders...",
+    "ordersFailed": "Failed to load your orders.",
+    "noOrders": "You have no orders yet.",
+    "realtimeConnectionTitle": "SignalR connection",
+    "realtimeUpdates": "REAL-TIME UPDATES",
+    "status": "Status:",
+    "items": "Items: {items}",
+    "doneNotice": "Your order is ready: #{id} ({status})"
+  },
+  "orderStatuses": {
+    "pending": "Pending",
+    "processing": "In progress",
+    "ready": "Ready for pickup",
+    "done": "Picked up"
+  },
+  "about": {
+    "title": "About us",
+    "subtitle": "Itterem is a heartfelt restaurant project where great food, warm service, and a homely atmosphere meet.",
+    "storyTitle": "Our story",
+    "storyParagraph1": "Itterem opened its doors in 2018 in a small downtown corner location. Our founders, Peter Kovacs and Erzsebet Nagy, have always believed that simple dishes made from great ingredients are the most memorable ones.",
+    "storyParagraph2": "Today we already have more than 200 returning guests, and every day we open our doors with one goal: to put something delicious on the table with care and soul.",
+    "valuesTitle": "Our values",
+    "values": {
+      "freshness": {
+        "title": "Freshness and quality",
+        "body": "We cook with fresh ingredients every day, sourced from local producers."
+      },
+      "hospitality": {
+        "title": "Guest-first hospitality",
+        "body": "We give every guest personal attention."
+      },
+      "sustainability": {
+        "title": "Sustainability",
+        "body": "Our packaging is recyclable and we actively reduce waste."
+      }
+    },
+    "teamTitle": "Our team",
+    "team": {
+      "peter": {
+        "role": "Founder and Chef",
+        "bio": "A chef with 15 years of experience who loves experimenting with flavour."
+      },
+      "erzsebet": {
+        "role": "Founder and Manager",
+        "bio": "A hospitality enthusiast who keeps every day running smoothly."
+      },
+      "david": {
+        "role": "Pastry chef",
+        "bio": "His signature desserts make every visit memorable."
+      }
+    }
+  },
+  "footer": {
+    "tagline": "Fresh ingredients and heartfelt dishes every day for every guest.",
+    "contact": "Contact",
+    "address": "1052 Budapest, Vaci utca 1.",
+    "hours": "Mon-Fri: 10:00-22:00\nSat-Sun: 11:00-23:00",
+    "map": "Find us",
+    "mapTitle": "Itterem location",
+    "copyright": "All rights reserved."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The page you are looking for does not exist or has been removed.",
+    "backToMenu": "Back to menu"
+  },
+  "errors": {
+    "authExpired": "Your session has expired. Please sign in again."
+  }
+}

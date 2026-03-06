@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
 import './style.css';
 import App from './App.vue';
+import { i18n } from './i18n.js';
 import router from './router.js';
 import { logStorageUsage } from './storage-utils.js';
 
@@ -14,6 +15,7 @@ app.config.errorHandler = (err, instance, info) => {
 	// You can extend this with a global toast / error-banner store later.
 };
 
+app.use(i18n);
 app.use(router).mount('#app');
 
 // Log localStorage usage breakdown in dev mode.

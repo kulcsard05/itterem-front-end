@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { getItemTypeLabel, readFirstText } from '../../utils.js';
+import { useI18n } from 'vue-i18n';
+import { formatCurrency, getItemTypeLabel, readFirstText } from '../../utils.js';
 
 const props = defineProps({
 	itemData: {
@@ -11,6 +12,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['back', 'add-to-cart', 'open-item']);
+const { t } = useI18n();
 
 const router = useRouter();
 
@@ -23,9 +25,9 @@ onMounted(() => {
 const addedMessage = ref('');
 let addedTimer = null;
 
-const itemTitle = computed(() => props.itemData?.name ?? 'Item');
+const itemTitle = computed(() => props.itemData?.name ?? t('menuItem.fallbackTitle'));
 const itemImage = computed(() => props.itemData?.image ?? '');
-const itemDescription = computed(() => props.itemData?.description ?? 'Nincs leírás.');
+const itemDescription = computed(() => props.itemData?.description ?? t('menu.noDescription'));
 const itemPrice = computed(() => props.itemData?.price);
 const itemMeta = computed(() => props.itemData?.meta ?? '');
 const itemType = computed(() => props.itemData?.type ?? 'item');
@@ -54,7 +56,7 @@ const menuBreakdown = computed(() => {
 		return predefinedBreakdown.map((entry) => ({
 			key: String(entry?.key ?? ''),
 			label: String(entry?.label ?? ''),
-			name: readFirstText([entry?.name]) || '-',
+			name: readFirstText([entry?.name]) || t('common.notAvailable'),
 			description: readFirstText([entry?.description]),
 			openPayload: entry?.openPayload ?? null,
 		}));
@@ -65,7 +67,7 @@ const menuBreakdown = computed(() => {
 
 function addToCart() {
 	emit('add-to-cart', props.itemData);
-	addedMessage.value = `${itemTitle.value} hozzáadva a kosárhoz.`;
+	addedMessage.value = t('menuItem.addedToCart', { name: itemTitle.value });
 	clearTimeout(addedTimer);
 	addedTimer = setTimeout(() => {
 		addedMessage.value = '';
@@ -89,7 +91,7 @@ function openBreakdownEntry(entry) {
 			class="rounded-md px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
 			@click="emit('back')"
 		>
-			← Vissza az étlaphoz
+			{{ t('menuItem.backToMenu') }}
 		</button>
 
 		<div class="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -103,7 +105,7 @@ function openBreakdownEntry(entry) {
 					v-if="menuBreakdown.length"
 					class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700"
 				>
-					<p class="font-semibold text-gray-900">Menü tartalma:</p>
+					<p class="font-semibold text-gray-900">{{ t('menuItem.menuContents') }}</p>
 					<ul class="mt-2 space-y-1">
 						<li v-for="entry in menuBreakdown" :key="entry.key">
 							<button
@@ -124,19 +126,20 @@ function openBreakdownEntry(entry) {
 					v-if="itemIngredients.length"
 					class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700"
 				>
+					<p class="font-semibold text-gray-900">{{ t('menuItem.ingredients') }}</p>
 					<p v-if="itemIngredientsLabel" class="mt-1 text-sm text-gray-700">{{ itemIngredientsLabel }}</p>
 				</div>
 
 				<p v-if="showDescription" class="mt-4 text-gray-700">{{ itemDescription }}</p>
 
 				<div class="mt-6 flex items-center justify-between gap-4">
-					<p v-if="itemPrice != null" class="text-lg font-semibold text-gray-900">{{ itemPrice }} Ft</p>
+					<p v-if="itemPrice != null" class="text-lg font-semibold text-gray-900">{{ formatCurrency(itemPrice) }}</p>
 					<button
 						type="button"
 						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 						@click="addToCart"
 					>
-						Kosárba
+						{{ t('menuItem.addToCart') }}
 					</button>
 				</div>
 

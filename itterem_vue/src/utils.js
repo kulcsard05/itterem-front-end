@@ -3,8 +3,8 @@ import {
 	AUTH_EXPIRED_EVENT,
 	AUTH_EXPIRED_MESSAGE,
 	ORDER_STATUS_CLASSES as _ORDER_STATUS_CLASSES,
-	SERVER_URL_STORAGE_KEY,
 } from './constants.js';
+import { i18n, getIntlLocale } from './i18n.js';
 
 // Re-export constants so existing imports from utils.js keep working.
 export { AUTH_STORAGE_KEY, AUTH_EXPIRED_EVENT, AUTH_EXPIRED_MESSAGE };
@@ -18,25 +18,21 @@ function stripTrailingSlashes(value) {
 }
 
 /**
- * Return the API base URL, in priority order:
- *  1. URL discovered via LAN scan (stored in localStorage by useServerDiscovery)
- *  2. VITE_API_BASE_URL from the .env file
- *  3. Empty string in dev mode (lets Vite's /api proxy handle requests)
+ * Return the API base URL.
+ * In development, the browser always uses same-origin requests so Vite's
+ * proxy remains the single integration point for the backend.
+ * In non-dev builds, VITE_API_BASE_URL must be set explicitly.
  * @returns {string}
  */
 export function getApiBaseUrl() {
-	// 1. LAN-discovered URL takes precedence so rescanning always takes effect.
-	const stored = localStorage.getItem(SERVER_URL_STORAGE_KEY);
-	if (stored) return stripTrailingSlashes(stored);
+	if (import.meta.env.DEV) return '';
 
 	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
-	// 3. In dev, prefer same-origin requests so Vite's `/api` proxy can handle HTTPS backend + CORS.
-	if (envBaseUrl === undefined && import.meta.env.DEV) return '';
 	if (envBaseUrl === undefined) {
 		console.warn('[Itterem] VITE_API_BASE_URL is not set – configure it in .env');
 		return '';
 	}
-	// 2. Env var.
+
 	return stripTrailingSlashes(envBaseUrl);
 }
 
@@ -50,7 +46,7 @@ export function getApiBaseUrl() {
  * @returns {boolean}
  */
 export function isValidEmail(value) {
-	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? '').trim());
+	return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(String(value ?? '').trim());
 }
 
 /**
@@ -62,6 +58,19 @@ export function isValidPhone(value) {
 	const raw = String(value ?? '').trim();
 	if (!raw || !/^[0-9+()\-\s.]+$/.test(raw)) return false;
 	return raw.replace(/\D/g, '').length >= 7;
+}
+
+/**
+ * Check whether a value looks like an auth payload returned by the backend.
+ * @param {*} value
+ * @param {{requireToken?: boolean}} [options]
+ * @returns {boolean}
+ */
+export function isAuthPayload(value, options = {}) {
+	const { requireToken = false } = options;
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	if (!requireToken) return true;
+	return Boolean(String(value.token ?? '').trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +162,8 @@ export function readStoredAuth(options = {}) {
 		const raw = localStorage.getItem(AUTH_STORAGE_KEY);
 		const auth = raw ? JSON.parse(raw) : null;
 
+		if (!isAuthPayload(auth)) return null;
+
 		if (!auth?.token) return auth ?? null;
 
 		if (purgeExpired && isJwtExpired(auth.token)) {
@@ -227,15 +238,26 @@ export function resolveUserId(auth) {
 // ---------------------------------------------------------------------------
 
 const ITEM_TYPE_INFO = {
-	meals: { label: 'Készétel', idKey: 'keszetelId' },
-	meal: { label: 'Készétel', idKey: 'keszetelId' },
-	sides: { label: 'Köret', idKey: 'koretId' },
-	side: { label: 'Köret', idKey: 'koretId' },
-	menus: { label: 'Menü', idKey: 'menuId' },
-	menu: { label: 'Menü', idKey: 'menuId' },
-	drinks: { label: 'Üdítő', idKey: 'uditoId' },
-	drink: { label: 'Üdítő', idKey: 'uditoId' },
+	meals: { labelKey: 'itemTypes.meal', idKey: 'keszetelId' },
+	meal: { labelKey: 'itemTypes.meal', idKey: 'keszetelId' },
+	sides: { labelKey: 'itemTypes.side', idKey: 'koretId' },
+	side: { labelKey: 'itemTypes.side', idKey: 'koretId' },
+	menus: { labelKey: 'itemTypes.menu', idKey: 'menuId' },
+	menu: { labelKey: 'itemTypes.menu', idKey: 'menuId' },
+	drinks: { labelKey: 'itemTypes.drink', idKey: 'uditoId' },
+	drink: { labelKey: 'itemTypes.drink', idKey: 'uditoId' },
 };
+
+const ORDER_STATUS_LABELS = {
+	'Függőben': 'orderStatuses.pending',
+	'Folyamatban': 'orderStatuses.processing',
+	'Átvehető': 'orderStatuses.ready',
+	'Átvett': 'orderStatuses.done',
+};
+
+function translate(key, values = {}) {
+	return i18n.global.t(key, values);
+}
 
 function normalizeItemType(type) {
 	return String(type ?? '').trim().toLowerCase();
@@ -247,7 +269,7 @@ function normalizeItemType(type) {
  */
 export function getItemTypeLabel(type) {
 	const key = normalizeItemType(type);
-	return ITEM_TYPE_INFO[key]?.label ?? 'Tétel';
+	return translate(ITEM_TYPE_INFO[key]?.labelKey ?? 'itemTypes.item');
 }
 
 /**
@@ -293,7 +315,26 @@ export function getOrderStatusClasses(status) {
 export function formatDateTime(value, locale = 'hu-HU') {
 	if (!value) return '-';
 	const d = new Date(value);
-	return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString(locale);
+	const targetLocale = locale === 'hu-HU' ? getIntlLocale(i18n.global.locale.value) : locale;
+	return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString(targetLocale);
+}
+
+export function formatCurrency(value, locale = i18n.global.locale.value) {
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) return translate('common.notAvailable');
+	try {
+		return new Intl.NumberFormat(getIntlLocale(locale), {
+			style: 'currency',
+			currency: 'HUF',
+			maximumFractionDigits: 0,
+		}).format(parsed);
+	} catch {
+		return translate('common.currency.fallback', { value: parsed });
+	}
+}
+
+export function getOrderStatusLabel(status) {
+	return translate(ORDER_STATUS_LABELS[String(status ?? '').trim()] ?? 'common.notAvailable');
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +354,7 @@ export function getOrderItemName(entry) {
 	const sideName = String(entry?.koretNev ?? '').trim();
 	if (sideName) return sideName;
 
-	return 'Ismeretlen tétel';
+	return translate('itemTypes.item');
 }
 
 export function formatOrderItems(order) {

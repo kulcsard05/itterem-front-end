@@ -1,20 +1,6 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
-	ORDER_STATUSES,
-	createCategory,
-	createDrink,
-	createIngredient,
-	createMenu,
-	createMeal,
-	createSide,
-	deleteCategory,
-	deleteDrink,
-	deleteIngredient,
-	deleteMenu,
-	deleteMeal,
-	deleteOrder,
-	deleteSide,
 	getCategories,
 	getDrinks,
 	getIngredients,
@@ -23,35 +9,15 @@ import {
 	getMenus,
 	getOrders,
 	getSides,
-	updateCategory,
-	updateDrink,
-	updateIngredient,
-	updateMenu,
-	updateMeal,
-	updateOrderStatus,
-	updateSide,
 } from '../../api.js';
 import AdminTable from './AdminTable.vue';
 import AdminEditModal from './AdminEditModal.vue';
+import AdminBulkEditModal from './AdminBulkEditModal.vue';
 import ConfirmModal from './ConfirmModal.vue';
-import {
-	parsePrice,
-	normalizePriceValue,
-	formatPrice,
-	normalizeAvailable,
-	normalizeSelectValue,
-	buildElerheto,
-	buildBasePayload,
-	buildSelectOptions,
-	requiredName,
-	requiredPrice,
-	requiredImageOnCreate,
-	requiredSelect,
-	requiredAtLeastOneSelect,
-	validateAll,
-} from '../../admin-helpers.js';
-
-import { formatDateTime, formatOrderItems, getEntityNameById, getImageSrcFromItem, getMealCategoryId as getMealCatId, getMealIngredientNames, sortOrdersByDateDesc } from '../../utils.js';
+import { ORDER_STATUSES } from '../../constants.js';
+import { applyBulkPriceAdjustment, parseBulkAdjustmentValue } from '../../admin-helpers.js';
+import { useAdminEntityConfigs } from '../../composables/useAdminEntityConfigs.js';
+import { getEntityNameById, sortOrdersByDateDesc } from '../../utils.js';
 
 // ── Events ──────────────────────────────────────────────────────
 const emit = defineEmits(['back', 'logout']);
@@ -83,37 +49,44 @@ const showConfirmModal = ref(false);
 const deleteTarget = ref(null);
 const deleting = ref(false);
 
+const selectedIds = ref([]);
+
+const showBulkEditModal = ref(false);
+const bulkForm = ref({});
+const bulkError = ref('');
+const bulkSaving = ref(false);
+
+const showBulkDeleteConfirm = ref(false);
+const bulkDeleteLoading = ref(false);
+
+const showBulkFailureModal = ref(false);
+const bulkFailureError = ref('');
+const bulkFailureMessage = ref('');
+let bulkFailureResolver = null;
+
 // ── Helpers ─────────────────────────────────────────────────────
 function clearFeedback() {
 	actionError.value = '';
 	actionSuccess.value = '';
 }
 
-function getMenuMealId(menu) {
-	return menu?.keszetelId ?? null;
+function normalizeId(value) {
+	return String(value ?? '').trim();
 }
 
-function getMenuSideId(menu) {
-	return menu?.koretId ?? null;
+function formatEntityItemLabel(item) {
+	return (
+		String(
+			item?.menuNev ??
+				item?.menuDisplayName ??
+				item?.nev ??
+				item?.hozzavaloNev ??
+				item?.felhasznaloNev ??
+				item?.id ??
+				'?',
+		) || '?'
+	);
 }
-
-function getMenuDrinkId(menu) {
-	return menu?.uditoId ?? null;
-}
-
-function getMealCategoryName(meal) {
-	const catId = getMealCatId(meal);
-	const list = kategoriak.value;
-	const found = list.find((c) => String(c?.id ?? '') === String(catId ?? ''));
-	return String(found?.nev ?? '-');
-}
-
-function formatMealIngredients(item) {
-	const names = getMealIngredientNames(item);
-	return names.length ? names.join(', ') : '-';
-}
-
-// formatDateTime / formatOrderItems moved to utils.js
 
 // ── Image Preview ───────────────────────────────────────────────
 function clearSelectedImagePreview() {
@@ -142,379 +115,14 @@ function onEditImageSelected(event) {
 	editForm.value = { ...editForm.value, kepFile: file };
 }
 
-// ── Entity Configuration ────────────────────────────────────────
-// Each entity type is described declaratively: columns, form fields,
-// API functions, validation, and payload builders. This eliminates the
-// duplicated switch/if-else chains that previously existed for every
-// CRUD operation.
-
-const AVAILABLE_OPTIONS = [
-	{ value: 1, label: 'Igen' },
-	{ value: 0, label: 'Nem' },
-];
-
-const entityConfigs = {
-	ingredient: {
-		label: 'Hozzávaló',
-		tableTitle: 'Hozzávalók Kezelése',
-		addLabel: '+ Új hozzávaló',
-		hasImage: false,
-		api: { create: createIngredient, update: updateIngredient, delete: deleteIngredient },
-		columns: [
-			{ key: 'id', label: 'ID' },
-			{ key: 'hozzavaloNev', label: 'Név', bold: true },
-		],
-		formFields: [{ key: 'nev', label: 'Név', type: 'text' }],
-		mapItemToForm: (item) => ({
-			id: item?.id,
-			nev: String(item?.hozzavaloNev ?? ''),
-		}),
-		defaultForm: () => ({ nev: '' }),
-		validate: (form) => requiredName(form),
-		buildPayload: (form, isCreate) => {
-			const payload = { nev: String(form.nev ?? '').trim() };
-			return isCreate ? payload : { ...payload, id: form.id };
-		},
-		messages: { create: 'Hozzávaló létrehozva.', update: 'Hozzávaló frissítve.', delete: 'Hozzávaló törölve.' },
-	},
-
-	category: {
-		label: 'Kategória',
-		tableTitle: 'Kategóriák Kezelése',
-		addLabel: '+ Új kategória',
-		hasImage: false,
-		api: { create: createCategory, update: updateCategory, delete: deleteCategory },
-		columns: [
-			{ key: 'id', label: 'ID' },
-			{ key: 'nev', label: 'Név', bold: true },
-		],
-		formFields: [{ key: 'nev', label: 'Név', type: 'text' }],
-		mapItemToForm: (item) => ({
-			id: item?.id,
-			nev: String(item?.nev ?? ''),
-		}),
-		defaultForm: () => ({ nev: '' }),
-		validate: (form) => requiredName(form),
-		buildPayload: (form, isCreate) => {
-			const payload = { nev: String(form.nev ?? '').trim() };
-			return isCreate ? payload : { ...payload, id: form.id };
-		},
-		messages: { create: 'Kategória létrehozva.', update: 'Kategória frissítve.', delete: 'Kategória törölve.' },
-	},
-
-	meal: {
-		label: 'Készétel',
-		tableTitle: 'Készételek Kezelése',
-		addLabel: '+ Új készétel',
-		hasImage: true,
-		api: { create: createMeal, update: updateMeal, delete: deleteMeal },
-		columns: [
-			{ key: 'id', label: 'ID' },
-			{ key: 'nev', label: 'Név', bold: true },
-			{ key: '_kategoria', label: 'Kategória', format: (item) => getMealCategoryName(item) },
-			{ key: '_hozzavalok', label: 'Hozzávalók', format: (item) => formatMealIngredients(item) },
-			{ key: 'leiras', label: 'Leírás' },
-			{ key: 'ar', label: 'Ár', format: (item) => formatPrice(item.ar) },
-			{ key: 'elerheto', label: 'Elérhető', type: 'available' },
-		],
-		formFields: [
-			{ key: 'nev', label: 'Név', type: 'text' },
-			{ key: 'leiras', label: 'Leírás', type: 'textarea' },
-			{
-				key: 'hozzavalokIds',
-				label: 'Hozzávalók',
-				type: 'multiselect',
-				options: () => buildSelectOptions(hozzavalok.value, { valueKey: 'id', labelKey: 'hozzavaloNev' }),
-				helpText: 'Több hozzávaló is kiválasztható.',
-			},
-			{ key: 'elerheto', label: 'Elérhető', type: 'select', options: AVAILABLE_OPTIONS },
-			{ key: 'ar', label: 'Ár (Ft)', type: 'number', min: 0, step: 1 },
-			{
-				key: 'kategoriaId',
-				label: 'Kategória',
-				type: 'select',
-				placeholder: 'Válassz kategóriát',
-				options: () => buildSelectOptions(kategoriak.value),
-			},
-		],
-		mapItemToForm: (item) => ({
-			id: item?.id,
-			nev: String(item?.nev ?? ''),
-			leiras: String(item?.leiras ?? ''),
-			hozzavalokIds: (Array.isArray(item?.hozzavalok) ? item.hozzavalok : [])
-				.map((h) => h?.id)
-				.filter((v) => v != null)
-				.map((v) => String(v)),
-			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-			kategoriaId: normalizeSelectValue(getMealCatId(item)),
-			ar: normalizePriceValue(item?.ar),
-			kepFile: null,
-			currentImageUrl: getImageSrcFromItem(item, 'kep'),
-		}),
-		defaultForm: () => ({
-			nev: '',
-			leiras: '',
-			hozzavalokIds: [],
-			elerheto: 1,
-			kategoriaId: '',
-			ar: '',
-			kepFile: null,
-			currentImageUrl: '',
-		}),
-		validate: (form, isCreate) =>
-			validateAll(
-				[
-					(f) => requiredName(f),
-					(f) => requiredSelect(f, 'kategoriaId', 'Kategória'),
-					(f) => requiredPrice(f),
-					(f, c) => requiredImageOnCreate(f, c),
-				],
-				form,
-				isCreate,
-			),
-		buildPayload: (form, isCreate) => {
-			const base = buildBasePayload(form, { includeDescription: true });
-			const hozzavalokIds = (Array.isArray(form.hozzavalokIds) ? form.hozzavalokIds : [])
-				.map((v) => String(v).trim())
-				.filter(Boolean);
-			return isCreate
-				? { ...base, kategoriaId: String(form.kategoriaId ?? '').trim(), hozzavalokIds }
-				: { ...base, id: form.id, kategoriaId: String(form.kategoriaId ?? '').trim(), hozzavalokIds };
-		},
-		messages: { create: 'Készétel létrehozva.', update: 'Készétel frissítve.', delete: 'Készétel törölve.' },
-	},
-
-	side: {
-		label: 'Köret',
-		tableTitle: 'Köretek Kezelése',
-		addLabel: '+ Új köret',
-		hasImage: true,
-		api: { create: createSide, update: updateSide, delete: deleteSide },
-		columns: [
-			{ key: 'id', label: 'ID' },
-			{ key: 'nev', label: 'Név', bold: true },
-			{ key: 'leiras', label: 'Leírás' },
-			{ key: 'ar', label: 'Ár', format: (item) => formatPrice(item.ar) },
-			{ key: 'elerheto', label: 'Elérhető', type: 'available' },
-		],
-		formFields: [
-			{ key: 'nev', label: 'Név', type: 'text' },
-			{ key: 'leiras', label: 'Leírás', type: 'textarea' },
-			{ key: 'elerheto', label: 'Elérhető', type: 'select', options: AVAILABLE_OPTIONS },
-			{ key: 'ar', label: 'Ár (Ft)', type: 'number', min: 0, step: 1 },
-		],
-		mapItemToForm: (item) => ({
-			id: item?.id,
-			nev: String(item?.nev ?? ''),
-			leiras: String(item?.leiras ?? ''),
-			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-			ar: normalizePriceValue(item?.ar),
-			kepFile: null,
-			currentImageUrl: getImageSrcFromItem(item, 'kep'),
-		}),
-		defaultForm: () => ({
-			nev: '',
-			leiras: '',
-			elerheto: 1,
-			ar: '',
-			kepFile: null,
-			currentImageUrl: '',
-		}),
-		validate: (form, isCreate) =>
-			validateAll(
-				[(f) => requiredName(f), (f) => requiredPrice(f), (f, c) => requiredImageOnCreate(f, c)],
-				form,
-				isCreate,
-			),
-		buildPayload: (form, isCreate) => {
-			const base = buildBasePayload(form, { includeDescription: true });
-			return isCreate ? base : { ...base, id: form.id };
-		},
-		messages: { create: 'Köret létrehozva.', update: 'Köret frissítve.', delete: 'Köret törölve.' },
-	},
-
-	drink: {
-		label: 'Üdítő',
-		tableTitle: 'Üdítők Kezelése',
-		addLabel: '+ Új üdítő',
-		hasImage: true,
-		api: { create: createDrink, update: updateDrink, delete: deleteDrink },
-		columns: [
-			{ key: 'id', label: 'ID' },
-			{ key: 'nev', label: 'Név', bold: true },
-			{ key: 'ar', label: 'Ár', format: (item) => formatPrice(item.ar) },
-			{ key: 'elerheto', label: 'Elérhető', type: 'available' },
-		],
-		formFields: [
-			{ key: 'nev', label: 'Név', type: 'text' },
-			{ key: 'elerheto', label: 'Elérhető', type: 'select', options: AVAILABLE_OPTIONS },
-			{ key: 'ar', label: 'Ár (Ft)', type: 'number', min: 0, step: 1 },
-		],
-		mapItemToForm: (item) => ({
-			id: item?.id,
-			nev: String(item?.nev ?? ''),
-			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-			ar: normalizePriceValue(item?.ar),
-			kepFile: null,
-			currentImageUrl: getImageSrcFromItem(item, 'kep'),
-		}),
-		defaultForm: () => ({
-			nev: '',
-			elerheto: 1,
-			ar: '',
-			kepFile: null,
-			currentImageUrl: '',
-		}),
-		validate: (form, isCreate) =>
-			validateAll(
-				[(f) => requiredName(f), (f) => requiredPrice(f), (f, c) => requiredImageOnCreate(f, c)],
-				form,
-				isCreate,
-			),
-		buildPayload: (form, isCreate) => {
-			const base = buildBasePayload(form);
-			return isCreate ? base : { ...base, id: form.id };
-		},
-		messages: { create: 'Üdítő létrehozva.', update: 'Üdítő frissítve.', delete: 'Üdítő törölve.' },
-	},
-
-	menu: {
-		label: 'Menü',
-		tableTitle: 'Menük Kezelése',
-		addLabel: '+ Új menü',
-		hasImage: true,
-		api: { create: createMenu, update: updateMenu, delete: deleteMenu },
-		columns: [
-			{ key: 'id', label: 'ID' },
-			{ key: 'menuDisplayName', label: 'Menü Név', bold: true },
-			{ key: 'keszetel', label: 'Készétel' },
-			{ key: 'koret', label: 'Köret' },
-			{ key: 'udito', label: 'Üdítő' },
-			{ key: 'ar', label: 'Ár', format: (item) => formatPrice(item.ar) },
-			{ key: 'elerheto', label: 'Elérhető', type: 'available' },
-		],
-		formFields: [
-			{ key: 'menuNev', label: 'Menü név', type: 'text' },
-			{
-				key: 'keszetelId',
-				label: 'Készétel',
-				type: 'select',
-				placeholder: 'Válassz készételt',
-				options: () => buildSelectOptions(keszetelek.value),
-			},
-			{
-				key: 'koretId',
-				label: 'Köret',
-				type: 'select',
-				placeholder: 'Válassz köretet',
-				options: () => buildSelectOptions(koretek.value),
-			},
-			{
-				key: 'uditoId',
-				label: 'Üdítő',
-				type: 'select',
-				placeholder: 'Nincs ital',
-				helpText: 'A "Nincs ital" (NULL) az alapértelmezett.',
-				options: () => buildSelectOptions(uditok.value),
-			},
-			{ key: 'elerheto', label: 'Elérhető', type: 'select', options: AVAILABLE_OPTIONS },
-			{ key: 'ar', label: 'Ár (Ft)', type: 'number', min: 0, step: 1 },
-		],
-		mapItemToForm: (item) => ({
-			id: item?.id,
-			menuNev: String(item?.menuNev ?? ''),
-			keszetelId: normalizeSelectValue(getMenuMealId(item)),
-			koretId: normalizeSelectValue(getMenuSideId(item)),
-			uditoId: normalizeSelectValue(getMenuDrinkId(item)),
-			elerheto: normalizeAvailable(item?.elerheto) ? 1 : 0,
-			ar: normalizePriceValue(item?.ar),
-			kepFile: null,
-			currentImageUrl: getImageSrcFromItem(item, 'kep'),
-		}),
-		defaultForm: () => ({
-			menuNev: '',
-			keszetelId: '',
-			koretId: '',
-			uditoId: '',
-			elerheto: 1,
-			ar: '',
-			kepFile: null,
-			currentImageUrl: '',
-		}),
-		validate: (form, isCreate) =>
-			validateAll(
-				[
-					(f) => requiredName(f, 'menuNev', 'Menü név'),
-					(f) => requiredAtLeastOneSelect(f, ['keszetelId', 'koretId'], 'Készétel vagy Köret'),
-					(f) => requiredPrice(f),
-					(f, c) => requiredImageOnCreate(f, c),
-				],
-				form,
-				isCreate,
-			),
-		buildPayload: (form, isCreate) => {
-			const toNullableId = (value) => {
-				const trimmed = String(value ?? '').trim();
-				return trimmed === '' ? null : trimmed;
-			};
-			const base = {
-				menuNev: String(form.menuNev ?? '').trim(),
-				keszetelId: toNullableId(form.keszetelId),
-				koretId: toNullableId(form.koretId),
-				uditoId: toNullableId(form.uditoId),
-				elerheto: buildElerheto(form),
-				ar: parsePrice(form.ar),
-				kepFile: form.kepFile ?? null,
-			};
-			return isCreate ? base : { ...base, id: form.id };
-		},
-		messages: { create: 'Menü létrehozva.', update: 'Menü frissítve.', delete: 'Menü törölve.' },
-	},
-
-	order: {
-		label: 'Rendelés',
-		tableTitle: 'Rendelések',
-		addLabel: '',
-		hasImage: false,
-		showCreate: false,
-		showEdit: true,
-		showDelete: true,
-		api: { update: ({ id, status }) => updateOrderStatus(id, status), delete: deleteOrder },
-		columns: [
-			{ key: 'id', label: 'ID' },
-			{ key: 'felhasznaloNev', label: 'Felhasználó', bold: true },
-			{ key: 'datum', label: 'Dátum', format: (item) => formatDateTime(item?.datum) },
-			{ key: 'statusz', label: 'Státusz', type: 'status' },
-			{ key: '_items', label: 'Tételek', format: (item) => formatOrderItems(item) },
-		],
-		formFields: [
-			{
-				key: 'status',
-				label: 'Státusz',
-				type: 'select',
-				options: ORDER_STATUSES.map((status) => ({ value: status, label: status })),
-			},
-		],
-		mapItemToForm: (item) => ({
-			id: item?.id,
-			status: String(item?.statusz ?? ''),
-		}),
-		defaultForm: () => ({ status: '' }),
-		validate: (form) => {
-			const requiredError = requiredSelect(form, 'status', 'Státusz');
-			if (requiredError) return requiredError;
-			if (!ORDER_STATUSES.includes(String(form.status ?? '').trim())) {
-				return `Érvénytelen státusz. Engedélyezett értékek: ${ORDER_STATUSES.join(', ')}`;
-			}
-			return null;
-		},
-		buildPayload: (form, isCreate) => ({
-			...(isCreate ? {} : { id: form.id }),
-			status: String(form.status ?? '').trim(),
-		}),
-		messages: { update: 'Rendelés státusza frissítve.', delete: 'Rendelés törölve.' },
-	},
-};
+// ── Entity Configuration (extracted to useAdminEntityConfigs) ────
+const { entityConfigs, getMenuMealId, getMenuSideId, getMenuDrinkId } = useAdminEntityConfigs({
+	kategoriak,
+	hozzavalok,
+	keszetelek,
+	koretek,
+	uditok,
+});
 
 // ── Tabs & Table Items ──────────────────────────────────────────
 const tabs = [
@@ -552,6 +160,41 @@ const tabItemsMap = computed(() => ({
 	uditok: uditok.value,
 }));
 
+const activeTabDefinition = computed(() => tabs.find((tab) => tab.key === activeTab.value) ?? tabs[0]);
+const activeEntityType = computed(() => activeTabDefinition.value?.entityType ?? '');
+const activeEntityConfig = computed(() => entityConfigs[activeEntityType.value] ?? null);
+const currentTabItems = computed(() => tabItemsMap.value[activeTab.value] ?? []);
+const selectedIdSet = computed(() => new Set(selectedIds.value.map((id) => normalizeId(id)).filter(Boolean)));
+const selectedItems = computed(() =>
+	currentTabItems.value.filter((item) => selectedIdSet.value.has(normalizeId(item?.id))),
+);
+const selectedCount = computed(() => selectedItems.value.length);
+const allSelected = computed(() => currentTabItems.value.length > 0 && selectedCount.value === currentTabItems.value.length);
+const someSelected = computed(() => selectedCount.value > 0 && !allSelected.value);
+const activeBulkCapabilities = computed(
+	() => activeEntityConfig.value?.bulk ?? { canDelete: false, supportsAvailability: false, supportsPrice: false, supportsStatus: false },
+);
+const canBulkEdit = computed(
+	() =>
+		Boolean(
+			activeBulkCapabilities.value?.supportsAvailability ||
+				activeBulkCapabilities.value?.supportsPrice ||
+				activeBulkCapabilities.value?.supportsStatus,
+		),
+);
+const canBulkDelete = computed(() => Boolean(activeBulkCapabilities.value?.canDelete));
+const selectionBusy = computed(
+	() => isLoading.value || saving.value || bulkSaving.value || bulkDeleteLoading.value || deleting.value,
+);
+const bulkActionHint = computed(() => {
+	if (activeBulkCapabilities.value?.supportsStatus) return 'Tömeges státuszváltás és törlés érhető el.';
+	if (activeBulkCapabilities.value?.supportsAvailability && activeBulkCapabilities.value?.supportsPrice) {
+		return 'Ár és elérhetőség módosítható tömegesen, más mező nem.';
+	}
+	if (canBulkDelete.value) return 'Ehhez a típushoz csak tömeges törlés érhető el.';
+	return '';
+});
+
 // ── Data Loading ────────────────────────────────────────────────
 const dataLoads = [
 	{ fn: getOrders, ref: rendelesekRaw, label: 'orders' },
@@ -583,6 +226,7 @@ async function loadAdminData() {
 		}
 	});
 
+	reconcileSelection();
 	isLoading.value = false;
 }
 
@@ -599,6 +243,24 @@ const editModalTitle = computed(() => {
 });
 
 const activeFormFields = computed(() => entityConfigs[editType.value]?.formFields ?? []);
+
+function createDefaultBulkForm(entityType = activeEntityType.value) {
+	const bulk = entityConfigs[entityType]?.bulk ?? {};
+	return {
+		actionType: bulk.supportsStatus
+			? 'status'
+			: bulk.supportsAvailability
+				? 'availability'
+				: bulk.supportsPrice
+					? 'increase-amount'
+					: '',
+		status: ORDER_STATUSES[0] ?? '',
+		availability: '1',
+		priceValue: '',
+	};
+}
+
+bulkForm.value = createDefaultBulkForm();
 
 async function openModal(type, item = null) {
 	clearFeedback();
@@ -632,6 +294,200 @@ function closeEditModal() {
 	editType.value = '';
 	editForm.value = {};
 	clearFeedback();
+}
+
+function clearSelection() {
+	selectedIds.value = [];
+}
+
+function reconcileSelection() {
+	const allowedIds = new Set(currentTabItems.value.map((item) => normalizeId(item?.id)).filter(Boolean));
+	selectedIds.value = selectedIds.value.filter((id) => allowedIds.has(normalizeId(id)));
+}
+
+function toggleSelectAll(checked) {
+	selectedIds.value = checked ? currentTabItems.value.map((item) => normalizeId(item?.id)).filter(Boolean) : [];
+}
+
+function toggleSelectItem({ item, selected }) {
+	const itemId = normalizeId(item?.id);
+	if (!itemId) return;
+	const next = new Set(selectedIds.value.map((id) => normalizeId(id)).filter(Boolean));
+	if (selected) next.add(itemId);
+	else next.delete(itemId);
+	selectedIds.value = Array.from(next);
+}
+
+function closeBulkEditModal() {
+	showBulkEditModal.value = false;
+	bulkError.value = '';
+	bulkForm.value = createDefaultBulkForm();
+}
+
+function openBulkEditModal() {
+	if (!canBulkEdit.value || selectedCount.value === 0) return;
+	clearFeedback();
+	bulkError.value = '';
+	bulkForm.value = createDefaultBulkForm();
+	showBulkEditModal.value = true;
+}
+
+function openBulkDeleteConfirm() {
+	if (!canBulkDelete.value || selectedCount.value === 0) return;
+	clearFeedback();
+	showBulkDeleteConfirm.value = true;
+}
+
+function closeBulkDeleteConfirm() {
+	showBulkDeleteConfirm.value = false;
+}
+
+function clearBulkFailurePrompt() {
+	showBulkFailureModal.value = false;
+	bulkFailureError.value = '';
+	bulkFailureMessage.value = '';
+	bulkFailureResolver = null;
+}
+
+function confirmBulkFailureContinue() {
+	const resolve = bulkFailureResolver;
+	clearBulkFailurePrompt();
+	resolve?.(true);
+}
+
+function cancelBulkFailureContinue() {
+	const resolve = bulkFailureResolver;
+	clearBulkFailurePrompt();
+	resolve?.(false);
+}
+
+function promptBulkFailure(error, item, remainingCount) {
+	const message = error instanceof Error ? error.message : 'A művelet sikertelen.';
+	bulkFailureError.value = message;
+	bulkFailureMessage.value = `${formatEntityItemLabel(item)} elem feldolgozása sikertelen. ${remainingCount > 0 ? `Még ${remainingCount} elem van hátra.` : 'Nincs több hátralévő elem.'}`;
+	showBulkFailureModal.value = true;
+	return new Promise((resolve) => {
+		bulkFailureResolver = resolve;
+	});
+}
+
+function validateBulkForm() {
+	const actionType = String(bulkForm.value?.actionType ?? '').trim();
+	if (!actionType) return 'Válassz tömeges műveletet.';
+	if (actionType === 'status') {
+		const status = String(bulkForm.value?.status ?? '').trim();
+		if (!ORDER_STATUSES.includes(status)) return 'Érvényes státusz kötelező.';
+		return null;
+	}
+	if (actionType === 'availability') {
+		if (!['0', '1'].includes(String(bulkForm.value?.availability ?? ''))) {
+			return 'Érvényes elérhetőségi érték kötelező.';
+		}
+		return null;
+	}
+	if (parseBulkAdjustmentValue(bulkForm.value?.priceValue) === null) {
+		return 'Adj meg 0-nál nagyobb árváltozást.';
+	}
+	return null;
+}
+
+async function buildBulkUpdatePayload(entityType, item, actionType) {
+	const config = entityConfigs[entityType];
+	if (!config) throw new Error('Ismeretlen típus.');
+
+	const resolvedItem = config.bulk?.resolveItemForUpdate ? await config.bulk.resolveItemForUpdate(item) : item;
+	const form = config.mapItemToForm(resolvedItem);
+
+	if (actionType === 'status') {
+		form.status = String(bulkForm.value.status ?? '').trim();
+	} else if (actionType === 'availability') {
+		form.elerheto = String(bulkForm.value.availability ?? '0') === '1' ? 1 : 0;
+	} else {
+		const nextPrice = applyBulkPriceAdjustment(resolvedItem?.ar ?? form.ar, {
+			mode: actionType,
+			value: bulkForm.value.priceValue,
+		});
+		if (nextPrice === null) throw new Error('Az új ár nem számolható ki.');
+		form.ar = String(nextPrice);
+	}
+
+	const validationError = config.validate(form, false);
+	if (validationError) throw new Error(validationError);
+	return config.buildPayload(form, false);
+}
+
+function updateBulkFeedback(config, successCount, failureCount, stopped) {
+	if (successCount > 0) {
+		actionSuccess.value = `${config.label} tömeges művelet kész: ${successCount} sikeres.`;
+	}
+	if (failureCount > 0 || stopped) {
+		actionError.value = `${config.label} tömeges művelet: ${failureCount} sikertelen${stopped ? ', a folyamat leállt a kérésedre.' : '.'}`;
+	}
+}
+
+async function runBulkQueue(items, executor) {
+	let successCount = 0;
+	let failureCount = 0;
+	let stopped = false;
+
+	for (let index = 0; index < items.length; index += 1) {
+		const item = items[index];
+		try {
+			await executor(item);
+			successCount += 1;
+		} catch (error) {
+			failureCount += 1;
+			const shouldContinue = await promptBulkFailure(error, item, items.length - index - 1);
+			if (!shouldContinue) {
+				stopped = true;
+				break;
+			}
+		}
+	}
+
+	return { successCount, failureCount, stopped };
+}
+
+async function saveBulkEdit() {
+	clearFeedback();
+	bulkError.value = '';
+
+	const config = activeEntityConfig.value;
+	const entityType = activeEntityType.value;
+	if (!config) {
+		bulkError.value = 'Ismeretlen típus.';
+		return;
+	}
+	if (selectedCount.value === 0) {
+		bulkError.value = 'Nincs kijelölt elem.';
+		return;
+	}
+
+	const validationError = validateBulkForm();
+	if (validationError) {
+		bulkError.value = validationError;
+		return;
+	}
+
+	bulkSaving.value = true;
+	const items = [...selectedItems.value];
+	const actionType = String(bulkForm.value.actionType ?? '').trim();
+
+	try {
+		const result = await runBulkQueue(items, async (item) => {
+			const payload = await buildBulkUpdatePayload(entityType, item, actionType);
+			await config.api.update(payload);
+		});
+
+		closeBulkEditModal();
+		await loadAdminData();
+		clearSelection();
+		updateBulkFeedback(config, result.successCount, result.failureCount, result.stopped);
+	} catch (error) {
+		bulkError.value = error instanceof Error ? error.message : 'Tömeges mentés sikertelen.';
+	} finally {
+		bulkSaving.value = false;
+	}
 }
 
 // ── Save ────────────────────────────────────────────────────────
@@ -688,24 +544,63 @@ async function confirmDelete() {
 	try {
 		await config.api.delete(item.id);
 		actionSuccess.value = config.messages.delete;
+		showConfirmModal.value = false;
+		deleteTarget.value = null;
 		await loadAdminData();
 	} catch (err) {
 		actionError.value = err instanceof Error ? err.message : 'Törlés sikertelen';
 	} finally {
 		deleting.value = false;
-		showConfirmModal.value = false;
-		deleteTarget.value = null;
 	}
 }
 
 function cancelDelete() {
 	showConfirmModal.value = false;
 	deleteTarget.value = null;
+	clearFeedback();
+}
+
+async function confirmBulkDelete() {
+	const config = activeEntityConfig.value;
+	if (!config) return;
+
+	bulkDeleteLoading.value = true;
+	clearFeedback();
+	const items = [...selectedItems.value];
+
+	try {
+		const result = await runBulkQueue(items, async (item) => {
+			await config.api.delete(item.id);
+		});
+
+		showBulkDeleteConfirm.value = false;
+		await loadAdminData();
+		clearSelection();
+		updateBulkFeedback(config, result.successCount, result.failureCount, result.stopped);
+	} finally {
+		bulkDeleteLoading.value = false;
+	}
 }
 
 const confirmMessage = computed(() => {
 	if (deleteTarget.value?.type === 'order') return 'Biztosan törlöd ezt a rendelést?';
 	return 'Biztosan törlöd ezt az elemet?';
+});
+
+const bulkDeleteMessage = computed(() => {
+	if (!activeEntityConfig.value) return 'Biztosan törlöd a kijelölt elemeket?';
+	return `Biztosan törlöd a kijelölt ${selectedCount.value} ${activeEntityConfig.value.label.toLowerCase()} elemet?`;
+});
+
+watch(activeTab, () => {
+	clearSelection();
+	closeBulkEditModal();
+	clearBulkFailurePrompt();
+	clearFeedback();
+});
+
+watch(currentTabItems, () => {
+	reconcileSelection();
 });
 </script>
 
@@ -719,24 +614,24 @@ const confirmMessage = computed(() => {
 					<div class="text-gray-500">Étterem Kezelő Rendszer</div>
 				</div>
 				<div class="flex gap-3 max-md:w-full">
-					<button
+					<!-- <button
 						class="px-5 py-2.5 rounded-lg font-semibold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition cursor-pointer max-md:flex-1"
 						@click="emit('back')"
 					>
 						← Vissza
-					</button>
+					</button> -->
 					<button
 						class="px-5 py-2.5 rounded-lg font-semibold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition cursor-pointer max-md:flex-1"
 						@click="loadAdminData"
 					>
 						↻ Frissítés
 					</button>
-					<button
+<!-- 					<button
 						class="px-5 py-2.5 rounded-lg font-semibold bg-red-100 text-red-800 hover:bg-red-200 transition cursor-pointer max-md:flex-1"
 						@click="emit('logout')"
 					>
 						Kijelentkezés
-					</button>
+					</button> -->
 				</div>
 			</div>
 		</div>
@@ -760,6 +655,44 @@ const confirmMessage = computed(() => {
 
 		<!-- Content Area -->
 		<div class="bg-white rounded-xl shadow-md p-8 min-h-[500px]">
+			<div
+				v-if="selectedCount > 0"
+				class="mb-4 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 p-4"
+			>
+				<div class="flex flex-wrap items-center justify-between gap-4">
+					<div>
+						<div class="text-sm font-semibold uppercase tracking-[0.18em] text-indigo-700">Kijelölt elemek</div>
+						<div class="mt-1 text-lg font-semibold text-gray-800">{{ selectedCount }} elem kiválasztva ezen a lapon</div>
+						<div v-if="bulkActionHint" class="mt-1 text-sm text-gray-600">{{ bulkActionHint }}</div>
+					</div>
+					<div class="flex flex-wrap gap-2">
+						<button
+							v-if="canBulkEdit"
+							class="cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+							:disabled="selectionBusy"
+							@click="openBulkEditModal"
+						>
+							Tömeges szerkesztés
+						</button>
+						<button
+							v-if="canBulkDelete"
+							class="cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+							:disabled="selectionBusy"
+							@click="openBulkDeleteConfirm"
+						>
+							Kijelöltek törlése
+						</button>
+						<button
+							class="cursor-pointer rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 transition hover:bg-gray-50 disabled:opacity-50"
+							:disabled="selectionBusy"
+							@click="clearSelection"
+						>
+							Kijelölés törlése
+						</button>
+					</div>
+				</div>
+			</div>
+
 			<div v-if="isLoading" class="mb-4 rounded-lg bg-white/90 p-3 text-sm font-medium text-gray-800">
 				Adatok betöltése...
 			</div>
@@ -784,9 +717,16 @@ const confirmMessage = computed(() => {
 					:show-create="entityConfigs[tab.entityType].showCreate ?? true"
 					:show-edit="entityConfigs[tab.entityType].showEdit ?? true"
 					:show-delete="entityConfigs[tab.entityType].showDelete ?? true"
+					selection-enabled
+					:selected-ids="selectedIds"
+					:all-selected="allSelected"
+					:some-selected="someSelected"
+					:selection-disabled="selectionBusy"
 					@create="openModal(tab.entityType)"
 					@edit="(item) => openModal(tab.entityType, item)"
 					@delete="(item) => requestDelete(tab.entityType, item)"
+					@toggle-select-all="toggleSelectAll"
+					@toggle-select-item="toggleSelectItem"
 				/>
 			</template>
 		</div>
@@ -808,14 +748,51 @@ const confirmMessage = computed(() => {
 			@update:form="(val) => (editForm = val)"
 		/>
 
+		<AdminBulkEditModal
+			:show="showBulkEditModal"
+			:entity-label="activeEntityConfig?.label ?? 'Elem'"
+			:selected-count="selectedCount"
+			:capabilities="activeBulkCapabilities"
+			:form="bulkForm"
+			:error="bulkError"
+			:saving="bulkSaving"
+			@close="closeBulkEditModal"
+			@save="saveBulkEdit"
+			@update:form="(val) => (bulkForm = val)"
+		/>
+
 		<!-- Confirm Delete Modal -->
 		<ConfirmModal
 			:show="showConfirmModal"
 			:loading="deleting"
 			title="Törlés megerősítése"
 			:message="confirmMessage"
+			:error="actionError"
 			@confirm="confirmDelete"
 			@cancel="cancelDelete"
+		/>
+
+		<ConfirmModal
+			:show="showBulkDeleteConfirm"
+			:loading="bulkDeleteLoading"
+			title="Tömeges törlés megerősítése"
+			:message="bulkDeleteMessage"
+			:error="actionError"
+			confirm-label="Kijelöltek törlése"
+			@confirm="confirmBulkDelete"
+			@cancel="closeBulkDeleteConfirm"
+		/>
+
+		<ConfirmModal
+			:show="showBulkFailureModal"
+			title="Tömeges művelet megszakadt"
+			:message="bulkFailureMessage"
+			:error="bulkFailureError"
+			confirm-label="Folytatás"
+			cancel-label="Leállítás"
+			confirm-variant="primary"
+			@confirm="confirmBulkFailureContinue"
+			@cancel="cancelBulkFailureContinue"
 		/>
 	</div>
 </template>

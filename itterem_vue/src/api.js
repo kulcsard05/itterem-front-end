@@ -2,9 +2,43 @@ import {
 	AUTH_EXPIRED_MESSAGE,
 	clearStoredAuth,
 	getApiBaseUrl,
+	isAuthPayload,
 	readStoredAuth,
 } from './utils.js';
 import { MENU_ETAG_STORAGE_KEY } from './constants.js';
+
+// ---------------------------------------------------------------------------
+// Fetch with timeout — prevents requests from hanging indefinitely.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
+
+async function abortableFetch(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+	if (!timeoutMs || timeoutMs <= 0) return fetch(url, options);
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+	try {
+		return await fetch(url, { ...options, signal: controller.signal });
+	} catch (err) {
+		if (err.name === 'AbortError') {
+			throw new Error('A kérés időtúllépés miatt megszakadt.');
+		}
+		throw err;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Centralized 401 handler
+// ---------------------------------------------------------------------------
+
+function handleAuthFailure() {
+	clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
+	throw new Error(AUTH_EXPIRED_MESSAGE);
+}
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -61,10 +95,7 @@ async function requestJsonOrThrow(response, fallbackErrorMessage) {
 	const body = await readJsonOrText(response);
 	if (response.ok) return body;
 
-	if (response.status === 401) {
-		clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
-		throw new Error(AUTH_EXPIRED_MESSAGE);
-	}
+	if (response.status === 401) handleAuthFailure();
 
 	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
 	throw new Error(message || fallbackErrorMessage);
@@ -114,7 +145,7 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 		body = '';
 	}
 
-	const response = await fetch(url, {
+	const response = await abortableFetch(url, {
 		method,
 		headers,
 		body,
@@ -126,7 +157,7 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 async function getById(endpoint, id, fallbackError) {
 	const baseUrl = getApiBaseUrl();
 	const url = `${baseUrl}${endpoint}/${encodeURIComponent(String(id ?? ''))}`;
-	const response = await fetch(url, { method: 'GET', headers: authHeaders() });
+	const response = await abortableFetch(url, { method: 'GET', headers: authHeaders() });
 	return requestJsonOrThrow(response, fallbackError);
 }
 
@@ -136,7 +167,7 @@ async function getById(endpoint, id, fallbackError) {
  */
 async function deletePath(endpoint, id, fallbackError) {
 	const baseUrl = getApiBaseUrl();
-	const response = await fetch(`${baseUrl}${endpoint}/${encodeURIComponent(String(id))}`, {
+	const response = await abortableFetch(`${baseUrl}${endpoint}/${encodeURIComponent(String(id))}`, {
 		method: 'DELETE',
 		headers: authHeaders(),
 	});
@@ -151,7 +182,7 @@ export async function login(email, password) {
 	try {
 		const baseUrl = getApiBaseUrl();
 
-		const response = await fetch(`${baseUrl}/api/Login`, {
+		const response = await abortableFetch(`${baseUrl}/api/Login`, {
 			method: 'POST',
 			headers: { accept: '*/*', 'Content-Type': 'application/json' },
 			body: JSON.stringify({ email, passwd: password }),
@@ -159,7 +190,13 @@ export async function login(email, password) {
 
 		const body = await readJsonOrText(response);
 
-		if (response.ok) return body;
+		if (response.ok) {
+			if (typeof body === 'string') throw new Error(body || 'Bejelentkezés sikertelen');
+			if (!isAuthPayload(body, { requireToken: true })) {
+				throw new Error(body?.message || 'Bejelentkezés sikertelen');
+			}
+			return body;
+		}
 		if (response.status === 401) {
 			throw new Error('Hibás email vagy jelszó');
 		}
@@ -175,7 +212,7 @@ export async function register({ teljesNev, email, password, telefonSzam }) {
 	try {
 		const baseUrl = getApiBaseUrl();
 
-		const response = await fetch(`${baseUrl}/api/Registration`, {
+		const response = await abortableFetch(`${baseUrl}/api/Registration`, {
 			method: 'POST',
 			headers: { accept: '*/*', 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -219,7 +256,7 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 	const url = baseUrl ? `${baseUrl}${endpointPath}` : endpointPath;
 
 	try {
-		const response = await fetch(url, {
+		const response = await abortableFetch(url, {
 			method: 'GET',
 			headers: authHeaders(),
 		});
@@ -227,10 +264,7 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 		const body = await readJsonOrText(response);
 
 		if (!response.ok) {
-			if (response.status === 401) {
-				clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
-				throw new Error(AUTH_EXPIRED_MESSAGE);
-			}
+			if (response.status === 401) handleAuthFailure();
 
 			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
 		}
@@ -281,6 +315,18 @@ function writeMenuEtag(key, value) {
 	}
 }
 
+function deleteMenuEtag(key) {
+	if (!key) return;
+	try {
+		const etags = readMenuEtags();
+		if (!(key in etags)) return;
+		delete etags[key];
+		localStorage.setItem(MENU_ETAG_STORAGE_KEY, JSON.stringify(etags));
+	} catch {
+		// ignore storage write failures
+	}
+}
+
 function extractListFromBody(body, extraArrayKeys = []) {
 	if (Array.isArray(body)) return body;
 	if (body && Array.isArray(body.data)) return body.data;
@@ -301,13 +347,19 @@ async function getListWithEtag(endpointPath, fallbackErrorMessage, extraArrayKey
 	const url = baseUrl ? `${baseUrl}${endpointPath}` : endpointPath;
 
 	try {
-		const headers = authHeaders();
+		const headers = authHeaders({
+			// Force revalidation so the request actually gives the backend a chance
+			// to answer with 304 Not Modified when an ETag is already known.
+			'Cache-Control': 'no-cache',
+			Pragma: 'no-cache',
+		});
 		const knownEtag = readMenuEtags()[etagKey];
 		if (knownEtag) headers['If-None-Match'] = knownEtag;
 
-		const response = await fetch(url, {
+		const response = await abortableFetch(url, {
 			method: 'GET',
 			headers,
+			cache: 'no-cache',
 		});
 
 		if (response.status === 304) {
@@ -317,15 +369,13 @@ async function getListWithEtag(endpointPath, fallbackErrorMessage, extraArrayKey
 		const body = await readJsonOrText(response);
 
 		if (!response.ok) {
-			if (response.status === 401) {
-				clearStoredAuth({ emitEvent: true, reason: 'unauthorized' });
-				throw new Error(AUTH_EXPIRED_MESSAGE);
-			}
+			if (response.status === 401) handleAuthFailure();
 			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
 		}
 
 		const nextEtag = response.headers.get('etag');
 		if (nextEtag) writeMenuEtag(etagKey, nextEtag);
+		else deleteMenuEtag(etagKey);
 
 		return {
 			notModified: false,
@@ -426,7 +476,7 @@ export function updateOrderStatus(id, status) {
  */
 export async function placeOrder(felhasznaloId, orderItems) {
 	const baseUrl = getApiBaseUrl();
-	const response = await fetch(`${baseUrl}/api/Rendelesek`, {
+	const response = await abortableFetch(`${baseUrl}/api/Rendelesek`, {
 		method: 'POST',
 		headers: authHeaders({ 'Content-Type': 'application/json' }),
 		body: JSON.stringify({ felhasznaloId, items: orderItems }),

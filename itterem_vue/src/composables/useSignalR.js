@@ -31,6 +31,10 @@ function buildConnection(token) {
 		.build();
 }
 
+// Track which event names have been bound on the current connection
+// to prevent re-registering the same dispatcher on reconnect.
+let boundEvents = new Set();
+
 function bindEvents(conn) {
 	conn.onreconnecting(() => {
 		connectionState.value = 'reconnecting';
@@ -43,10 +47,13 @@ function bindEvents(conn) {
 		started = false;
 	});
 
-	// Re-register all currently-known event listeners on the new connection.
+	// Re-register all currently-known event listeners on the new connection,
+	// but only if not already bound (prevents duplicate dispatchers).
 	for (const [event, callbacks] of Object.entries(listeners)) {
+		if (boundEvents.has(event)) continue;
+		boundEvents.add(event);
 		conn.on(event, (...args) => {
-			for (const cb of callbacks) {
+			for (const cb of (listeners[event] || [])) {
 				try {
 					cb(...args);
 				} catch {
@@ -83,6 +90,7 @@ async function start() {
 
 async function stop() {
 	started = false;
+	boundEvents = new Set();
 	if (connection) {
 		try {
 			await connection.stop();
@@ -102,11 +110,12 @@ function on(event, callback) {
 	if (!listeners[event]) listeners[event] = [];
 	listeners[event].push(callback);
 
-	// If a connection already exists, wire it up immediately.
-	if (connection) {
-		connection.off(event);
+	// If a connection already exists and this event hasn't been bound yet,
+	// register a single dispatcher that iterates the listeners array.
+	if (connection && !boundEvents.has(event)) {
+		boundEvents.add(event);
 		connection.on(event, (...args) => {
-			for (const cb of listeners[event]) {
+			for (const cb of (listeners[event] || [])) {
 				try {
 					cb(...args);
 				} catch {
@@ -123,6 +132,7 @@ function on(event, callback) {
 		if (idx !== -1) arr.splice(idx, 1);
 		if (arr.length === 0) {
 			delete listeners[event];
+			boundEvents.delete(event);
 			if (connection) connection.off(event);
 		}
 	};

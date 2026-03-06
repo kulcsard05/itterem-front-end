@@ -135,8 +135,16 @@ function saveToStorage(items) {
 // items: Array<{ type: string, id: number, name: string, price: number|null, image: string, quantity: number }>
 const items = ref(loadFromStorage());
 
-// Auto-persist every change (deep watch catches nested property mutations like quantity increments).
-watch(items, (value) => saveToStorage(value), { deep: true });
+// Debounced auto-persist — avoids thrashing localStorage on rapid quantity changes.
+let _cartSaveTimer = null;
+function _debouncedSave(value) {
+	if (_cartSaveTimer != null) clearTimeout(_cartSaveTimer);
+	_cartSaveTimer = setTimeout(() => {
+		_cartSaveTimer = null;
+		saveToStorage(value);
+	}, 300);
+}
+watch(items, (value) => _debouncedSave(value), { deep: true });
 
 // Note: mapping lives in utils.js so UI and API stay consistent.
 

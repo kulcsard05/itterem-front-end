@@ -1,4 +1,4 @@
-import { reactive, ref } from 'vue';
+import { reactive, ref, onScopeDispose } from 'vue';
 
 export function useFloatingPanel({
 	prefsKey,
@@ -17,6 +17,16 @@ export function useFloatingPanel({
 	const detailFontSize = ref(16);
 
 	let panelResizeObserver = null;
+	let _savePanelPrefsTimer = null;
+
+	// Cleanup ResizeObserver and pending timers when the scope is disposed.
+	onScopeDispose(() => {
+		cleanupPanel();
+		if (_savePanelPrefsTimer != null) {
+			clearTimeout(_savePanelPrefsTimer);
+			_savePanelPrefsTimer = null;
+		}
+	});
 
 	function readPanelPrefs() {
 		try {
@@ -29,7 +39,7 @@ export function useFloatingPanel({
 		}
 	}
 
-	function savePanelPrefs() {
+	function _writePanelPrefs() {
 		try {
 			const payload = {
 				x: panelX.value,
@@ -42,6 +52,15 @@ export function useFloatingPanel({
 		} catch {
 			// ignore
 		}
+	}
+
+	/** Debounced panel prefs write — avoids thrashing localStorage on every ResizeObserver frame. */
+	function savePanelPrefs() {
+		if (_savePanelPrefsTimer != null) clearTimeout(_savePanelPrefsTimer);
+		_savePanelPrefsTimer = setTimeout(() => {
+			_savePanelPrefsTimer = null;
+			_writePanelPrefs();
+		}, 200);
 	}
 
 	const dragging = reactive({

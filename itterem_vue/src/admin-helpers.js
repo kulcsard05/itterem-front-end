@@ -65,6 +65,14 @@ export function parsePrice(value) {
 	return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
 
+/** Parse a positive numeric bulk adjustment value, or null. */
+export function parseBulkAdjustmentValue(value) {
+	const raw = String(value ?? '').trim();
+	if (!raw) return null;
+	const parsed = Number(raw);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 /** Convert a price value to a form-friendly display string. */
 export function normalizePriceValue(value) {
 	if (value == null || String(value).trim() === '') return '';
@@ -78,6 +86,22 @@ export function formatPrice(value) {
 	const parsed = Number(value);
 	if (!Number.isFinite(parsed)) return '-';
 	return `${parsed.toLocaleString('hu-HU')} Ft`;
+}
+
+/** Apply a bulk price adjustment and clamp the result to 0 Ft. */
+export function applyBulkPriceAdjustment(currentPrice, { mode, value }) {
+	const base = Number(currentPrice);
+	const amount = parseBulkAdjustmentValue(value);
+	if (!Number.isFinite(base) || amount === null) return null;
+
+	let nextPrice = base;
+	if (mode === 'increase-amount') nextPrice = base + amount;
+	else if (mode === 'decrease-amount') nextPrice = base - amount;
+	else if (mode === 'increase-percent') nextPrice = base * (1 + amount / 100);
+	else if (mode === 'decrease-percent') nextPrice = base * (1 - amount / 100);
+	else return null;
+
+	return Math.max(0, Math.round(nextPrice));
 }
 
 /** Normalize an "available" boolean/number to true/false. */

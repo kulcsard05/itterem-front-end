@@ -1,22 +1,24 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
 	getCategoriesConditional,
 	getDrinksConditional,
 	getMealsConditional,
 	getMenusConditional,
 	getSidesConditional,
-	placeOrder,
 } from '../../api.js';
-import { findById, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, resolveUserId, getOrderItemIdKey } from '../../utils.js';
-import { ORDER_TIMEOUT_MS } from '../../constants.js';
+import { findById, formatCurrency, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, getOrderItemIdKey } from '../../utils.js';
+
 import { getImageSrc, cacheImagesForDatasets } from '../../composables/useMenuImageCache.js';
 import { useAuth } from '../../composables/useAuth.js';
 import { useCart } from '../../composables/useCart.js';
 import { useMenuData } from '../../composables/useMenuData.js';
+import QuickBuyModal from './QuickBuyModal.vue';
 
 const emit = defineEmits(['open-item', 'add-to-cart']);
 const isDev = import.meta.env.DEV;
+const { t } = useI18n();
 
 // cartAnimating: true briefly after each click to re-trigger the pop animation.
 const cartAnimating = reactive({});
@@ -66,18 +68,22 @@ const endpointRefreshStatus = ref({
 // True while a background refresh is in flight (data already shown from cache).
 const refreshing = ref(false);
 
-const endpointDebugItems = computed(() => [
-	{ key: 'categories', label: 'Kategóriák' },
-	{ key: 'meals', label: 'Készételek' },
-	{ key: 'sides', label: 'Köretek' },
-	{ key: 'menus', label: 'Menük' },
-	{ key: 'drinks', label: 'Üdítők' },
-]);
+const endpointDebugItems = computed(() => {
+	if (!isDev) return [];
+
+	return [
+		{ key: 'categories', label: t('menu.debug.categories') },
+		{ key: 'meals', label: t('menu.tabs.meals') },
+		{ key: 'sides', label: t('menu.tabs.sides') },
+		{ key: 'menus', label: t('menu.tabs.menus') },
+		{ key: 'drinks', label: t('menu.tabs.drinks') },
+	];
+});
 
 function getItemName(type, item) {
-	if (!item) return '-';
-	if (type === 'menus') return item?.menuNev ?? '-';
-	return item?.nev ?? '-';
+	if (!item) return t('common.notAvailable');
+	if (type === 'menus') return item?.menuNev ?? t('common.notAvailable');
+	return item?.nev ?? t('common.notAvailable');
 }
 
 function getCategoryName(cat) {
@@ -96,8 +102,6 @@ function getItemPrice(item) {
 function getItemImage(item) {
 	return getImageSrc(item?.kep);
 }
-
-
 
 function getMealIngredientsLabel(meal) {
 	const names = getMealIngredientNames(meal);
@@ -183,21 +187,21 @@ function buildMenuBreakdown(menu) {
 	return [
 		{
 			key: 'meal',
-			label: 'Készétel',
+			label: t('itemTypes.meal'),
 			name: mealName,
 			description: mealDescription,
 			openPayload: mealPayload,
 		},
 		{
 			key: 'side',
-			label: 'Köret',
+			label: t('itemTypes.side'),
 			name: sideName,
 			description: sideDescription,
 			openPayload: sidePayload,
 		},
 		{
 			key: 'drink',
-			label: 'Üdítő',
+			label: t('itemTypes.drink'),
 			name: drinkName,
 			description: '',
 			openPayload: drinkPayload,
@@ -210,14 +214,19 @@ function getItemDescription(type, item, categoryName = '') {
 	if (desc) return desc;
 
 	if (type === 'menus') {
-		return getMenuMeta(item) || 'Menü elem';
+		return getMenuMeta(item) || t('menu.fallbackMenuItem');
 	}
 
 	if (type === 'meals' && categoryName) {
-		return `Kategória: ${categoryName}`;
+		return t('menu.categoryPrefix', { name: categoryName });
 	}
 
-	return 'Nincs leírás.';
+	return t('menu.noDescription');
+}
+
+function getCartButtonLabel(type, id) {
+	const count = cartCountByKey.value[`${type}-${id}`] ?? 0;
+	return count ? t('menu.addedCount', { count }) : t('menu.addToCart');
 }
 
 function openItem(type, item, categoryName = '') {
@@ -274,16 +283,7 @@ function quickAddToCart(event, type, item, categoryName = '') {
 // ---------------------------------------------------------------------------
 
 const quickBuyItem = ref(null);
-const quickBuyQty = ref(1);
-const quickBuyOrdering = ref(false);
-const quickBuyError = ref('');
-const quickBuySuccess = ref(false);
-const quickBuySuccessMessage = ref('');
-
-const quickBuyTotal = computed(() => {
-	if (!quickBuyItem.value || quickBuyItem.value.price == null) return null;
-	return quickBuyItem.value.price * quickBuyQty.value;
-});
+const quickBuyRef = ref(null);
 
 function openQuickBuy(event, type, item, categoryName = '') {
 	event.stopPropagation();
@@ -296,58 +296,11 @@ function openQuickBuy(event, type, item, categoryName = '') {
 		image: getItemImage(item),
 		kep: item?.kep ?? '',
 	};
-	quickBuyQty.value = 1;
-	quickBuyError.value = '';
-	quickBuySuccess.value = false;
-	quickBuySuccessMessage.value = '';
-	quickBuyOrdering.value = false;
+	if (quickBuyRef.value?.reset) quickBuyRef.value.reset();
 }
 
 function closeQuickBuy() {
 	quickBuyItem.value = null;
-}
-
-function withQuickBuyTimeout(promise, ms) {
-	let timeoutId;
-	const timeoutPromise = new Promise((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error('A szerver válasza túl sokáig tartott. Próbáld újra.'));
-		}, ms);
-	});
-	return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-}
-
-async function confirmQuickBuy() {
-	const resolved = resolveUserId(auth.value);
-	if (!resolved) {
-		quickBuyError.value = 'A rendeléshez be kell jelentkezni.';
-		return;
-	}
-	const data = quickBuyItem.value;
-	if (!data) return;
-	const idKey = getOrderItemIdKey(data.type);
-	if (!idKey) return;
-
-	quickBuyOrdering.value = true;
-	quickBuyError.value = '';
-	try {
-		const payload = [{ [idKey]: data.item?.id, mennyiseg: quickBuyQty.value }];
-		const result = await withQuickBuyTimeout(placeOrder(resolved, payload), ORDER_TIMEOUT_MS);
-		const apiMessage = typeof result?.message === 'string' ? result.message.trim() : '';
-		const orderId = result?.orderId;
-		if (apiMessage && orderId != null) {
-			quickBuySuccessMessage.value = `${apiMessage} (Rendelés azonosító: ${orderId})`;
-		} else if (apiMessage) {
-			quickBuySuccessMessage.value = apiMessage;
-		} else {
-			quickBuySuccessMessage.value = 'Rendelés leadva.';
-		}
-		quickBuySuccess.value = true;
-	} catch (err) {
-		quickBuyError.value = err instanceof Error ? err.message : 'Rendelés leadása sikertelen.';
-	} finally {
-		quickBuyOrdering.value = false;
-	}
 }
 
 async function loadOne(key, fn, targetRef, fallbackMessage) {
@@ -378,11 +331,11 @@ async function loadOne(key, fn, targetRef, fallbackMessage) {
 async function refreshAll() {
 	refreshing.value = true;
 	const changes = await Promise.allSettled([
-		loadOne('categories', getCategoriesConditional, categories, 'Kategóriák betöltése sikertelen'),
-			loadOne('meals', getMealsConditional, meals, 'Készételek betöltése sikertelen'),
-			loadOne('sides', getSidesConditional, sides, 'Köretek betöltése sikertelen'),
-			loadOne('menus', getMenusConditional, menus, 'Menük betöltése sikertelen'),
-			loadOne('drinks', getDrinksConditional, drinks, 'Üdítők betöltése sikertelen'),
+		loadOne('categories', getCategoriesConditional, categories, t('menu.loadErrors.categories')),
+		loadOne('meals', getMealsConditional, meals, t('menu.loadErrors.meals')),
+		loadOne('sides', getSidesConditional, sides, t('menu.loadErrors.sides')),
+		loadOne('menus', getMenusConditional, menus, t('menu.loadErrors.menus')),
+		loadOne('drinks', getDrinksConditional, drinks, t('menu.loadErrors.drinks')),
 	]);
 
 	const hasChanges = changes.some((entry) => entry.status === 'fulfilled' && entry.value === true);
@@ -440,7 +393,7 @@ const mealSections = computed(() => {
 			const id = cat?.id ?? String(index);
 			return {
 				id: String(id),
-				name: getCategoryName(cat) || 'Category',
+				name: getCategoryName(cat) || t('common.uncategorized'),
 				meals: list,
 			};
 		})
@@ -461,7 +414,7 @@ const mealSections = computed(() => {
 		});
 
 		if (extras.length > 0) {
-					return [...sectionsFromNestedMeals, { id: 'uncategorized', name: 'Egyéb', meals: extras }];
+					return [...sectionsFromNestedMeals, { id: 'uncategorized', name: t('common.uncategorized'), meals: extras }];
 		}
 
 		return sectionsFromNestedMeals;
@@ -493,7 +446,7 @@ const mealSections = computed(() => {
 		.filter((s) => s.meals.length > 0);
 
 	if (uncategorized.length > 0) {
-		sections.push({ id: 'uncategorized', name: 'Egyéb', meals: uncategorized });
+		sections.push({ id: 'uncategorized', name: t('common.uncategorized'), meals: uncategorized });
 	}
 
 	return sections;
@@ -514,7 +467,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'meals'"
 				>
-					Készételek
+					{{ t('menu.tabs.meals') }}
 				</button>
 				<button
 					type="button"
@@ -526,7 +479,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'sides'"
 				>
-					Köretek
+					{{ t('menu.tabs.sides') }}
 				</button>
 				<button
 					type="button"
@@ -538,7 +491,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'menus'"
 				>
-					Menük
+					{{ t('menu.tabs.menus') }}
 				</button>
 				<button
 					type="button"
@@ -550,7 +503,7 @@ const mealSections = computed(() => {
 					"
 					@click="activeType = 'drinks'"
 				>
-					Üdítők
+					{{ t('menu.tabs.drinks') }}
 				</button>
 			</div>
 
@@ -558,19 +511,19 @@ const mealSections = computed(() => {
 				<span
 					v-if="refreshing"
 					class="text-xs text-gray-400"
-				>Frissítés…</span>
+				>{{ t('common.refreshing') }}</span>
 				<button
 					type="button"
 					class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-60"
 					:disabled="refreshing"
 					@click="refreshAll"
 				>
-					Refresh
+					{{ t('common.refresh') }}
 				</button>
 			</div>
 		</div>
 
-		<div v-if="isDev" class="mt-2 flex flex-wrap gap-2 text-xs">
+		<div v-if="endpointDebugItems.length" class="mt-2 flex flex-wrap gap-2 text-xs">
 			<span
 				v-for="item in endpointDebugItems"
 				:key="item.key"
@@ -587,7 +540,7 @@ const mealSections = computed(() => {
 				v-if="(loading.meals || loading.categories) && mealSections.length === 0"
 				class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700"
 			>
-				Készételek betöltése…
+				{{ t('menu.loadingMeals') }}
 			</div>
 
 			<div
@@ -602,7 +555,7 @@ const mealSections = computed(() => {
 					v-if="mealSections.length === 0"
 					class="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600"
 				>
-					Nem találhatók készételek.
+					{{ t('menu.emptyMeals') }}
 				</div>
 
 				<section v-for="section in mealSections" :key="section.id">
@@ -630,7 +583,7 @@ const mealSections = computed(() => {
 											v-if="getItemPrice(item) != null"
 											class="mt-auto text-sm font-medium text-gray-700"
 										>
-											{{ getItemPrice(item) }} Ft
+											{{ formatCurrency(getItemPrice(item)) }}
 										</p>
 										<div class="mt-2 flex flex-col items-start gap-1">
 											<button
@@ -641,7 +594,7 @@ const mealSections = computed(() => {
 												<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
 												</svg>
-												Gyors rendelés
+												{{ t('menu.quickOrder') }}
 											</button>
 											<button
 												type="button"
@@ -655,7 +608,7 @@ const mealSections = computed(() => {
 											<svg v-if="cartCountByKey[`meals-${item.id}`]" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
 											</svg>
-											<span>{{ cartCountByKey[`meals-${item.id}`] ? 'Hozzáadva ' + cartCountByKey[`meals-${item.id}`] + 'x' : '+ Kosár' }}</span>
+											<span>{{ getCartButtonLabel('meals', item.id) }}</span>
 											</button>
 										</div>
 									</div>
@@ -663,7 +616,7 @@ const mealSections = computed(() => {
 								<img
 									v-if="getItemImage(item)"
 									:src="getItemImage(item)"
-									:alt="item.nev || 'Étel kép'"
+									:alt="item.nev || t('menu.alt.foodImage')"
 									class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
 									loading="lazy"
 								/>
@@ -678,7 +631,7 @@ const mealSections = computed(() => {
 		<div v-else class="mt-6">
 			<!-- Only block with a spinner when there is nothing cached to show yet -->
 			<div v-if="selectedLoading && selectedList.length === 0" class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-				Betöltés…
+				{{ t('menu.loadingGeneric') }}
 			</div>
 
 			<div v-else-if="selectedError && selectedList.length === 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -690,7 +643,7 @@ const mealSections = computed(() => {
 					v-if="selectedList.length === 0"
 					class="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600"
 				>
-					Nem találhatók elemek.
+					{{ t('menu.emptyGeneric') }}
 				</div>
 
 				<div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -719,7 +672,7 @@ const mealSections = computed(() => {
 										v-if="getItemPrice(item) != null"
 										class="mt-auto text-sm font-medium text-gray-700"
 									>
-										{{ getItemPrice(item) }} Ft
+										{{ formatCurrency(getItemPrice(item)) }}
 									</p>
 									<div class="mt-2 flex flex-col items-start gap-1">
 										<button
@@ -730,7 +683,7 @@ const mealSections = computed(() => {
 											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
 											</svg>
-											Gyors rendelés
+											{{ t('menu.quickOrder') }}
 										</button>
 										<button
 											type="button"
@@ -744,7 +697,7 @@ const mealSections = computed(() => {
 										<svg v-if="cartCountByKey[`${activeType}-${item.id}`]" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
 										</svg>
-										<span>{{ cartCountByKey[`${activeType}-${item.id}`] ? 'Hozzáadva ' + cartCountByKey[`${activeType}-${item.id}`] + 'x' : '+ Kosár' }}</span>
+										<span>{{ getCartButtonLabel(activeType, item.id) }}</span>
 										</button>
 									</div>
 								</div>
@@ -752,7 +705,7 @@ const mealSections = computed(() => {
 							<img
 								v-if="getItemImage(item)"
 								:src="getItemImage(item)"
-								:alt="item.nev || 'Étel kép'"
+								:alt="item.nev || t('menu.alt.foodImage')"
 								class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
 								loading="lazy"
 							/>
@@ -764,139 +717,12 @@ const mealSections = computed(() => {
 	</div>
 
 	<!-- Quick-buy confirmation modal -->
-	<Teleport to="body">
-		<Transition name="qb-fade">
-			<div
-				v-if="quickBuyItem"
-				class="fixed inset-0 z-50 flex items-center justify-center p-4"
-				role="dialog"
-				aria-modal="true"
-				aria-label="Gyors rendelés"
-			>
-				<!-- Backdrop -->
-				<div
-					class="absolute inset-0 bg-black/50"
-					@click="closeQuickBuy"
-				/>
-
-				<!-- Panel -->
-				<div class="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
-					<!-- Header -->
-					<div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-						<h2 class="text-base font-semibold text-gray-900">Gyors rendelés</h2>
-						<button
-							type="button"
-							class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-							@click="closeQuickBuy"
-							aria-label="Bezárás"
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-								<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-							</svg>
-						</button>
-					</div>
-
-					<!-- Success state -->
-					<div v-if="quickBuySuccess" class="flex flex-col items-center gap-3 px-6 py-8 text-center">
-						<div class="flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-							</svg>
-						</div>
-						<p class="text-base font-semibold text-gray-900">Rendelés leadva!</p>
-						<p class="text-sm text-gray-500">{{ quickBuySuccessMessage || 'Köszönjük a rendelést.' }}</p>
-						<button
-							type="button"
-							class="mt-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-							@click="closeQuickBuy"
-						>
-							Bezárás
-						</button>
-					</div>
-
-					<!-- Order form -->
-					<div v-else class="px-6 py-5 space-y-5">
-						<!-- Item info -->
-						<div class="flex items-center gap-4">
-							<img
-								v-if="quickBuyItem.image"
-								:src="quickBuyItem.image"
-								:alt="quickBuyItem.name"
-								class="h-20 w-20 flex-shrink-0 rounded-xl object-cover"
-							/>
-							<div v-else class="h-20 w-20 flex-shrink-0 rounded-xl bg-gray-100" />
-							<div>
-								<p class="text-sm text-gray-500">{{ quickBuyItem.typeLabel }}</p>
-								<p class="text-base font-semibold text-gray-900 leading-snug">{{ quickBuyItem.name }}</p>
-								<p v-if="quickBuyItem.price != null" class="mt-1 text-sm text-gray-500">
-									Egységár: <span class="font-medium text-gray-800">{{ quickBuyItem.price }} Ft</span>
-								</p>
-							</div>
-						</div>
-
-						<!-- Quantity -->
-						<div class="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3">
-							<span class="text-sm font-medium text-gray-700">Mennyiség</span>
-							<div class="flex items-center gap-3">
-								<button
-									type="button"
-									class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
-									:disabled="quickBuyQty <= 1"
-									@click="quickBuyQty > 1 && quickBuyQty--"
-									aria-label="Csökkentés"
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
-									</svg>
-								</button>
-								<span class="w-8 text-center text-base font-bold text-gray-900">{{ quickBuyQty }}</span>
-								<button
-									type="button"
-									class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
-									@click="quickBuyQty++"
-									aria-label="Növelés"
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-									</svg>
-								</button>
-							</div>
-						</div>
-
-						<!-- Total price -->
-						<div v-if="quickBuyTotal != null" class="flex items-center justify-between rounded-xl bg-indigo-50 px-4 py-3">
-							<span class="text-sm font-medium text-indigo-700">Összesen</span>
-							<span class="text-xl font-bold text-indigo-700">{{ quickBuyTotal }} Ft</span>
-						</div>
-
-						<!-- Error -->
-						<p v-if="quickBuyError" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-							{{ quickBuyError }}
-						</p>
-
-						<!-- Actions -->
-						<div class="flex gap-3 pt-1">
-							<button
-								type="button"
-								class="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-								@click="closeQuickBuy"
-							>
-								Mégsem
-							</button>
-							<button
-								type="button"
-								class="flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-60"
-								:disabled="quickBuyOrdering"
-								@click="confirmQuickBuy"
-							>
-								{{ quickBuyOrdering ? 'Rendelés folyamatban…' : 'Rendelés leadása' }}
-							</button>
-						</div>
-					</div>
-				</div>
-			</div>
-		</Transition>
-	</Teleport>
+	<QuickBuyModal
+		ref="quickBuyRef"
+		:item="quickBuyItem"
+		:auth="auth"
+		@close="closeQuickBuy"
+	/>
 </template>
 
 <style scoped>
@@ -909,23 +735,5 @@ const mealSections = computed(() => {
 
 .cart-pop {
 	animation: cart-pop 0.3s ease-out forwards;
-}
-
-.qb-fade-enter-active,
-.qb-fade-leave-active {
-	transition: opacity 0.18s ease;
-}
-.qb-fade-enter-from,
-.qb-fade-leave-to {
-	opacity: 0;
-}
-.qb-fade-enter-active .relative,
-.qb-fade-leave-active .relative {
-	transition: transform 0.18s ease, opacity 0.18s ease;
-}
-.qb-fade-enter-from .relative,
-.qb-fade-leave-to .relative {
-	transform: scale(0.95);
-	opacity: 0;
 }
 </style>

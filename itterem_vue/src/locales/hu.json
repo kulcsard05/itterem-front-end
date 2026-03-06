@@ -1,0 +1,236 @@
+{
+  "locales": {
+    "hu": "Magyar",
+    "en": "English"
+  },
+  "common": {
+    "appName": "Itterem",
+    "user": "Felhasznalo",
+    "save": "Mentes",
+    "cancel": "Megsem",
+    "close": "Bezaras",
+    "back": "Vissza",
+    "loading": "Betoltes...",
+    "refresh": "Frissites",
+    "refreshing": "Frissites...",
+    "quantity": "Mennyiseg",
+    "unitPrice": "Egysegar",
+    "total": "Osszesen",
+    "uncategorized": "Egyeb",
+    "notAvailable": "-",
+    "language": "Nyelv",
+    "orderIdLabel": "Rendeles azonosito",
+    "currency": {
+      "fallback": "{value} Ft"
+    }
+  },
+  "nav": {
+    "menu": "Etlap",
+    "about": "Rolunk",
+    "admin": "Admin",
+    "cart": "Kosar",
+    "login": "Bejelentkezes",
+    "logout": "Kijelentkezes"
+  },
+  "itemTypes": {
+    "meal": "Keszetel",
+    "side": "Koret",
+    "menu": "Menu",
+    "drink": "Udito",
+    "item": "Tetel"
+  },
+  "menu": {
+    "tabs": {
+      "meals": "Keszetelek",
+      "sides": "Koretek",
+      "menus": "Menuk",
+      "drinks": "Uditok"
+    },
+    "debug": {
+      "categories": "Kategoriak"
+    },
+    "loadingMeals": "Keszetelek betoltese...",
+    "loadingGeneric": "Betoltes...",
+    "emptyMeals": "Nem talalhatok keszetelek.",
+    "emptyGeneric": "Nem talalhatok elemek.",
+    "quickOrder": "Gyors rendeles",
+    "addToCart": "+ Kosar",
+    "addedCount": "Hozzaadva {count}x",
+    "fallbackMenuItem": "Menu elem",
+    "categoryPrefix": "Kategoria: {name}",
+    "noDescription": "Nincs leiras.",
+    "loadErrors": {
+      "categories": "Kategoriak betoltese sikertelen",
+      "meals": "Keszetelek betoltese sikertelen",
+      "sides": "Koretek betoltese sikertelen",
+      "menus": "Menuk betoltese sikertelen",
+      "drinks": "Uditok betoltese sikertelen"
+    },
+    "alt": {
+      "foodImage": "Etel kep"
+    }
+  },
+  "menuItem": {
+    "fallbackTitle": "Tetel",
+    "backToMenu": "<- Vissza az etlaphoz",
+    "menuContents": "Menu tartalma:",
+    "ingredients": "Hozzavalok",
+    "addToCart": "Kosarba",
+    "addedToCart": "{name} hozzaadva a kosarhoz."
+  },
+  "quickBuy": {
+    "title": "Gyors rendeles",
+    "loginRequired": "A rendeleshez be kell jelentkezni.",
+    "orderPlacedTitle": "Rendeles leadva!",
+    "orderPlacedFallback": "Koszonjuk a rendelest.",
+    "orderPlaced": "Rendeles leadva.",
+    "orderFailed": "Rendeles leadasa sikertelen.",
+    "ordering": "Rendeles folyamatban...",
+    "placeOrder": "Rendeles leadasa",
+    "serverTimeout": "A szerver valasza tul sokaig tartott. Probald ujra.",
+    "decreaseQuantity": "Csokkentes",
+    "increaseQuantity": "Noveles"
+  },
+  "cart": {
+    "title": "Kosar ({count})",
+    "empty": "A kosar ures.",
+    "loginRequired": "A rendeleshez be kell jelentkezni.",
+    "orderPlacedTitle": "Rendeles leadva!",
+    "orderPlacedFallback": "Koszonjuk a rendelest.",
+    "orderPlaced": "Rendeles leadva.",
+    "orderFailed": "Rendeles leadasa sikertelen.",
+    "ordering": "Rendeles leadasa...",
+    "placeOrder": "Rendeles leadasa",
+    "clear": "Kosar uritese",
+    "removeItem": "{name} torlese",
+    "decreaseQuantity": "{name} mennyiseg csokkentese",
+    "increaseQuantity": "{name} mennyiseg novelese"
+  },
+  "auth": {
+    "login": {
+      "title": "Bejelentkezes",
+      "emailLabel": "Email cim",
+      "passwordLabel": "Jelszo",
+      "forgotPassword": "Elfelejtett jelszo?",
+      "forgotPasswordSoon": "Hamarosan elerheto",
+      "submit": "Bejelentkezes",
+      "submitting": "Bejelentkezes...",
+      "noAccount": "Nincs meg fiokod?",
+      "registerNow": "Regisztralj most",
+      "failed": "Bejelentkezes sikertelen",
+      "fixFields": "Kerjuk, javitsd a kijelolt mezoket.",
+      "validation": {
+        "emailRequired": "Email cim megadasa kotelezo.",
+        "emailInvalid": "Kerjuk, adj meg egy ervenyes email cimet.",
+        "passwordRequired": "Jelszo megadasa kotelezo."
+      }
+    },
+    "register": {
+      "title": "Uj fiok letrehozasa",
+      "fullNameLabel": "Teljes nev",
+      "emailLabel": "Email cim",
+      "phoneLabel": "Telefonszam",
+      "passwordLabel": "Jelszo",
+      "passwordHint": "A jelszonak legalabb {min} karakter hosszonak kell lennie.",
+      "submit": "Regisztracio",
+      "submitting": "Regisztracio...",
+      "success": "Sikeres regisztracio! Kerjuk, jelentkezz be.",
+      "failed": "Regisztracio sikertelen",
+      "haveAccount": "Mar van fiokod?",
+      "loginNow": "Jelentkezz be",
+      "fixFields": "Kerjuk, javitsd a kijelolt mezoket.",
+      "validation": {
+        "fullNameRequired": "Teljes nev megadasa kotelezo.",
+        "fullNameShort": "A teljes nev tul rovid.",
+        "emailRequired": "Email cim megadasa kotelezo.",
+        "emailInvalid": "Kerjuk, adj meg egy ervenyes email cimet.",
+        "phoneRequired": "Telefonszam megadasa kotelezo.",
+        "phoneInvalid": "Kerjuk, adj meg egy ervenyes telefonszamot.",
+        "passwordRequired": "Jelszo megadasa kotelezo.",
+        "passwordMin": "A jelszonak legalabb {min} karakter hosszonak kell lennie."
+      }
+    }
+  },
+  "account": {
+    "title": "Fiokom",
+    "signedInAs": "Bejelentkezve mint",
+    "adminBadge": "ADMIN",
+    "phone": "Telefonszam",
+    "editPhone": "Szerkesztes",
+    "savePhone": "Mentes",
+    "cancelPhone": "Megse",
+    "phoneSaved": "Telefonszam mentve.",
+    "phoneSaveFailed": "Telefonszam frissitese sikertelen.",
+    "userIdMissing": "Felhasznalo azonosito nem talalhato.",
+    "profileHint": "Ez a felhasznaloi oldalad. Itt vannak az adataid és a rendeléseid.",
+    "ordersTitle": "Rendeleseim",
+    "ordersLoading": "Rendelesek betoltese...",
+    "ordersFailed": "Sajat rendelesek betoltese sikertelen.",
+    "noOrders": "Meg nincs sajat rendelesed.",
+    "realtimeConnectionTitle": "SignalR kapcsolat",
+    "realtimeUpdates": "AZONNALI FRISSITES",
+    "status": "Statusz:",
+    "items": "Tetelek: {items}",
+    "doneNotice": "A rendelesed elkeszult: #{id} ({status})"
+  },
+  "orderStatuses": {
+    "pending": "Fuggoben",
+    "processing": "Folyamatban",
+    "ready": "Atveheto",
+    "done": "Atvett"
+  },
+  "about": {
+    "title": "Rolunk",
+    "subtitle": "Az Itterem egy szivbol jovo projekt/etterem - ahol a jo etelek, a baratsagos kiszolgalas es az otthoni hangulat talalkozik.",
+    "storyTitle": "A mi tortenetunk",
+    "storyParagraph1": "Az Itterem 2018-ban nyitotta meg kapuit egy kis belvarosi sarokhelyen. Alapitoink, Kovacs Peter es Nagy Erzsebet mindig is hittek abban, hogy az egyszeru, jo minosegu alapanyagokbol keszult etelek a legfinomabbak.",
+    "storyParagraph2": "Ma mar tobb mint 200 torzsvasarlonk van, es minden nap azzal a cellal nyitjuk ki az ajtokat, hogy valami finomat tegyunk az asztalra - szivvel-lelekkel.",
+    "valuesTitle": "Ertekeink",
+    "values": {
+      "freshness": {
+        "title": "Frissesseg es minoseg",
+        "body": "Naponta friss alapanyagokbol, helyi termeloktol dolgozunk."
+      },
+      "hospitality": {
+        "title": "Vendegkozpontusag",
+        "body": "Minden vendegunkre szemelyes figyelmet forditunk."
+      },
+      "sustainability": {
+        "title": "Fenntarthatosag",
+        "body": "Csomagolasaink ujrahasznosithatok, hulladekot tudatosan csokkentunk."
+      }
+    },
+    "teamTitle": "Csapatunk",
+    "team": {
+      "peter": {
+        "role": "Alapito es Sef",
+        "bio": "15 eves tapasztalattal rendelkezo sef, aki imad kiserletezni az izekkel."
+      },
+      "erzsebet": {
+        "role": "Alapito es Manager",
+        "bio": "A vendeglatas szerelmese, aki minden nap gondoskodik arrol, hogy minden zokkenomentesen menjen."
+      },
+      "david": {
+        "role": "Cukrasz",
+        "bio": "Egyedi desszertjeivel minden latogatast emlekezetesse tesz."
+      }
+    }
+  },
+  "footer": {
+    "tagline": "Friss alapanyagok, szivbol jovo etelek - minden nap, minden vendegnek.",
+    "contact": "Elerhetoseg",
+    "address": "1052 Budapest, Vaci utca 1.",
+    "hours": "H-P: 10:00-22:00\nSzo-V: 11:00-23:00",
+    "map": "Megkozelites",
+    "mapTitle": "Itterem helyszin",
+    "copyright": "Minden jog fenntartva."
+  },
+  "notFound": {
+    "title": "Az oldal nem talalhato",
+    "body": "A keresett oldal nem letezik vagy eltavolitasra kerult.",
+    "backToMenu": "Vissza az etlaphoz"
+  },
+  "errors": {
+    "authExpired": "A bejelentkezes lejart. Kerjuk, jelentkezz be ujra."
+  }
+}

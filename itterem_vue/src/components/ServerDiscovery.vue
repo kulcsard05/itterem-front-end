@@ -32,7 +32,7 @@ function toggleManual() {
 	manualError.value = '';
 }
 
-function applyManual() {
+async function applyManual() {
 	manualError.value = '';
 	const raw = manualInput.value.trim().replace(/\/+$/, '');
 	if (!raw) {
@@ -45,12 +45,16 @@ function applyManual() {
 		manualError.value = 'Érvénytelen formátum – pl. http://192.168.1.50:7200';
 		return;
 	}
-	setManual(raw);
-	emit('server-changed', raw);
+	try {
+		const saved = await setManual(raw);
+		emit('server-changed', saved);
+	} catch (e) {
+		manualError.value = e.message || 'A megadott szerver ellenőrzése sikertelen.';
+	}
 }
 
-function handleClear() {
-	clearServer();
+async function handleClear() {
+	await clearServer();
 	manualInput.value = '';
 	emit('server-changed', null);
 }
@@ -71,7 +75,7 @@ function handleClose() {
 		<div class="w-full max-w-md rounded-2xl bg-white shadow-xl">
 			<!-- Header -->
 			<div class="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-				<h2 class="text-base font-semibold text-gray-900">Szerver keresése (LAN)</h2>
+				<h2 class="text-base font-semibold text-gray-900">Fejlesztői szerver keresése</h2>
 				<button
 					type="button"
 					class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
@@ -100,7 +104,7 @@ function handleClose() {
 					</button>
 				</div>
 				<p v-else class="rounded-lg bg-gray-50 px-4 py-2.5 text-sm text-gray-500">
-					Nincs beállított szerver.
+					Nincs kiválasztott fejlesztői szerver.
 				</p>
 
 				<!-- Scan progress -->
@@ -177,8 +181,11 @@ function handleClose() {
 
 				<!-- Info note -->
 				<p class="text-xs text-gray-400">
-					A keresés az összes <code class="rounded bg-gray-100 px-1">:{{ 7200 }}</code> portot
-					vizsgálja a helyi alhálózaton. A talált cím localStorage-ban tárolódik.
+					A keresés a helyi discovery helperen keresztül próbálja megtalálni a
+					<code class="rounded bg-gray-100 px-1">:{{ 7200 }}</code> porton futó backendet.
+					A manuálisan megadott cím is a helperben tárolódik. Ha a Vite proxy már másik célra
+					indult, a váltás után indítsd újra az <code class="rounded bg-gray-100 px-1">npm run dev</code>
+					parancsot.
 				</p>
 			</div>
 		</div>

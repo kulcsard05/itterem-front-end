@@ -20,11 +20,18 @@ export const ORDER_STATUS_CLASSES = {
 // ── localStorage / sessionStorage keys ──────────────────────────
 export const AUTH_STORAGE_KEY = 'auth';
 export const CART_STORAGE_KEY = 'cart';
+export const LOCALE_STORAGE_KEY = 'itterem-locale';
 export const PANEL_PREFS_KEY = 'employeeOrdersPanelPrefs';
 export const MENU_CACHE_STORAGE_KEY = 'menu-cache-v1';
 export const MENU_ETAG_STORAGE_KEY = 'menu-etags-v1';
 export const MENU_IMAGES_STORAGE_KEY = 'menu-images-v1';
 export const SERVER_URL_STORAGE_KEY = 'itterem-server-url';
+
+// ── locale configuration ────────────────────────────────────────
+export const DEFAULT_LOCALE = 'hu';
+export const FALLBACK_LOCALE = 'hu';
+export const SUPPORTED_LOCALES = ['hu', 'en'];
+export const LOCALE_QUERY_KEY = 'lang';
 
 // ── Auth events ─────────────────────────────────────────────────
 export const AUTH_EXPIRED_EVENT = 'itterem:auth-expired';

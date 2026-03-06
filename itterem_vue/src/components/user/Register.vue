@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { register } from '../../api.js';
 import { isValidEmail, isValidPhone } from '../../utils.js';
 import { PASSWORD_MIN_LENGTH } from '../../constants.js';
 
 const emit = defineEmits(['switch']);
+const { t } = useI18n();
 
 const fullName = ref('');
 const email = ref('');
@@ -25,17 +27,17 @@ function validate() {
 	const phoneValue = phone.value.trim();
 	const passwordValue = password.value;
 
-	if (!fullNameValue) next.fullName = 'Teljes név megadása kötelező.';
-	else if (fullNameValue.length < 2) next.fullName = 'A teljes név túl rövid.';
+	if (!fullNameValue) next.fullName = t('auth.register.validation.fullNameRequired');
+	else if (fullNameValue.length < 2) next.fullName = t('auth.register.validation.fullNameShort');
 
-	if (!emailValue) next.email = 'Email cím megadása kötelező.';
-	else if (!isValidEmail(emailValue)) next.email = 'Kérjük, adj meg egy érvényes email címet.';
+	if (!emailValue) next.email = t('auth.register.validation.emailRequired');
+	else if (!isValidEmail(emailValue)) next.email = t('auth.register.validation.emailInvalid');
 
-	if (!phoneValue) next.phone = 'Telefonszám megadása kötelező.';
-	else if (!isValidPhone(phoneValue)) next.phone = 'Kérjük, adj meg egy érvényes telefonszámot.';
+	if (!phoneValue) next.phone = t('auth.register.validation.phoneRequired');
+	else if (!isValidPhone(phoneValue)) next.phone = t('auth.register.validation.phoneInvalid');
 
-	if (!passwordValue) next.password = 'Jelszó megadása kötelező.';
-	else if (passwordValue.length < PASSWORD_MIN_LENGTH) next.password = `A jelszónak legalább ${PASSWORD_MIN_LENGTH} karakter hosszúnak kell lennie.`;
+	if (!passwordValue) next.password = t('auth.register.validation.passwordRequired');
+	else if (passwordValue.length < PASSWORD_MIN_LENGTH) next.password = t('auth.register.validation.passwordMin', { min: PASSWORD_MIN_LENGTH });
 
 	fieldErrors.value = next;
 	return !next.fullName && !next.email && !next.phone && !next.password;
@@ -62,7 +64,7 @@ async function onSubmit() {
 	submitAttempted.value = true;
 
 	if (!validate()) {
-		error.value = 'Kérjük, javítsd a kijelölt mezőket.';
+		error.value = t('auth.register.fixFields');
 		return;
 	}
 	loading.value = true;
@@ -78,7 +80,7 @@ async function onSubmit() {
 			telefonSzam: trimmedPhone,
 		});
 
-		success.value = 'Sikeres regisztráció! Kérjük, jelentkezz be.';
+		success.value = t('auth.register.success');
 		fullName.value = '';
 		email.value = '';
 		phone.value = '';
@@ -88,7 +90,7 @@ async function onSubmit() {
 		clearTimeout(switchTimer);
 		switchTimer = setTimeout(() => emit('switch'), 350);
 	} catch (err) {
-		error.value = err?.message || 'Regisztráció sikertelen';
+		error.value = err?.message || t('auth.register.failed');
 	} finally {
 		loading.value = false;
 	}
@@ -100,13 +102,13 @@ onUnmounted(() => clearTimeout(switchTimer));
 <template>
 	<div class="w-full max-w-md bg-white rounded-lg shadow-md p-8">
 		<div class="sm:mx-auto sm:w-full sm:max-w-sm">
-			<h2 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">Új fiók létrehozása</h2>
+			<h2 class="text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">{{ t('auth.register.title') }}</h2>
 		</div>
 
 		<div class="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
 			<form class="space-y-6" @submit.prevent="onSubmit">
 				<div>
-					<label for="name" class="block text-sm font-medium leading-6 text-gray-900"> Teljes név </label>
+					<label for="name" class="block text-sm font-medium leading-6 text-gray-900"> {{ t('auth.register.fullNameLabel') }} </label>
 					<div class="mt-2">
 						<input
 							id="name"
@@ -127,7 +129,7 @@ onUnmounted(() => clearTimeout(switchTimer));
 				</div>
 
 				<div>
-					<label for="email" class="block text-sm font-medium leading-6 text-gray-900"> Email cím </label>
+					<label for="email" class="block text-sm font-medium leading-6 text-gray-900"> {{ t('auth.register.emailLabel') }} </label>
 					<div class="mt-2">
 						<input
 							id="email"
@@ -148,7 +150,7 @@ onUnmounted(() => clearTimeout(switchTimer));
 				</div>
 
 				<div>
-					<label for="phone" class="block text-sm font-medium leading-6 text-gray-900"> Telefonszám </label>
+					<label for="phone" class="block text-sm font-medium leading-6 text-gray-900"> {{ t('auth.register.phoneLabel') }} </label>
 					<div class="mt-2">
 						<input
 							id="phone"
@@ -169,7 +171,7 @@ onUnmounted(() => clearTimeout(switchTimer));
 				</div>
 
 				<div>
-					<label for="password" class="block text-sm font-medium leading-6 text-gray-900"> Jelszó </label>
+					<label for="password" class="block text-sm font-medium leading-6 text-gray-900"> {{ t('auth.register.passwordLabel') }} </label>
 					<div class="mt-2">
 						<input
 							id="password"
@@ -187,7 +189,7 @@ onUnmounted(() => clearTimeout(switchTimer));
 						/>
 					</div>
 					<p v-if="!fieldErrors.password" class="mt-2 text-xs text-gray-500">
-						A jelszónak legalább 6 karakter hosszúnak kell lennie.
+						{{ t('auth.register.passwordHint', { min: PASSWORD_MIN_LENGTH }) }}
 					</p>
 					<p v-if="fieldErrors.password" class="mt-2 text-sm text-red-600">{{ fieldErrors.password }}</p>
 				</div>
@@ -202,7 +204,7 @@ onUnmounted(() => clearTimeout(switchTimer));
 							!loading && !isFormValid ? 'opacity-90' : '',
 						]"
 					>
-						{{ loading ? 'Regisztráció…' : 'Regisztráció' }}
+						{{ loading ? t('auth.register.submitting') : t('auth.register.submit') }}
 					</button>
 				</div>
 			</form>
@@ -211,13 +213,13 @@ onUnmounted(() => clearTimeout(switchTimer));
 			<p v-if="success" class="mt-4 text-sm text-green-600">{{ success }}</p>
 
 			<p class="mt-10 text-center text-sm text-gray-500">
-				Már van fiókod?
+				{{ t('auth.register.haveAccount') }}
 				<button
 					type="button"
 					class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500"
 					@click="emit('switch')"
 				>
-					Jelentkezz be
+					{{ t('auth.register.loginNow') }}
 				</button>
 			</p>
 		</div>

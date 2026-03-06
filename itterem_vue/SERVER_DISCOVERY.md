@@ -1,15 +1,73 @@
-# Server Discovery – Feature Documentation
+# Server Discovery – Dev Workflow
 
-Status: **implemented**, production-only (no-op in Vite dev mode)
+Status: **development-only**, helper-backed migration in progress
 
 ---
 
 ## Overview
 
-The server discovery feature lets the browser automatically locate the Itterem backend on the
-local network without the user having to know the server's IP address. It scans the current LAN
-subnet for an open port 7200, stores the discovered URL in `localStorage`, and gates the rest of
-the app behind that URL.
+Server discovery is no longer a production browser feature.
+
+The app now treats LAN discovery as a **developer convenience** that belongs outside the browser:
+
+- production builds do **not** expose server discovery UI or runtime behavior
+- development builds use the Vite proxy and can be started through a local discovery helper
+- the long-term source of truth for discovered backend URLs is a local Python helper, not `fetch()`
+  probes from the browser
+
+This change removes the old assumption that the frontend can reliably detect the LAN subnet and
+scan port `7200` from browser JavaScript.
+
+---
+
+## Current frontend behavior
+
+### Production
+
+- `src/App.vue` no longer mounts or exposes the discovery UI.
+- `src/utils.js` reads `VITE_API_BASE_URL` for non-dev builds.
+- Production builds do not depend on local discovery state.
+
+### Development
+
+- `src/utils.js` always returns `''` from `getApiBaseUrl()` in dev.
+- All browser requests stay same-origin and flow through Vite's proxy.
+- The recommended entry point is `npm run dev` or `npm run dev:discover`, which start the helper-backed
+  launcher before Vite.
+
+---
+
+## Dev startup flow
+
+### 1. Launcher script
+
+`scripts/dev-with-discovery.mjs` is responsible for the developer workflow:
+
+1. start the local Python discovery helper
+2. ask the helper to discover a backend on port `7200`
+3. receive a verified backend URL
+4. launch Vite with `VITE_API_BASE_URL=<discovered-url>`
+
+### 2. Vite proxy
+
+`vite.config.js` reads `process.env.VITE_API_BASE_URL` first, then `.env`, then falls back to
+`http://localhost:7200`.
+
+That proxy target is used for:
+
+- `/api`
+- `/orderHub`
+
+This keeps the frontend code simple: in dev, the browser only talks to Vite.
+
+### 3. Helper verification
+
+The Python helper is expected to:
+
+- enumerate real local IPv4 networks on macOS and Windows
+- probe candidate hosts on port `7200`
+- verify that a responding host is actually the Itterem backend before accepting it
+- cache the last known good result for faster startup
 
 ---
 
@@ -17,101 +75,30 @@ the app behind that URL.
 
 | File | Role |
 |---|---|
-| `src/composables/useServerDiscovery.js` | All scanning logic, persistence helpers, reachability check |
-| `src/components/ServerDiscovery.vue` | Modal UI: scan progress, manual input, status |
-| `src/constants.js` | `SERVER_URL_STORAGE_KEY = 'itterem-server-url'` |
-| `src/utils.js` → `getApiBaseUrl()` | Priority-1 read of the localStorage URL |
-| `src/App.vue` | Startup check, navbar button, modal mount |
+| `src/App.vue` | production no longer exposes discovery UI |
+| `src/utils.js` | dev always uses the Vite proxy; production uses explicit base URL |
+| `vite.config.js` | reads launcher-provided `VITE_API_BASE_URL` |
+| `scripts/dev-with-discovery.mjs` | dev launcher that bridges helper output into Vite |
+| `devtools/server_discovery_helper/` | local helper implementation |
 
 ---
 
-## How it works
+## Recommended commands
 
-### 1. Startup reachability check (`App.vue` → `onMounted`)
-
-Runs in **production only** (`import.meta.env.DEV` is skipped).
-
-1. Reads the current base URL via `getApiBaseUrl()` (which checks localStorage first, then
-   `VITE_API_BASE_URL`).
-2. Calls `checkServerReachable(baseUrl)` — a `fetch(..., { mode: 'no-cors' })` with a 4 s
-   timeout.
-3. If no URL is configured **or** the URL is unreachable → auto-opens `<ServerDiscovery>`.
-4. Sets `serverReachable` (a `ref<boolean|null>`) which drives the navbar indicator dot.
-
-### 2. Subnet detection (`detectLocalSubnet`)
-
-Uses the browser's WebRTC `RTCPeerConnection` API (no STUN/TURN server needed):
-
-1. Creates a data channel to trigger ICE candidate gathering.
-2. Parses the first local ICE candidate for an IPv4 address.
-3. Returns the `/24` prefix, e.g. `"192.168.40"`, within a 2 s deadline.
-4. Returns `null` on failure (no WebRTC support, VPN, loopback-only, etc.).
-
-### 3. Port probing (`scanSubnet` + `probeHost`)
-
-- Scans all 254 host addresses (`.1` – `.254`) in the detected subnet.
-- Fires **30 probes in parallel** per batch (`BATCH_SIZE = 30`).
-- Each probe uses `fetch("http://{ip}:7200/", { mode: 'no-cors', signal })` with a
-  **500 ms timeout** (`PROBE_TIMEOUT_MS`).
-  - `mode: 'no-cors'` means the fetch resolves with an opaque response for _any_ HTTP reply,
-    and rejects only on network failure (refused, timeout). No CORS headers are required on
-    the backend for this to work.
-- Stops immediately on the **first open host** found within the current batch.
-- An outer `AbortController` is propagated to every probe so "Cancel" kills all in-flight
-  requests.
-- Progress is reported via an `onProbed` callback that increments `scanned`.
-
-### 4. Persistence (`getApiBaseUrl` priority order)
-
-`getApiBaseUrl()` in `utils.js` resolves the base URL in this order:
-
-1. `localStorage.getItem('itterem-server-url')` — set by discovery or manual entry
-2. `import.meta.env.VITE_API_BASE_URL` — `.env` file
-3. `''` (empty, dev proxy) — only in Vite dev mode
-
-All API calls and SSE connections go through `getApiBaseUrl()`, so once a URL is stored it
-takes effect immediately on the next request without a page reload.
-
----
-
-## UI (`ServerDiscovery.vue`)
-
-- **Modal overlay** — dismissible by clicking the backdrop or the × button.
-- **Current server pill** — shows the stored URL in green with a "Törlés" (clear) button.
-- **Progress bar** — `scanned / 254` hosts with a percentage label.
-- **"Automatikus keresés"** — starts the scan; becomes "Megszakítás" while scanning.
-- **"Manuális"** — toggles a URL input field; validates with `new URL()` before saving.
-- Emits `server-changed(url | null)` to `App.vue` when a URL is saved or cleared.
-
-### Navbar button (`App.vue`)
-
-A signal-tower icon button is always visible in the header (non-employee layout):
-
-- No dot — reachability not yet checked (page just loaded).
-- Green dot — last reachability check passed.
-- Red dot — last check failed (prompts user to rescan).
-- Tooltip changes to "Szerver nem elérhető – kattints a kereséshez" when red.
-
----
-
-## Known limitations / future work
-
-| # | Issue | Notes |
-|---|---|---|
-| 1 | **Batch scan exits on first hit per batch** — if the server is at `.31` it won't be found until batch 2 begins | Could use `Promise.any` within the batch instead of `Promise.all` to short-circuit faster |
-| 2 | **Only scans /24 subnets** — doesn't handle /16 or multi-homed setups | Acceptable for typical home/office LAN |
-| 3 | **WebRTC detection fails on some browsers / VPNs** | Falls back gracefully to the manual input |
-| 4 | **No re-check after server-changed** — `serverReachable` is set optimistically to `true` when a URL is chosen, without a live confirmation | Could call `checkServerReachable` after setting the URL |
-| 5 | **Dev mode entirely skipped** — by design; remove the `if (import.meta.env.DEV) return` guard if needed for local multi-machine testing |
-| 6 | **Only the first discovered host is used** — if multiple servers are on the network, the one with the lowest host number wins |
-
----
-
-## Configuration constants (all in `useServerDiscovery.js`)
-
-```js
-const PORT             = 7200;   // port to probe
-const PROBE_TIMEOUT_MS = 500;    // per-host TCP probe timeout
-const CONFIRM_TIMEOUT_MS = 4000; // startup reachability check timeout
-const BATCH_SIZE       = 30;     // concurrent probes per batch
+```bash
+npm run dev
 ```
+
+Raw Vite startup is still available when needed:
+
+```bash
+npm run dev:raw
+```
+
+---
+
+## Notes
+
+- The legacy browser-side `useServerDiscovery.js` and `ServerDiscovery.vue` files remain in the repo
+  during the migration, but they are no longer part of the production runtime path.
+- The reliable version of discovery should happen in the helper layer, not in the browser.

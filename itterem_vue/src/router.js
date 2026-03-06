@@ -1,7 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import MenuView from './components/public/MenuView.vue';
 import { readStoredAuth } from './utils.js';
-import { ROLE_EMPLOYEE, ROLE_ADMIN } from './constants.js';
+import {
+	LOCALE_QUERY_KEY,
+	ROLE_EMPLOYEE,
+	ROLE_ADMIN,
+} from './constants.js';
+import { normalizeLocale } from './i18n.js';
+import { resolveLocalePreference, setLocale } from './composables/useLocale.js';
 
 const MenuItemPage = () => import('./components/public/MenuItemPage.vue');
 const UserPage = () => import('./components/user/UserPage.vue');
@@ -57,6 +63,23 @@ const router = createRouter({
 
 // Employees (jogosultsag=2) should only see the order management page.
 router.beforeEach((to) => {
+	const rawLang = Array.isArray(to.query?.[LOCALE_QUERY_KEY]) ? to.query?.[LOCALE_QUERY_KEY]?.[0] : to.query?.[LOCALE_QUERY_KEY];
+	const normalizedLang = normalizeLocale(rawLang);
+	if (rawLang != null && !normalizedLang) {
+		return {
+			name: to.name,
+			params: to.params,
+			query: {
+				...to.query,
+				[LOCALE_QUERY_KEY]: resolveLocalePreference(),
+			},
+			hash: to.hash,
+			replace: true,
+		};
+	}
+
+	setLocale(normalizedLang ?? resolveLocalePreference(), { persist: normalizedLang != null });
+
 	const auth = readStoredAuth();
 	const hasToken = Boolean(auth?.token);
 	const role = Number(auth?.jogosultsag);

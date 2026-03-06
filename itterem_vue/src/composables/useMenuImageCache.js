@@ -122,18 +122,25 @@ export async function cacheImagesForDatasets(...datasets) {
 
 	const newKnown = new Set(known);
 
-	await Promise.allSettled(
-		[...toFetch.entries()].map(async ([url]) => {
-			try {
-				const resp = await fetch(url);
-				if (!resp.ok) return;
-				await cache.put(url, resp);
-				newKnown.add(url);
-			} catch {
-				// Network error or CORS block – image skipped.
-			}
-		}),
-	);
+	// Concurrency limiter — process at most 6 fetches in parallel.
+	const MAX_CONCURRENT = 6;
+	const entries = [...toFetch.entries()];
+
+	for (let i = 0; i < entries.length; i += MAX_CONCURRENT) {
+		const batch = entries.slice(i, i + MAX_CONCURRENT);
+		await Promise.allSettled(
+			batch.map(async ([url]) => {
+				try {
+					const resp = await fetch(url);
+					if (!resp.ok) return;
+					await cache.put(url, resp);
+					newKnown.add(url);
+				} catch {
+					// Network error or CORS block – image skipped.
+				}
+			}),
+		);
+	}
 
 	// Update the known-set shallowRef so any reactive consumer (if needed) can re-check.
 	if (newKnown.size !== known.size) {

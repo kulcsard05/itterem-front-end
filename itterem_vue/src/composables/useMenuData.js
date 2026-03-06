@@ -27,11 +27,11 @@ const menuFingerprints = ref({
 
 function toDatasetFingerprint(value) {
 	const list = Array.isArray(value) ? value : [];
-	try {
-		return JSON.stringify(list);
-	} catch {
-		return String(list.length);
-	}
+	if (list.length === 0) return '0';
+	// Lightweight fingerprint: item count + first/last item IDs.
+	const first = list[0]?.id ?? '';
+	const last = list[list.length - 1]?.id ?? '';
+	return `${list.length}:${first}:${last}`;
 }
 
 function setDatasetIfChanged(key, targetRef, value) {
@@ -47,23 +47,32 @@ function setDatasetIfChanged(key, targetRef, value) {
 // localStorage persistence – minimised payload to save quota.
 // ---------------------------------------------------------------------------
 
-/** Strip each item to only the fields needed for offline display + cart hydration. */
+/** Strip an item to only the fields needed for offline display + cart hydration. */
+function minimiseItem(item, fields) {
+	if (!item || typeof item !== 'object') return item;
+	const res = {};
+	for (const f of fields) {
+		if (item[f] !== undefined) res[f] = item[f];
+	}
+	return res;
+}
+
+const MEAL_FIELDS = ['id', 'nev', 'ar', 'kep', 'elerheto', 'kategoriaId'];
+const SIDE_DRINK_FIELDS = ['id', 'nev', 'ar', 'kep', 'elerheto'];
+
 function minimiseMeal(m) {
 	if (!m || typeof m !== 'object') return m;
-	const res = { id: m.id, nev: m.nev, ar: m.ar, kep: m.kep, elerheto: m.elerheto };
-	if (m.kategoriaId != null) res.kategoriaId = m.kategoriaId;
+	const res = minimiseItem(m, MEAL_FIELDS);
 	if (Array.isArray(m.hozzavalok) && m.hozzavalok.length) res.hozzavalok = m.hozzavalok;
 	return res;
 }
 
 function minimiseSide(s) {
-	if (!s || typeof s !== 'object') return s;
-	return { id: s.id, nev: s.nev, ar: s.ar, kep: s.kep, elerheto: s.elerheto };
+	return minimiseItem(s, SIDE_DRINK_FIELDS);
 }
 
 function minimiseDrink(d) {
-	if (!d || typeof d !== 'object') return d;
-	return { id: d.id, nev: d.nev, ar: d.ar, kep: d.kep, elerheto: d.elerheto };
+	return minimiseItem(d, SIDE_DRINK_FIELDS);
 }
 
 function minimiseMenu(m) {

@@ -1,12 +1,14 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Login from './Login.vue';
 import Register from './Register.vue';
 import { getOwnOrders, updatePhone } from '../../api.js';
 import { useSignalR } from '../../composables/useSignalR.js';
-import { formatDateTime, formatOrderItems, getOrderStatusClasses, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../utils.js';
+import { formatDateTime, formatOrderItems, getOrderStatusClasses, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../utils.js';
 import {
 	DONE_NOTICE_TIMEOUT_MS,
+	ROLE_ADMIN,
 } from '../../constants.js';
 
 const props = defineProps({
@@ -14,6 +16,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['login-success', 'logout']);
+const { t } = useI18n();
 
 const currentForm = ref('login');
 const isEditingPhone = ref(false);
@@ -59,7 +62,7 @@ function handleOrderUpdated(orderId, _message) {
 		);
 		const status = String(updated?.statusz ?? '').trim();
 		if (status === 'Átvehető' || status === 'Átvett') {
-			showDoneNotice(`A rendelésed elkészült: #${normalizedId} (${status})`);
+			showDoneNotice(t('account.doneNotice', { id: normalizedId, status: getOrderStatusLabel(status) }));
 		}
 	});
 }
@@ -70,6 +73,7 @@ function getPhoneFromAuth(auth) {
 }
 
 const currentPhone = computed(() => getPhoneFromAuth(props.auth));
+const isAdminAccount = computed(() => Number(props.auth?.jogosultsag) === ROLE_ADMIN);
 
 watch(
 	() => props.auth,
@@ -100,13 +104,13 @@ async function savePhone() {
 
 	const nextPhone = phoneInput.value.trim();
 	if (!isValidPhone(nextPhone)) {
-		phoneError.value = 'Kérjük, adj meg egy érvényes telefonszámot.';
+		phoneError.value = t('auth.register.validation.phoneInvalid');
 		return;
 	}
 
 	const userId = resolveUserId(props.auth);
 	if (!userId) {
-		phoneError.value = 'Felhasználó azonosító nem található.';
+		phoneError.value = t('account.userIdMissing');
 		return;
 	}
 
@@ -122,9 +126,9 @@ async function savePhone() {
 
 		emit('login-success', updatedUser);
 		isEditingPhone.value = false;
-		phoneSuccess.value = 'Telefonszám mentve.';
+		phoneSuccess.value = t('account.phoneSaved');
 	} catch (err) {
-		phoneError.value = err?.message || 'Telefonszám frissítése sikertelen.';
+		phoneError.value = err?.message || t('account.phoneSaveFailed');
 	} finally {
 		phoneSaving.value = false;
 	}
@@ -143,7 +147,7 @@ const displayedOrders = computed(() =>
 async function loadOwnOrders() {
 	ordersError.value = '';
 
-	if (!props.auth?.token) {
+	if (!props.auth?.token || isAdminAccount.value) {
 		ownOrders.value = [];
 		ordersLoading.value = false;
 		return;
@@ -155,7 +159,7 @@ async function loadOwnOrders() {
 		ownOrders.value = Array.isArray(orders) ? orders : [];
 	} catch (err) {
 		ownOrders.value = [];
-		ordersError.value = err?.message || 'Saját rendelések betöltése sikertelen.';
+		ordersError.value = err?.message || t('account.ordersFailed');
 	} finally {
 		ordersLoading.value = false;
 	}
@@ -164,9 +168,12 @@ async function loadOwnOrders() {
 watch(
 	() => props.auth?.token,
 	(newToken) => {
+		if (unsubOrderUpdated) {
+			unsubOrderUpdated();
+			unsubOrderUpdated = null;
+		}
 		loadOwnOrders();
-		if (newToken) {
-			if (unsubOrderUpdated) unsubOrderUpdated();
+		if (newToken && !isAdminAccount.value) {
 			unsubOrderUpdated = on('OrderUpdated', handleOrderUpdated);
 			start();
 		}
@@ -182,7 +189,7 @@ onUnmounted(() => {
 
 <template>
 	<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-		<h1 class="text-2xl font-bold tracking-tight text-gray-900">Fiókom</h1>
+		<h1 class="text-2xl font-bold tracking-tight text-gray-900">{{ t('account.title') }}</h1>
 
 		<div
 			v-if="props.auth && props.auth.token"
@@ -190,12 +197,20 @@ onUnmounted(() => {
 		>
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 				<div>
-					<div class="text-sm text-gray-600">Bejelentkezve mint</div>
-					<div class="mt-1 text-lg font-semibold text-gray-900">{{ props.auth.teljesNev || '-' }}</div>
+					<div class="text-sm text-gray-600">{{ t('account.signedInAs') }}</div>
+					<div class="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-gray-900">
+						<span>{{ props.auth.teljesNev || '-' }}</span>
+						<span
+							v-if="isAdminAccount"
+							class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-bold tracking-[0.2em] text-red-700"
+						>
+							{{ t('account.adminBadge') }}
+						</span>
+					</div>
 					<div class="mt-1 text-sm text-gray-700">{{ props.auth.email || '-' }}</div>
 
 					<div class="mt-4">
-						<div class="text-sm text-gray-600">Telefonszám</div>
+						<div class="text-sm text-gray-600">{{ t('account.phone') }}</div>
 
 						<div v-if="!isEditingPhone" class="mt-1 flex items-center gap-3">
 							<div class="text-sm text-gray-900">{{ currentPhone || '-' }}</div>
@@ -204,7 +219,7 @@ onUnmounted(() => {
 								class="rounded-md px-2.5 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
 								@click="startPhoneEdit"
 							>
-								Szerkesztés
+								{{ t('account.editPhone') }}
 							</button>
 						</div>
 
@@ -222,7 +237,7 @@ onUnmounted(() => {
 								class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
 								@click="savePhone"
 							>
-								{{ phoneSaving ? 'Mentés…' : 'Mentés' }}
+								{{ phoneSaving ? t('common.loading') : t('account.savePhone') }}
 							</button>
 							<button
 								type="button"
@@ -230,7 +245,7 @@ onUnmounted(() => {
 								class="rounded-md px-3 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
 								@click="cancelPhoneEdit"
 							>
-								Mégse
+								{{ t('account.cancelPhone') }}
 							</button>
 						</div>
 
@@ -244,30 +259,30 @@ onUnmounted(() => {
 					class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 					@click="emit('logout')"
 				>
-					Kijelentkezés
+					{{ t('nav.logout') }}
 				</button>
 			</div>
 
 			<div class="mt-6 text-sm text-gray-600">
-				Ez a felhasználói oldalad. Később bővítheted rendelésekkel, kedvencekkel stb.
+				{{ t('account.profileHint') }}
 			</div>
 
-			<div class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+			<div v-if="!isAdminAccount" class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
 				<div class="flex flex-wrap items-center justify-between gap-2">
-					<h2 class="text-base font-semibold text-gray-900">Rendeléseim</h2>
+					<h2 class="text-base font-semibold text-gray-900">{{ t('account.ordersTitle') }}</h2>
 					<!-- DEV: SignalR indicator (moved next to orders) -->
 					<div
 						v-if="showRealtimeDebug && props.auth && props.auth.token"
 						class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-[11px] font-semibold tracking-wider text-gray-900 ring-1 ring-gray-300"
 						role="status"
 						aria-live="polite"
-						title="SignalR kapcsolat"
+						:title="t('account.realtimeConnectionTitle')"
 					>
 						<span
 							class="inline-flex h-2.5 w-2.5 rounded-full"
 							:class="connectionState === 'connected' ? 'bg-green-500' : connectionState === 'connecting' || connectionState === 'reconnecting' ? 'bg-yellow-500' : 'bg-red-500'"
 						/>
-						<span>AZONNALI FRISSÍTÉS</span>
+						<span>{{ t('account.realtimeUpdates') }}</span>
 					</div>
 				</div>
 
@@ -280,10 +295,10 @@ onUnmounted(() => {
 					{{ orderDoneNotice }}
 				</div>
 
-				<p v-if="ordersLoading" class="mt-3 text-sm text-gray-600">Rendelések betöltése…</p>
+				<p v-if="ordersLoading" class="mt-3 text-sm text-gray-600">{{ t('account.ordersLoading') }}</p>
 				<p v-else-if="ordersError" class="mt-3 text-sm text-red-600">{{ ordersError }}</p>
 				<p v-else-if="displayedOrders.length === 0" class="mt-3 text-sm text-gray-600">
-					Még nincs saját rendelésed.
+					{{ t('account.noOrders') }}
 				</p>
 
 				<div v-else class="mt-3 space-y-3">
@@ -300,15 +315,15 @@ onUnmounted(() => {
 							<div class="text-sm text-gray-600">{{ formatDateTime(order.datum) }}</div>
 						</div>
 							<div class="mt-1 flex items-center gap-2 text-sm text-gray-700">
-								Státusz:
+								{{ t('account.status') }}
 								<span
 									:class="[
 										'inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold',
 										getOrderStatusClasses(order.statusz),
 									]"
-								>{{ order.statusz || '-' }}</span>
+								>{{ getOrderStatusLabel(order.statusz) }}</span>
 							</div>
-						<div class="mt-1 text-sm text-gray-700">Tételek: {{ formatOrderItems(order) }}</div>
+						<div class="mt-1 text-sm text-gray-700">{{ t('account.items', { items: formatOrderItems(order) }) }}</div>
 					</div>
 				</div>
 			</div>

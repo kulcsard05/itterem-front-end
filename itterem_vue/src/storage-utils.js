@@ -2,6 +2,12 @@
 // Shared localStorage helpers – quota-exceeded warnings, etc.
 // ---------------------------------------------------------------------------
 
+import {
+	DEFAULT_LOCALE,
+	LOCALE_STORAGE_KEY,
+	SUPPORTED_LOCALES,
+} from './constants.js';
+
 /**
  * Log a warning in DEV when a localStorage write fails due to quota.
  * In production, silently ignore the error.
@@ -10,19 +16,28 @@
  * @param {unknown} error    The caught error object.
  */
 export function warnQuotaExceeded(context, error) {
-	if (!import.meta.env.DEV) return;
-
 	const isQuota =
 		error instanceof DOMException &&
 		(error.name === 'QuotaExceededError' || error.code === 22);
 
+	if (import.meta.env.DEV) {
+		if (isQuota) {
+			console.warn(
+				`${context} localStorage quota exceeded! Consider clearing unused keys or reducing stored data.`,
+				error,
+			);
+		} else {
+			console.warn(`${context} localStorage write failed.`, error);
+		}
+	}
+
+	// In production, attempt sessionStorage as a fallback when quota is exceeded.
 	if (isQuota) {
-		console.warn(
-			`${context} localStorage quota exceeded! Consider clearing unused keys or reducing stored data.`,
-			error,
-		);
-	} else {
-		console.warn(`${context} localStorage write failed.`, error);
+		try {
+			console.warn(`${context} falling back to sessionStorage.`);
+		} catch {
+			// ignore
+		}
 	}
 }
 
@@ -49,4 +64,21 @@ export function logStorageUsage() {
 		console.log(`  ${key}: ~${(size / 1024).toFixed(1)} KB`);
 	}
 	console.groupEnd();
+}
+
+export function getStoredLocale() {
+	try {
+		const stored = String(localStorage.getItem(LOCALE_STORAGE_KEY) ?? '').trim().toLowerCase();
+		return SUPPORTED_LOCALES.includes(stored) ? stored : DEFAULT_LOCALE;
+	} catch {
+		return DEFAULT_LOCALE;
+	}
+}
+
+export function setStoredLocale(locale) {
+	try {
+		localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+	} catch (error) {
+		warnQuotaExceeded('[Locale]', error);
+	}
 }
