@@ -6,6 +6,7 @@ import {
 	readStoredAuth,
 } from './utils.js';
 import { MENU_ETAG_STORAGE_KEY } from './constants.js';
+import { i18n } from './i18n.js';
 
 // ---------------------------------------------------------------------------
 // Fetch with timeout — prevents requests from hanging indefinitely.
@@ -23,7 +24,7 @@ async function abortableFetch(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEO
 		return await fetch(url, { ...options, signal: controller.signal });
 	} catch (err) {
 		if (err.name === 'AbortError') {
-			throw new Error('A kérés időtúllépés miatt megszakadt.');
+			throw new Error(i18n.global.t('api.errors.timeout'));
 		}
 		throw err;
 	} finally {
@@ -131,7 +132,8 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 		searchParams.set(key, String(rawValue ?? ''));
 	}
 
-	const url = `${baseUrl}${endpoint}?${searchParams.toString()}`;
+	const queryString = searchParams.toString();
+	const url = queryString ? `${baseUrl}${endpoint}?${queryString}` : `${baseUrl}${endpoint}`;
 
 	// If there is a file, send as FormData; otherwise empty body for POST, none for others.
 	let body = undefined;

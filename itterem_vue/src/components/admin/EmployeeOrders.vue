@@ -476,7 +476,7 @@ watch(
 								<div class="font-semibold text-gray-900">{{ getOrderItemName(entry) }}</div>
 								<div v-if="getOrderEntryIngredients(entry).length" class="mt-1 text-gray-700" :style="{ fontSize: ingredientFontSize + 'px' }">
 									<ul class="space-y-0.5">
-										<li v-for="(name, i) in getOrderEntryIngredients(entry)" :key="i">{{ name }}</li>
+										<li v-for="(name, i) in getOrderEntryIngredients(entry)" :key="`${entry.id ?? 'entry'}-${name}-${i}`">{{ name }}</li>
 									</ul>
 								</div>
 							</div>

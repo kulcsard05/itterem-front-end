@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref } from 'vue';
+import { computed, ref } from 'vue';
 import {
 	AUTH_EXPIRED_EVENT,
 	clearStoredAuth,
@@ -84,11 +84,6 @@ export function useAuth() {
 	const isLoggedIn = computed(() => Boolean(auth.value && auth.value.token));
 	const isAdmin = computed(() => Number(auth.value?.jogosultsag) === ROLE_ADMIN);
 	const isEmployee = computed(() => Number(auth.value?.jogosultsag) === ROLE_EMPLOYEE);
-
-	// Cleanup timer and storage listeners when the calling scope is disposed.
-	onScopeDispose(() => {
-		clearAuthExpiryTimer();
-	});
 
 	function setAuth(user) {
 		const migrated = migrateAuthShape(user);

@@ -1,6 +1,6 @@
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { getItemTypeLabel, getOrderItemIdKey, toImageSrc } from '../utils.js';
-import { warnQuotaExceeded } from '../storage-utils.js';
+import { readStorageText, writeStorageText } from '../storage-utils.js';
 import { useMenuData } from './useMenuData.js';
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,9 @@ function toSerializableItems(value) {
 function hydrateItem(slim) {
 	try {
 		const md = getMenuData();
+		if (!md || typeof md.hydrateCartItem !== 'function') {
+			throw new Error('Menu data hydrator unavailable');
+		}
 		return md.hydrateCartItem(slim);
 	} catch {
 		// Menu data not available yet – return with defaults.
@@ -89,20 +92,16 @@ function parseStoredItems(raw) {
 
 function loadFromStorage() {
 	// Primary: localStorage
-	try {
-		const localItems = parseStoredItems(localStorage.getItem(STORAGE_KEY));
-		if (localItems) return localItems;
-	} catch {
-		// ignore and try fallback
-	}
+	const localItems = parseStoredItems(
+		readStorageText(STORAGE_KEY, { storage: localStorage, fallback: null }),
+	);
+	if (localItems) return localItems;
 
 	// Fallback: sessionStorage (still survives page refresh in the same tab)
-	try {
-		const sessionItems = parseStoredItems(sessionStorage.getItem(SESSION_FALLBACK_KEY));
-		if (sessionItems) return sessionItems;
-	} catch {
-		// ignore and use empty cart
-	}
+	const sessionItems = parseStoredItems(
+		readStorageText(SESSION_FALLBACK_KEY, { storage: sessionStorage, fallback: null }),
+	);
+	if (sessionItems) return sessionItems;
 
 	return [];
 }
@@ -110,24 +109,22 @@ function loadFromStorage() {
 function saveToStorage(items) {
 	const snapshot = toSerializableItems(items);
 	const serialized = JSON.stringify(snapshot);
-	let localSaved = false;
+	const localSaved = writeStorageText(STORAGE_KEY, serialized, {
+		storage: localStorage,
+		context: '[Cart]',
+	});
 
-	try {
-		localStorage.setItem(STORAGE_KEY, serialized);
-		localSaved = localStorage.getItem(STORAGE_KEY) === serialized;
-	} catch (e) {
-		localSaved = false;
-		warnQuotaExceeded('[Cart]', e);
-	}
+	const localPersisted =
+		localSaved &&
+		readStorageText(STORAGE_KEY, { storage: localStorage, fallback: null }) === serialized;
 
 	// Keep a same-tab fallback so refresh does not lose cart when localStorage is blocked.
-	try {
-		sessionStorage.setItem(SESSION_FALLBACK_KEY, serialized);
-	} catch {
-		// ignore session storage failures
-	}
+	writeStorageText(SESSION_FALLBACK_KEY, serialized, {
+		storage: sessionStorage,
+		warnOnError: false,
+	});
 
-	if (!localSaved) {
+	if (!localPersisted) {
 		console.warn('[Cart] localStorage write failed; using session fallback persistence.');
 	}
 }
@@ -135,16 +132,8 @@ function saveToStorage(items) {
 // items: Array<{ type: string, id: number, name: string, price: number|null, image: string, quantity: number }>
 const items = ref(loadFromStorage());
 
-// Debounced auto-persist — avoids thrashing localStorage on rapid quantity changes.
-let _cartSaveTimer = null;
-function _debouncedSave(value) {
-	if (_cartSaveTimer != null) clearTimeout(_cartSaveTimer);
-	_cartSaveTimer = setTimeout(() => {
-		_cartSaveTimer = null;
-		saveToStorage(value);
-	}, 300);
-}
-watch(items, (value) => _debouncedSave(value), { deep: true });
+// Cart mutations are centralized in this composable and persist immediately,
+// so a global deep watcher would only cause redundant writes.
 
 // Note: mapping lives in utils.js so UI and API stay consistent.
 

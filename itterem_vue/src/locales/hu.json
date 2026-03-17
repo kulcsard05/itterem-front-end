@@ -232,5 +232,10 @@
   },
   "errors": {
     "authExpired": "A bejelentkezes lejart. Kerjuk, jelentkezz be ujra."
+  },
+  "api": {
+    "errors": {
+      "timeout": "A keres idotullepes miatt megszakadt."
+    }
   }
 }

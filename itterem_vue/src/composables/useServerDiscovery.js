@@ -17,17 +17,29 @@ const RESULT_POLL_MS = 500;
 // ---------------------------------------------------------------------------
 
 export function getPersistedServerUrl() {
-	return localStorage.getItem(SERVER_URL_STORAGE_KEY) || null;
+	try {
+		return localStorage.getItem(SERVER_URL_STORAGE_KEY) || null;
+	} catch {
+		return null;
+	}
 }
 
 export function saveServerUrl(url) {
 	const cleaned = String(url ?? '').replace(/\/+$/, '');
-	localStorage.setItem(SERVER_URL_STORAGE_KEY, cleaned);
+	try {
+		localStorage.setItem(SERVER_URL_STORAGE_KEY, cleaned);
+	} catch {
+		// ignore storage failures
+	}
 	return cleaned;
 }
 
 export function clearPersistedServerUrl() {
-	localStorage.removeItem(SERVER_URL_STORAGE_KEY);
+	try {
+		localStorage.removeItem(SERVER_URL_STORAGE_KEY);
+	} catch {
+		// ignore storage failures
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -151,7 +151,7 @@ async function submitOrder() {
 						:alt="item.name"
 						class="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
 					/>
-					<div v-else-if="!resolveImage(item)" class="h-14 w-14 flex-shrink-0 rounded-lg bg-gray-100" />
+					<div v-else class="h-14 w-14 flex-shrink-0 rounded-lg bg-gray-100" />
 
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-medium text-gray-900">{{ item.name }}</p>

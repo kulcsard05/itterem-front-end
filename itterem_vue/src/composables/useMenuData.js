@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import { MENU_CACHE_STORAGE_KEY } from '../constants.js';
 import { findById, getItemTypeLabel } from '../utils.js';
-import { warnQuotaExceeded } from '../storage-utils.js';
+import { readStorageJson, writeStorageJson } from '../storage-utils.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton – every component shares the same menu data.
@@ -100,34 +100,30 @@ function minimiseCategory(c) {
 }
 
 function saveMenuCache() {
-	try {
-		const payload = {
-			categories: categories.value.map(minimiseCategory),
-			meals: meals.value.map(minimiseMeal),
-			sides: sides.value.map(minimiseSide),
-			menus: menus.value.map(minimiseMenu),
-			drinks: drinks.value.map(minimiseDrink),
-		};
-		localStorage.setItem(MENU_CACHE_STORAGE_KEY, JSON.stringify(payload));
-	} catch (e) {
-		warnQuotaExceeded('[MenuData] saveMenuCache', e);
-	}
+	const payload = {
+		categories: categories.value.map(minimiseCategory),
+		meals: meals.value.map(minimiseMeal),
+		sides: sides.value.map(minimiseSide),
+		menus: menus.value.map(minimiseMenu),
+		drinks: drinks.value.map(minimiseDrink),
+	};
+	writeStorageJson(MENU_CACHE_STORAGE_KEY, payload, {
+		storage: localStorage,
+		context: '[MenuData] saveMenuCache',
+	});
 }
 
 function hydrateMenuCache() {
-	try {
-		const raw = localStorage.getItem(MENU_CACHE_STORAGE_KEY);
-		if (!raw) return;
-		const payload = JSON.parse(raw);
-		if (!payload || typeof payload !== 'object') return;
-		setDatasetIfChanged('categories', categories, payload.categories);
-		setDatasetIfChanged('meals', meals, payload.meals);
-		setDatasetIfChanged('sides', sides, payload.sides);
-		setDatasetIfChanged('menus', menus, payload.menus);
-		setDatasetIfChanged('drinks', drinks, payload.drinks);
-	} catch {
-		// ignore cache parse errors
-	}
+	const payload = readStorageJson(MENU_CACHE_STORAGE_KEY, {
+		storage: localStorage,
+		fallback: null,
+	});
+	if (!payload || typeof payload !== 'object') return;
+	setDatasetIfChanged('categories', categories, payload.categories);
+	setDatasetIfChanged('meals', meals, payload.meals);
+	setDatasetIfChanged('sides', sides, payload.sides);
+	setDatasetIfChanged('menus', menus, payload.menus);
+	setDatasetIfChanged('drinks', drinks, payload.drinks);
 }
 
 // ---------------------------------------------------------------------------

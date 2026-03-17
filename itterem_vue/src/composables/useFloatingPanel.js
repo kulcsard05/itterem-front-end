@@ -1,4 +1,5 @@
 import { reactive, ref, onScopeDispose } from 'vue';
+import { readStorageJson, writeStorageJson } from '../storage-utils.js';
 
 export function useFloatingPanel({
 	prefsKey,
@@ -29,29 +30,25 @@ export function useFloatingPanel({
 	});
 
 	function readPanelPrefs() {
-		try {
-			const raw = localStorage.getItem(prefsKey);
-			if (!raw) return null;
-			const parsed = JSON.parse(raw);
-			return parsed && typeof parsed === 'object' ? parsed : null;
-		} catch {
-			return null;
-		}
+		const parsed = readStorageJson(prefsKey, {
+			storage: localStorage,
+			fallback: null,
+		});
+		return parsed && typeof parsed === 'object' ? parsed : null;
 	}
 
 	function _writePanelPrefs() {
-		try {
-			const payload = {
-				x: panelX.value,
-				y: panelY.value,
-				w: panelW.value,
-				h: panelH.value,
-				fontSize: detailFontSize.value,
-			};
-			localStorage.setItem(prefsKey, JSON.stringify(payload));
-		} catch {
-			// ignore
-		}
+		const payload = {
+			x: panelX.value,
+			y: panelY.value,
+			w: panelW.value,
+			h: panelH.value,
+			fontSize: detailFontSize.value,
+		};
+		writeStorageJson(prefsKey, payload, {
+			storage: localStorage,
+			warnOnError: false,
+		});
 	}
 
 	/** Debounced panel prefs write — avoids thrashing localStorage on every ResizeObserver frame. */

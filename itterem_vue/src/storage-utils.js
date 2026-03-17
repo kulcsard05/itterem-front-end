@@ -66,6 +66,83 @@ export function logStorageUsage() {
 	console.groupEnd();
 }
 
+/**
+ * Safely read a string value from web storage.
+ *
+ * @param {string} key
+ * @param {{ storage?: Storage, fallback?: string|null }} [options]
+ * @returns {string|null}
+ */
+export function readStorageText(key, options = {}) {
+	const { storage = localStorage, fallback = null } = options;
+	try {
+		const value = storage.getItem(key);
+		return value == null ? fallback : value;
+	} catch {
+		return fallback;
+	}
+}
+
+/**
+ * Safely write a string value to web storage.
+ *
+ * @param {string} key
+ * @param {string} value
+ * @param {{ storage?: Storage, context?: string, warnOnError?: boolean }} [options]
+ * @returns {boolean}
+ */
+export function writeStorageText(key, value, options = {}) {
+	const {
+		storage = localStorage,
+		context = '[Storage]',
+		warnOnError = true,
+	} = options;
+	try {
+		storage.setItem(key, value);
+		return true;
+	} catch (error) {
+		if (warnOnError) warnQuotaExceeded(context, error);
+		return false;
+	}
+}
+
+/**
+ * Safely read and parse JSON from web storage.
+ *
+ * @template T
+ * @param {string} key
+ * @param {{ storage?: Storage, fallback?: T }} [options]
+ * @returns {T}
+ */
+export function readStorageJson(key, options = {}) {
+	const { storage = localStorage, fallback = null } = options;
+	const raw = readStorageText(key, { storage, fallback: null });
+	if (!raw) return fallback;
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return fallback;
+	}
+}
+
+/**
+ * Safely serialize and write JSON to web storage.
+ *
+ * @param {string} key
+ * @param {unknown} value
+ * @param {{ storage?: Storage, context?: string, warnOnError?: boolean }} [options]
+ * @returns {boolean}
+ */
+export function writeStorageJson(key, value, options = {}) {
+	let serialized = '';
+	try {
+		serialized = JSON.stringify(value);
+	} catch {
+		return false;
+	}
+	return writeStorageText(key, serialized, options);
+}
+
 export function getStoredLocale() {
 	try {
 		const stored = String(localStorage.getItem(LOCALE_STORAGE_KEY) ?? '').trim().toLowerCase();

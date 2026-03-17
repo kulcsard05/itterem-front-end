@@ -232,5 +232,10 @@
   },
   "errors": {
     "authExpired": "Your session has expired. Please sign in again."
+  },
+  "api": {
+    "errors": {
+      "timeout": "The request timed out. Please try again."
+    }
   }
 }
