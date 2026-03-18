@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import MenuView from './components/public/MenuView.vue';
 import { readStoredAuth } from './utils.js';
 import {
 	LOCALE_QUERY_KEY,
@@ -9,6 +8,7 @@ import {
 import { normalizeLocale } from './i18n.js';
 import { resolveLocalePreference, setLocale } from './composables/useLocale.js';
 
+const MenuView = () => import('./components/public/MenuView.vue');
 const MenuItemPage = () => import('./components/public/MenuItemPage.vue');
 const UserPage = () => import('./components/user/UserPage.vue');
 const AdminDashboard = () => import('./components/admin/AdminDashboard.vue');

@@ -1,11 +1,16 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
+	getCategories,
 	getCategoriesConditional,
+	getDrinks,
 	getDrinksConditional,
+	getMeals,
 	getMealsConditional,
+	getMenus,
 	getMenusConditional,
+	getSides,
 	getSidesConditional,
 } from '../../api.js';
 import { findById, formatCurrency, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, getOrderItemIdKey } from '../../utils.js';
@@ -14,6 +19,11 @@ import { getImageSrc, cacheImagesForDatasets } from '../../composables/useMenuIm
 import { useAuth } from '../../composables/useAuth.js';
 import { useCart } from '../../composables/useCart.js';
 import { useMenuData } from '../../composables/useMenuData.js';
+import AsyncStatePanel from './AsyncStatePanel.vue';
+import EndpointStatusBadges from './EndpointStatusBadges.vue';
+import MenuAddToCartButton from './MenuAddToCartButton.vue';
+import MenuItemCardShell from './MenuItemCardShell.vue';
+import MenuQuickOrderButton from './MenuQuickOrderButton.vue';
 import QuickBuyModal from './QuickBuyModal.vue';
 
 const emit = defineEmits(['open-item', 'add-to-cart']);
@@ -30,6 +40,25 @@ const {
 	setDatasetIfChanged, saveMenuCache, hydrateMenuCache,
 } = useMenuData();
 
+const datasetRefByType = {
+	meals,
+	sides,
+	menus,
+	drinks,
+};
+
+const MENU_ACTIVE_TAB_STORAGE_KEY = 'menu-active-tab-v1';
+const MENU_TAB_KEYS = ['meals', 'sides', 'menus', 'drinks'];
+
+function readStoredActiveType() {
+	try {
+		const stored = String(localStorage.getItem(MENU_ACTIVE_TAB_STORAGE_KEY) ?? '').trim();
+		return MENU_TAB_KEYS.includes(stored) ? stored : 'meals';
+	} catch {
+		return 'meals';
+	}
+}
+
 const cartCountByKey = computed(() => {
 	const map = {};
 	for (const cartItem of cartItems.value) {
@@ -39,7 +68,22 @@ const cartCountByKey = computed(() => {
 	return map;
 });
 
-const activeType = ref('meals'); // meals | sides | menus | drinks
+const activeType = ref(readStoredActiveType()); // meals | sides | menus | drinks
+
+watch(activeType, (next) => {
+	try {
+		localStorage.setItem(MENU_ACTIVE_TAB_STORAGE_KEY, next);
+	} catch {
+		// ignore storage failures
+	}
+});
+
+const menuTabs = computed(() => [
+	{ key: 'meals', label: t('menu.tabs.meals') },
+	{ key: 'sides', label: t('menu.tabs.sides') },
+	{ key: 'menus', label: t('menu.tabs.menus') },
+	{ key: 'drinks', label: t('menu.tabs.drinks') },
+]);
 
 const loading = ref({
 	categories: false,
@@ -71,14 +115,20 @@ const refreshing = ref(false);
 const endpointDebugItems = computed(() => {
 	if (!isDev) return [];
 
-	return [
-		{ key: 'categories', label: t('menu.debug.categories') },
-		{ key: 'meals', label: t('menu.tabs.meals') },
-		{ key: 'sides', label: t('menu.tabs.sides') },
-		{ key: 'menus', label: t('menu.tabs.menus') },
-		{ key: 'drinks', label: t('menu.tabs.drinks') },
-	];
+	return [{ key: 'categories', label: t('menu.debug.categories') }, ...menuTabs.value];
 });
+
+function cartKey(type, id) {
+	return `${type}-${id}`;
+}
+
+function getCartCount(type, id) {
+	return cartCountByKey.value[cartKey(type, id)] ?? 0;
+}
+
+function isCartAnimating(type, id) {
+	return Boolean(cartAnimating[cartKey(type, id)]);
+}
 
 function getItemName(type, item) {
 	if (!item) return t('common.notAvailable');
@@ -108,11 +158,17 @@ function getMealIngredientsLabel(meal) {
 	return names.length ? names.join(', ') : '';
 }
 
+function resolveMenuParts(menu) {
+	return {
+		meal: findById(meals.value, menu?.keszetelId),
+		side: findById(sides.value, menu?.koretId),
+		drink: findById(drinks.value, menu?.uditoId),
+	};
+}
+
 function getMenuMeta(menu) {
 	const parts = [];
-	const meal = findById(meals.value, menu?.keszetelId);
-	const side = findById(sides.value, menu?.koretId);
-	const drink = findById(drinks.value, menu?.uditoId);
+	const { meal, side, drink } = resolveMenuParts(menu);
 
 	const mealName = String(meal?.nev ?? '').trim();
 	const sideName = String(side?.nev ?? '').trim();
@@ -125,9 +181,7 @@ function getMenuMeta(menu) {
 }
 
 function buildMenuBreakdown(menu) {
-	const meal = findById(meals.value, menu?.keszetelId);
-	const side = findById(sides.value, menu?.koretId);
-	const drink = findById(drinks.value, menu?.uditoId);
+	const { meal, side, drink } = resolveMenuParts(menu);
 
 	const mealName = String(meal?.nev ?? '-');
 	const sideName = String(side?.nev ?? '-');
@@ -225,35 +279,39 @@ function getItemDescription(type, item, categoryName = '') {
 }
 
 function getCartButtonLabel(type, id) {
-	const count = cartCountByKey.value[`${type}-${id}`] ?? 0;
+	const count = getCartCount(type, id);
 	return count ? t('menu.addedCount', { count }) : t('menu.addToCart');
 }
 
-function openItem(type, item, categoryName = '') {
+function createItemPayload(type, item, categoryName = '') {
 	const typeLabel = getItemTypeLabel(type);
-	let ingredients = [];
-	if (type === 'meals') {
-		ingredients = getMealIngredientNames(item);
-	} else if (type === 'menus') {
-		const meal = findById(meals.value, item?.keszetelId);
-		ingredients = getMealIngredientNames(meal);
-	}
-	emit('open-item', {
+	const menuMeal = type === 'menus' ? findById(meals.value, item?.keszetelId) : null;
+	const ingredients = type === 'meals'
+		? getMealIngredientNames(item)
+		: type === 'menus'
+			? getMealIngredientNames(menuMeal)
+			: [];
+
+	return {
 		type,
 		typeLabel,
 		item,
 		name: getItemName(type, item),
-		description: getItemDescription(type, item, categoryName),
 		price: getItemPrice(item),
 		image: getItemImage(item),
 		kep: item?.kep ?? '',
+		description: getItemDescription(type, item, categoryName),
 		meta: type === 'menus' ? getMenuMeta(item) : categoryName,
 		menuBreakdown: type === 'menus' ? buildMenuBreakdown(item) : [],
 		ingredients,
-	});
+	};
 }
 
-function quickAddToCart(event, type, item, categoryName = '') {
+function openItem(type, item, categoryName = '') {
+	emit('open-item', createItemPayload(type, item, categoryName));
+}
+
+function quickAddToCart(event, type, item) {
 	event.stopPropagation();
 	const id = item?.id;
 	if (!id || !getOrderItemIdKey(type)) return;
@@ -269,7 +327,7 @@ function quickAddToCart(event, type, item, categoryName = '') {
 		kep: item?.kep ?? '',
 	});
 
-	const key = `${type}-${id}`;
+	const key = cartKey(type, id);
 	// Re-trigger animation on every click by removing then re-adding the flag.
 	delete cartAnimating[key];
 	requestAnimationFrame(() => {
@@ -287,15 +345,7 @@ const quickBuyRef = ref(null);
 
 function openQuickBuy(event, type, item, categoryName = '') {
 	event.stopPropagation();
-	quickBuyItem.value = {
-		type,
-		typeLabel: getItemTypeLabel(type),
-		item,
-		name: getItemName(type, item),
-		price: getItemPrice(item),
-		image: getItemImage(item),
-		kep: item?.kep ?? '',
-	};
+	quickBuyItem.value = createItemPayload(type, item, categoryName);
 	if (quickBuyRef.value?.reset) quickBuyRef.value.reset();
 }
 
@@ -309,16 +359,17 @@ async function loadOne(key, fn, targetRef, fallbackMessage) {
 	endpointRefreshStatus.value[key] = '...';
 	try {
 		const result = await fn();
-		if (result && typeof result === 'object' && 'notModified' in result) {
-			if (result.notModified) {
-				endpointRefreshStatus.value[key] = '304';
-				return false;
-			}
-			endpointRefreshStatus.value[key] = '200';
-			return setDatasetIfChanged(key, targetRef, result.data);
+		if (result && typeof result === 'object' && 'notModified' in result && result.notModified) {
+			endpointRefreshStatus.value[key] = '304';
+			return false;
 		}
+
+		const data = result && typeof result === 'object' && 'notModified' in result
+			? result.data
+			: result;
+
 		endpointRefreshStatus.value[key] = '200';
-		return setDatasetIfChanged(key, targetRef, result);
+		return setDatasetIfChanged(key, targetRef, data);
 	} catch (err) {
 		endpointRefreshStatus.value[key] = 'ERR';
 		errors.value[key] = err instanceof Error ? err.message : fallbackMessage;
@@ -330,12 +381,16 @@ async function loadOne(key, fn, targetRef, fallbackMessage) {
 
 async function refreshAll() {
 	refreshing.value = true;
+	const endpointLoaders = [
+		['categories', getCategoriesConditional, categories, t('menu.loadErrors.categories')],
+		['meals', getMealsConditional, meals, t('menu.loadErrors.meals')],
+		['sides', getSidesConditional, sides, t('menu.loadErrors.sides')],
+		['menus', getMenusConditional, menus, t('menu.loadErrors.menus')],
+		['drinks', getDrinksConditional, drinks, t('menu.loadErrors.drinks')],
+	];
+
 	const changes = await Promise.allSettled([
-		loadOne('categories', getCategoriesConditional, categories, t('menu.loadErrors.categories')),
-		loadOne('meals', getMealsConditional, meals, t('menu.loadErrors.meals')),
-		loadOne('sides', getSidesConditional, sides, t('menu.loadErrors.sides')),
-		loadOne('menus', getMenusConditional, menus, t('menu.loadErrors.menus')),
-		loadOne('drinks', getDrinksConditional, drinks, t('menu.loadErrors.drinks')),
+		...endpointLoaders.map(([key, getter, targetRef, fallback]) => loadOne(key, getter, targetRef, fallback)),
 	]);
 
 	const hasChanges = changes.some((entry) => entry.status === 'fulfilled' && entry.value === true);
@@ -357,18 +412,36 @@ onMounted(() => {
 });
 
 const selectedList = computed(() => {
-	if (activeType.value === 'meals') return meals.value || [];
-	if (activeType.value === 'sides') return sides.value || [];
-	if (activeType.value === 'menus') return menus.value || [];
-	return drinks.value || [];
+	const source = datasetRefByType[activeType.value];
+	return Array.isArray(source?.value) ? source.value : [];
 });
 
 const selectedLoading = computed(() => loading.value[activeType.value]);
 const selectedError = computed(() => errors.value[activeType.value]);
 
+const mealsInitialLoading = computed(() =>
+	(loading.value.meals || loading.value.categories) && mealSections.value.length === 0,
+);
+
+const mealsInitialError = computed(() => {
+	if (mealSections.value.length > 0) return '';
+	return errors.value.meals || errors.value.categories || '';
+});
+
+const mealsIsEmpty = computed(() => mealSections.value.length === 0);
+
+const selectedInitialLoading = computed(() => selectedLoading.value && selectedList.value.length === 0);
+const selectedInitialError = computed(() => (selectedList.value.length === 0 ? selectedError.value : ''));
+const selectedIsEmpty = computed(() => selectedList.value.length === 0);
+
 const mealSections = computed(() => {
 	const cats = Array.isArray(categories.value) ? categories.value : [];
 	const ms = Array.isArray(meals.value) ? meals.value : [];
+
+	if (cats.length === 0 && ms.length > 0) {
+		return [{ id: 'uncategorized', name: t('common.uncategorized'), meals: ms }];
+	}
+
 	const mealsById = new Map(ms.map((meal) => [String(meal?.id), meal]));
 
 	// Preferred: backend returns categories with nested meals, e.g.
@@ -458,52 +531,18 @@ const mealSections = computed(() => {
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			<div class="flex flex-wrap items-center gap-2">
 				<button
+					v-for="tab in menuTabs"
+					:key="tab.key"
 					type="button"
 					class="rounded-full px-3 py-1.5 text-sm font-semibold"
 					:class="
-						activeType === 'meals'
+						activeType === tab.key
 							? 'bg-gray-900 text-white'
 							: 'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50'
 					"
-					@click="activeType = 'meals'"
+					@click="activeType = tab.key"
 				>
-					{{ t('menu.tabs.meals') }}
-				</button>
-				<button
-					type="button"
-					class="rounded-full px-3 py-1.5 text-sm font-semibold"
-					:class="
-						activeType === 'sides'
-							? 'bg-gray-900 text-white'
-							: 'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50'
-					"
-					@click="activeType = 'sides'"
-				>
-					{{ t('menu.tabs.sides') }}
-				</button>
-				<button
-					type="button"
-					class="rounded-full px-3 py-1.5 text-sm font-semibold"
-					:class="
-						activeType === 'menus'
-							? 'bg-gray-900 text-white'
-							: 'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50'
-					"
-					@click="activeType = 'menus'"
-				>
-					{{ t('menu.tabs.menus') }}
-				</button>
-				<button
-					type="button"
-					class="rounded-full px-3 py-1.5 text-sm font-semibold"
-					:class="
-						activeType === 'drinks'
-							? 'bg-gray-900 text-white'
-							: 'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50'
-					"
-					@click="activeType = 'drinks'"
-				>
-					{{ t('menu.tabs.drinks') }}
+					{{ tab.label }}
 				</button>
 			</div>
 
@@ -523,196 +562,116 @@ const mealSections = computed(() => {
 			</div>
 		</div>
 
-		<div v-if="endpointDebugItems.length" class="mt-2 flex flex-wrap gap-2 text-xs">
-			<span
-				v-for="item in endpointDebugItems"
-				:key="item.key"
-				class="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-gray-600"
-			>
-				{{ item.label }}: {{ endpointRefreshStatus[item.key] }}
-			</span>
-		</div>
+		<EndpointStatusBadges :items="endpointDebugItems" :status-by-key="endpointRefreshStatus" />
 
 		<!-- Meals: grouped by categories -->
 		<div v-if="activeType === 'meals'" class="mt-6">
-			<!-- Only block with a spinner when there is nothing cached to show yet -->
-			<div
-				v-if="(loading.meals || loading.categories) && mealSections.length === 0"
-				class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700"
+			<AsyncStatePanel
+				:is-loading="mealsInitialLoading"
+				:error-text="mealsInitialError"
+				:is-empty="mealsIsEmpty"
+				:loading-label="t('menu.loadingMeals')"
+				:empty-label="t('menu.emptyMeals')"
 			>
-				{{ t('menu.loadingMeals') }}
-			</div>
-
-			<div
-				v-else-if="(errors.meals || errors.categories) && mealSections.length === 0"
-				class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
-			>
-				{{ errors.meals || errors.categories }}
-			</div>
-
-			<div v-else class="mt-6 space-y-8">
-				<div
-					v-if="mealSections.length === 0"
-					class="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600"
-				>
-					{{ t('menu.emptyMeals') }}
-				</div>
-
-				<section v-for="section in mealSections" :key="section.id">
+				<div class="mt-6 space-y-8">
+					<section v-for="section in mealSections" :key="section.id">
 					<h2 class="text-lg font-bold text-gray-900">{{ section.name }}</h2>
 
 					<div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-						<div
+						<MenuItemCardShell
 							v-for="item in section.meals"
 							:key="item.id"
-						class="group cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
-							@click="openItem('meals', item, section.name)"
+							:image-src="getItemImage(item)"
+							:image-alt="item.nev || t('menu.alt.foodImage')"
+							@open="openItem('meals', item, section.name)"
 						>
-							<div class="flex items-stretch justify-between gap-3">
-								<div class="flex flex-col justify-between">
-									<h3 class="text-base font-semibold text-gray-900">{{ item.nev }}</h3>
+							<h3 class="text-base font-semibold text-gray-900">{{ item.nev }}</h3>
 
-									<template v-for="label in [getMealIngredientsLabel(item)]" :key="0">
-										<p v-if="label" class="mt-1 text-xs text-gray-500">
-											{{ label }}
-										</p>
-									</template>
+							<template v-for="label in [getMealIngredientsLabel(item)]" :key="0">
+								<p v-if="label" class="mt-1 text-xs text-gray-500">
+									{{ label }}
+								</p>
+							</template>
 
-									<div>
-										<p
-											v-if="getItemPrice(item) != null"
-											class="mt-auto text-sm font-medium text-gray-700"
-										>
-											{{ formatCurrency(getItemPrice(item)) }}
-										</p>
-										<div class="mt-2 flex flex-col items-start gap-1">
-											<button
-												type="button"
-												class="inline-flex items-center gap-1 rounded-md bg-sky-400 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-300 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150"
-												@click.stop="openQuickBuy($event, 'meals', item, section.name)"
-											>
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
-												</svg>
-												{{ t('menu.quickOrder') }}
-											</button>
-											<button
-												type="button"
-											:class="[
-												'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white transition-colors duration-200',
-												cartCountByKey[`meals-${item.id}`] ? 'bg-green-500' : 'bg-indigo-600 hover:bg-indigo-500',
-												cartAnimating[`meals-${item.id}`] ? 'cart-pop' : '',
-											]"
-											@click.stop="quickAddToCart($event, 'meals', item, section.name)"
-										>
-											<svg v-if="cartCountByKey[`meals-${item.id}`]" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-											</svg>
-											<span>{{ getCartButtonLabel('meals', item.id) }}</span>
-											</button>
-										</div>
-									</div>
+							<div>
+								<p
+									v-if="getItemPrice(item) != null"
+									class="mt-auto text-sm font-medium text-gray-700"
+								>
+									{{ formatCurrency(getItemPrice(item)) }}
+								</p>
+								<div class="mt-2 flex flex-col items-start gap-1">
+									<MenuQuickOrderButton
+										:label="t('menu.quickOrder')"
+										@quick-order.stop="openQuickBuy($event, 'meals', item, section.name)"
+									/>
+									<MenuAddToCartButton
+										:count="getCartCount('meals', item.id)"
+										:is-animating="isCartAnimating('meals', item.id)"
+										:label="getCartButtonLabel('meals', item.id)"
+										@add.stop="quickAddToCart($event, 'meals', item)"
+									/>
 								</div>
-								<img
-									v-if="getItemImage(item)"
-									:src="getItemImage(item)"
-									:alt="item.nev || t('menu.alt.foodImage')"
-									class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
-									loading="lazy"
-								/>
 							</div>
-						</div>
+						</MenuItemCardShell>
 					</div>
-				</section>
-			</div>
+					</section>
+				</div>
+			</AsyncStatePanel>
 		</div>
 
 		<!-- Other types: flat list -->
 		<div v-else class="mt-6">
-			<!-- Only block with a spinner when there is nothing cached to show yet -->
-			<div v-if="selectedLoading && selectedList.length === 0" class="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-				{{ t('menu.loadingGeneric') }}
-			</div>
-
-			<div v-else-if="selectedError && selectedList.length === 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-				{{ selectedError }}
-			</div>
-
-			<div v-else>
-				<div
-					v-if="selectedList.length === 0"
-					class="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600"
-				>
-					{{ t('menu.emptyGeneric') }}
-				</div>
-
-				<div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-					<div
+			<AsyncStatePanel
+				:is-loading="selectedInitialLoading"
+				:error-text="selectedInitialError"
+				:is-empty="selectedIsEmpty"
+				:loading-label="t('menu.loadingGeneric')"
+				:empty-label="t('menu.emptyGeneric')"
+			>
+				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					<MenuItemCardShell
 						v-for="item in selectedList"
 						:key="item.id"
-					class="group cursor-pointer rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
-						@click="openItem(activeType, item)"
+						:image-src="getItemImage(item)"
+						:image-alt="item.nev || t('menu.alt.foodImage')"
+						@open="openItem(activeType, item)"
 					>
-						<div class="flex items-stretch justify-between gap-3">
-							<div class="flex flex-col justify-between">
-								<h3 class="text-base font-semibold text-gray-900">
-									{{ getItemName(activeType, item) }}
-								</h3>
+						<h3 class="text-base font-semibold text-gray-900">
+							{{ getItemName(activeType, item) }}
+						</h3>
 
-								<div>
-									<p v-if="activeType === 'menus' && getMenuMeta(item)" class="text-xs text-gray-500">
-										{{ getMenuMeta(item) }}
-									</p>
-								<template v-for="ingLabel in [getMealIngredientsLabel(findById(meals, item?.keszetelId))]" :key="0">
-									<p v-if="activeType === 'menus' && ingLabel" class="mt-1 text-xs text-gray-500">
-										{{ ingLabel }}
-									</p>
-								</template>
-									<p
-										v-if="getItemPrice(item) != null"
-										class="mt-auto text-sm font-medium text-gray-700"
-									>
-										{{ formatCurrency(getItemPrice(item)) }}
-									</p>
-									<div class="mt-2 flex flex-col items-start gap-1">
-										<button
-											type="button"
-											class="inline-flex items-center gap-1 rounded-md bg-sky-400 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-300 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150"
-											@click.stop="openQuickBuy($event, activeType, item)"
-										>
-											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
-											</svg>
-											{{ t('menu.quickOrder') }}
-										</button>
-										<button
-											type="button"
-											:class="[
-												'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white transition-colors duration-200',
-											cartCountByKey[`${activeType}-${item.id}`] ? 'bg-green-500' : 'bg-indigo-600 hover:bg-indigo-500',
-											cartAnimating[`${activeType}-${item.id}`] ? 'cart-pop' : '',
-										]"
-										@click.stop="quickAddToCart($event, activeType, item)"
-									>
-										<svg v-if="cartCountByKey[`${activeType}-${item.id}`]" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-										</svg>
-										<span>{{ getCartButtonLabel(activeType, item.id) }}</span>
-										</button>
-									</div>
-								</div>
+						<div>
+							<p v-if="activeType === 'menus' && getMenuMeta(item)" class="text-xs text-gray-500">
+								{{ getMenuMeta(item) }}
+							</p>
+							<template v-for="ingLabel in [getMealIngredientsLabel(findById(meals, item?.keszetelId))]" :key="0">
+								<p v-if="activeType === 'menus' && ingLabel" class="mt-1 text-xs text-gray-500">
+									{{ ingLabel }}
+								</p>
+							</template>
+							<p
+								v-if="getItemPrice(item) != null"
+								class="mt-auto text-sm font-medium text-gray-700"
+							>
+								{{ formatCurrency(getItemPrice(item)) }}
+							</p>
+							<div class="mt-2 flex flex-col items-start gap-1">
+								<MenuQuickOrderButton
+									:label="t('menu.quickOrder')"
+									@quick-order.stop="openQuickBuy($event, activeType, item)"
+								/>
+								<MenuAddToCartButton
+									:count="getCartCount(activeType, item.id)"
+									:is-animating="isCartAnimating(activeType, item.id)"
+									:label="getCartButtonLabel(activeType, item.id)"
+									@add.stop="quickAddToCart($event, activeType, item)"
+								/>
 							</div>
-							<img
-								v-if="getItemImage(item)"
-								:src="getItemImage(item)"
-								:alt="item.nev || t('menu.alt.foodImage')"
-								class="h-32 w-32 flex-shrink-0 rounded-lg object-cover"
-								loading="lazy"
-							/>
 						</div>
-					</div>
+					</MenuItemCardShell>
 				</div>
-			</div>
+			</AsyncStatePanel>
 		</div>
 	</div>
 
@@ -724,16 +683,3 @@ const mealSections = computed(() => {
 		@close="closeQuickBuy"
 	/>
 </template>
-
-<style scoped>
-@keyframes cart-pop {
-	0%   { transform: scale(1); }
-	35%  { transform: scale(1.18); }
-	65%  { transform: scale(0.94); }
-	100% { transform: scale(1); }
-}
-
-.cart-pop {
-	animation: cart-pop 0.3s ease-out forwards;
-}
-</style>

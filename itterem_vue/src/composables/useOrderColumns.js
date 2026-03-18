@@ -6,65 +6,71 @@ const STATUS_PROCESSING = ORDER_STATUSES[1]; // 'Folyamatban'
 const STATUS_READY = ORDER_STATUSES[2];       // 'Átvehető'
 const STATUS_DONE = ORDER_STATUSES[3];        // 'Átvett'
 
+export function toOrderId(value) {
+	return String(value ?? '').trim();
+}
+
 export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normalizeOrderDto, readText }) {
 	const pendingOrders = ref([]);
 	const processingOrders = ref([]);
 	const readyOrders = ref([]);
 
-	// O(1) lookup index: orderId → { listRef, index }
-	const _orderIndex = new Map();
+	const columnRefs = [pendingOrders, processingOrders, readyOrders];
 
-	function _rebuildIndex() {
-		_orderIndex.clear();
-		const lists = [
-			{ ref: pendingOrders },
-			{ ref: processingOrders },
-			{ ref: readyOrders },
-		];
-		for (const list of lists) {
-			const arr = Array.isArray(list.ref.value) ? list.ref.value : [];
-			for (let i = 0; i < arr.length; i++) {
-				const key = String(arr[i]?.id ?? '').trim();
-				if (key) _orderIndex.set(key, { listRef: list.ref, index: i, order: arr[i] });
+	// O(1) lookup index: orderId -> { listRef, index, order }
+	const orderIndex = new Map();
+
+	function toStatus(value) {
+		return readText(value);
+	}
+
+	function readList(listRef) {
+		return Array.isArray(listRef?.value) ? listRef.value : [];
+	}
+
+	function rebuildIndex() {
+		orderIndex.clear();
+		for (const listRef of columnRefs) {
+			const list = readList(listRef);
+			for (let index = 0; index < list.length; index += 1) {
+				const order = list[index];
+				const orderId = toOrderId(order?.id);
+				if (!orderId) continue;
+				orderIndex.set(orderId, { listRef, index, order });
 			}
 		}
 	}
 
 	function findOrderLocation(orderId) {
-		const idKey = String(orderId ?? '').trim();
-		if (!idKey) return null;
-
-		// Try the index first (O(1)).
-		const cached = _orderIndex.get(idKey);
-		if (cached) {
-			// Verify it's still valid (array mutation may have shifted indices).
-			const arr = Array.isArray(cached.listRef.value) ? cached.listRef.value : [];
-			if (arr[cached.index] === cached.order) return cached;
+		const idKey = toOrderId(orderId);
+		if (!idKey) {
+			return null;
 		}
 
-		// Fallback: linear scan and update the index.
-		const lists = [
-			{ ref: pendingOrders },
-			{ ref: processingOrders },
-			{ ref: readyOrders },
-		];
-
-		for (const list of lists) {
-			const arr = Array.isArray(list.ref.value) ? list.ref.value : [];
-			const idx = arr.findIndex((o) => String(o?.id ?? '').trim() === idKey);
-			if (idx !== -1) {
-				const loc = { listRef: list.ref, index: idx, order: arr[idx] };
-				_orderIndex.set(idKey, loc);
-				return loc;
+		const cached = orderIndex.get(idKey);
+		if (cached) {
+			const list = readList(cached.listRef);
+			if (list[cached.index] === cached.order) {
+				return cached;
 			}
 		}
 
-		_orderIndex.delete(idKey);
+		for (const listRef of columnRefs) {
+			const list = readList(listRef);
+			const index = list.findIndex((order) => toOrderId(order?.id) === idKey);
+			if (index !== -1) {
+				const location = { listRef, index, order: list[index] };
+				orderIndex.set(idKey, location);
+				return location;
+			}
+		}
+
+		orderIndex.delete(idKey);
 		return null;
 	}
 
 	function listRefForStatus(statusz) {
-		const status = readText(statusz);
+		const status = toStatus(statusz);
 		if (status === STATUS_PROCESSING) return processingOrders;
 		if (status === STATUS_READY) return readyOrders;
 		return pendingOrders;
@@ -73,19 +79,21 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 	function removeOrderFromLists(orderId) {
 		const loc = findOrderLocation(orderId);
 		if (!loc) return null;
-		const arr = Array.isArray(loc.listRef.value) ? loc.listRef.value : [];
-		return arr.splice(loc.index, 1)[0] ?? null;
+		const list = readList(loc.listRef);
+		const removed = list.splice(loc.index, 1)[0] ?? null;
+		rebuildIndex();
+		return removed;
 	}
 
 	function upsertOrderIntoColumns(normalized) {
 		if (!normalized) return;
-		const idKey = String(normalized.id ?? '').trim();
+		const idKey = toOrderId(normalized.id);
 		if (!idKey) return;
 
 		const loc = findOrderLocation(idKey);
 		if (loc?.order) {
-			const prevStatus = readText(loc.order?.statusz);
-			const nextStatus = readText(normalized.statusz) || prevStatus || 'Függőben';
+			const prevStatus = toStatus(loc.order?.statusz);
+			const nextStatus = toStatus(normalized.statusz) || prevStatus || STATUS_PENDING;
 			const merged = {
 				...loc.order,
 				...normalized,
@@ -103,15 +111,17 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 				const moved = removeOrderFromLists(idKey) ?? merged;
 				const target = listRefForStatus(nextStatus);
 				target.value.unshift(moved);
+				rebuildIndex();
 			}
 
 			if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = loc.order;
 			return;
 		}
 
-		if (readText(normalized.statusz) === STATUS_DONE) return;
+		if (toStatus(normalized.statusz) === STATUS_DONE) return;
 		const target = listRefForStatus(normalized.statusz);
 		target.value.unshift(normalized);
+		rebuildIndex();
 		if (String(selectedOrderId.value ?? '') === idKey) selectedOrderSnapshot.value = normalized;
 	}
 
@@ -130,13 +140,13 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 
 		const items = Array.isArray(list) ? list : [];
 		for (const order of items) {
-			const status = String(order?.statusz ?? '').trim();
+			const status = toStatus(order?.statusz);
 			if (status === STATUS_DONE) continue;
 			if (status === STATUS_PROCESSING) processingOrders.value.push(order);
 			else if (status === STATUS_READY) readyOrders.value.push(order);
 			else pendingOrders.value.push(order);
 		}
-		_rebuildIndex();
+		rebuildIndex();
 	}
 
 	function getListRef(key) {
@@ -150,7 +160,7 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 	 * No-op if it's already there; fixes it otherwise.
 	 */
 	function ensureOrderInColumn(order, targetStatus) {
-		const idKey = String(order?.id ?? '').trim();
+		const idKey = toOrderId(order?.id);
 		if (!idKey) return;
 
 		const target = listRefForStatus(targetStatus);
@@ -160,12 +170,13 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 
 		// Remove from wrong column if present.
 		if (loc) {
-			const arr = Array.isArray(loc.listRef.value) ? loc.listRef.value : [];
-			arr.splice(loc.index, 1);
+			const list = readList(loc.listRef);
+			list.splice(loc.index, 1);
 		}
 
 		// Add to the correct column (at the front).
 		target.value.unshift(order);
+		rebuildIndex();
 	}
 
 	const allOrders = computed(() => [

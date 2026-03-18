@@ -31,7 +31,18 @@ const ordersError = ref('');
 // DEV helper: make it obvious that status changes arrived via SignalR.
 const showRealtimeDebug = import.meta.env.DEV;
 
-const { connectionState, start, on } = useSignalR();
+const { connectionState, SIGNALR_CONNECTION_STATE, start, on } = useSignalR();
+
+const realtimeIndicatorClass = computed(() => {
+	if (connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTED) return 'bg-green-500';
+	if (
+		connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTING
+		|| connectionState.value === SIGNALR_CONNECTION_STATE.RECONNECTING
+	) {
+		return 'bg-yellow-500';
+	}
+	return 'bg-red-500';
+});
 
 const orderDoneNotice = ref('');
 let noticeTimer = null;
@@ -280,7 +291,7 @@ onUnmounted(() => {
 					>
 						<span
 							class="inline-flex h-2.5 w-2.5 rounded-full"
-							:class="connectionState === 'connected' ? 'bg-green-500' : connectionState === 'connecting' || connectionState === 'reconnecting' ? 'bg-yellow-500' : 'bg-red-500'"
+							:class="realtimeIndicatorClass"
 						/>
 						<span>{{ t('account.realtimeUpdates') }}</span>
 					</div>

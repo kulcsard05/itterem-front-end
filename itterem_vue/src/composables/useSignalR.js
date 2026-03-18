@@ -8,13 +8,22 @@ import { SIGNALR_HUB_PATH } from '../constants.js';
 // Module-level singleton — one WebSocket connection shared app-wide.
 // ---------------------------------------------------------------------------
 
-const connectionState = ref('disconnected'); // disconnected | connecting | connected | reconnecting
+export const SIGNALR_CONNECTION_STATE = Object.freeze({
+	DISCONNECTED: 'disconnected',
+	CONNECTING: 'connecting',
+	CONNECTED: 'connected',
+	RECONNECTING: 'reconnecting',
+});
+
+export const SIGNALR_RECONNECT_DELAYS_MS = Object.freeze([0, 2000, 5000, 10000, 30000]);
+
+const connectionState = ref(SIGNALR_CONNECTION_STATE.DISCONNECTED);
 
 let connection = null;
-let started = false;
 
 // Registered callbacks per event name.
-const listeners = {};
+const listenersByEvent = new Map();
+const dispatcherByEvent = new Map();
 
 function getHubUrl() {
 	const base = getApiBaseUrl().replace(/\/+$/, '');
@@ -26,41 +35,68 @@ function buildConnection(token) {
 		.withUrl(getHubUrl(), {
 			accessTokenFactory: () => token,
 		})
-		.withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+		.withAutomaticReconnect(SIGNALR_RECONNECT_DELAYS_MS)
 		.configureLogging(import.meta.env.DEV ? LogLevel.Information : LogLevel.Warning)
 		.build();
 }
 
-// Track which event names have been bound on the current connection
-// to prevent re-registering the same dispatcher on reconnect.
-let boundEvents = new Set();
-
-function bindEvents(conn) {
+function bindConnectionLifecycle(conn) {
 	conn.onreconnecting(() => {
-		connectionState.value = 'reconnecting';
+		connectionState.value = SIGNALR_CONNECTION_STATE.RECONNECTING;
 	});
 	conn.onreconnected(() => {
-		connectionState.value = 'connected';
+		connectionState.value = SIGNALR_CONNECTION_STATE.CONNECTED;
 	});
 	conn.onclose(() => {
-		connectionState.value = 'disconnected';
-		started = false;
+		connectionState.value = SIGNALR_CONNECTION_STATE.DISCONNECTED;
 	});
+}
 
-	// Re-register all currently-known event listeners on the new connection,
-	// but only if not already bound (prevents duplicate dispatchers).
-	for (const [event, callbacks] of Object.entries(listeners)) {
-		if (boundEvents.has(event)) continue;
-		boundEvents.add(event);
-		conn.on(event, (...args) => {
-			for (const cb of (listeners[event] || [])) {
-				try {
-					cb(...args);
-				} catch {
-					// individual handler errors must not break other handlers
-				}
+
+function createEventDispatcher(event) {
+	return (...args) => {
+		const listeners = listenersByEvent.get(event);
+		if (!listeners) return;
+		for (const callback of listeners) {
+			try {
+				callback(...args);
+			} catch {
+				// individual handler errors must not break other handlers
 			}
-		});
+		}
+	};
+}
+
+function getOrCreateListeners(event) {
+	let listeners = listenersByEvent.get(event);
+	if (!listeners) {
+		listeners = new Set();
+		listenersByEvent.set(event, listeners);
+	}
+	return listeners;
+}
+
+function bindEventOnConnection(event, conn = connection) {
+	if (!conn) return;
+	let dispatcher = dispatcherByEvent.get(event);
+	if (!dispatcher) {
+		dispatcher = createEventDispatcher(event);
+		dispatcherByEvent.set(event, dispatcher);
+	}
+	conn.off(event, dispatcher);
+	conn.on(event, dispatcher);
+}
+
+function unbindEventFromConnection(event, conn = connection) {
+	const dispatcher = dispatcherByEvent.get(event);
+	if (!dispatcher) return;
+	if (conn) conn.off(event, dispatcher);
+	dispatcherByEvent.delete(event);
+}
+
+function bindRegisteredEvents(conn) {
+	for (const event of listenersByEvent.keys()) {
+		bindEventOnConnection(event, conn);
 	}
 }
 
@@ -75,23 +111,23 @@ async function start() {
 	await stop();
 
 	connection = buildConnection(token);
-	bindEvents(connection);
+	bindConnectionLifecycle(connection);
+	bindRegisteredEvents(connection);
 
-	connectionState.value = 'connecting';
+	connectionState.value = SIGNALR_CONNECTION_STATE.CONNECTING;
 	try {
 		await connection.start();
-		connectionState.value = 'connected';
-		started = true;
+		connectionState.value = SIGNALR_CONNECTION_STATE.CONNECTED;
 	} catch {
-		connectionState.value = 'disconnected';
-		started = false;
+		connectionState.value = SIGNALR_CONNECTION_STATE.DISCONNECTED;
 	}
 }
 
 async function stop() {
-	started = false;
-	boundEvents = new Set();
 	if (connection) {
+		for (const event of dispatcherByEvent.keys()) {
+			unbindEventFromConnection(event, connection);
+		}
 		try {
 			await connection.stop();
 		} catch {
@@ -99,7 +135,7 @@ async function stop() {
 		}
 		connection = null;
 	}
-	connectionState.value = 'disconnected';
+	connectionState.value = SIGNALR_CONNECTION_STATE.DISCONNECTED;
 }
 
 /**
@@ -107,33 +143,17 @@ async function stop() {
  * Returns an unsubscribe function.
  */
 function on(event, callback) {
-	if (!listeners[event]) listeners[event] = [];
-	listeners[event].push(callback);
-
-	// If a connection already exists and this event hasn't been bound yet,
-	// register a single dispatcher that iterates the listeners array.
-	if (connection && !boundEvents.has(event)) {
-		boundEvents.add(event);
-		connection.on(event, (...args) => {
-			for (const cb of (listeners[event] || [])) {
-				try {
-					cb(...args);
-				} catch {
-					// ignore
-				}
-			}
-		});
-	}
+	const listeners = getOrCreateListeners(event);
+	listeners.add(callback);
+	if (connection) bindEventOnConnection(event);
 
 	return () => {
-		const arr = listeners[event];
-		if (!arr) return;
-		const idx = arr.indexOf(callback);
-		if (idx !== -1) arr.splice(idx, 1);
-		if (arr.length === 0) {
-			delete listeners[event];
-			boundEvents.delete(event);
-			if (connection) connection.off(event);
+		const currentListeners = listenersByEvent.get(event);
+		if (!currentListeners) return;
+		currentListeners.delete(callback);
+		if (currentListeners.size === 0) {
+			listenersByEvent.delete(event);
+			unbindEventFromConnection(event);
 		}
 	};
 }
@@ -168,6 +188,7 @@ export function useSignalR() {
 
 	return {
 		connectionState,
+		SIGNALR_CONNECTION_STATE,
 		start,
 		stop,
 		on,

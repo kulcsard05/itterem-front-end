@@ -129,6 +129,19 @@ function saveToStorage(items) {
 	}
 }
 
+function toCartItemKey(type, id) {
+	return `${String(type ?? '')}::${String(id ?? '')}`;
+}
+
+function findItemIndex(list, type, id) {
+	const targetKey = toCartItemKey(type, id);
+	return list.findIndex((entry) => toCartItemKey(entry?.type, entry?.id) === targetKey);
+}
+
+function isValidOrderItem(type, id) {
+	return id != null && !!getOrderItemIdKey(type);
+}
+
 // items: Array<{ type: string, id: number, name: string, price: number|null, image: string, quantity: number }>
 const items = ref(loadFromStorage());
 
@@ -168,7 +181,7 @@ export function useCart() {
 		const type = String(itemData?.type ?? '');
 		const id = itemData?.id ?? itemData?.item?.id;
 
-		if (!id || !getOrderItemIdKey(type)) return;
+		if (!isValidOrderItem(type, id)) return;
 
 		// Extract the raw kep key – prefer the original item's .kep so we never
 		// store a resolved data-URL / base64 blob in localStorage.
@@ -176,10 +189,13 @@ export function useCart() {
 
 		const typeLabel = String(itemData?.typeLabel ?? '').trim() || getItemTypeLabel(type);
 		const list = items.value;
-		const existing = list.find((c) => c.type === type && c.id === id);
-		if (existing) {
+		const existingIndex = findItemIndex(list, type, id);
+		if (existingIndex !== -1) {
+			const existing = list[existingIndex];
 			existing.quantity += 1;
-			if (!String(existing.typeLabel ?? '').trim()) existing.typeLabel = typeLabel;
+			if (!String(existing.typeLabel ?? '').trim()) {
+				existing.typeLabel = typeLabel;
+			}
 		} else {
 			list.push({
 				type,
@@ -199,7 +215,7 @@ export function useCart() {
 	 */
 	function decrementItem(type, id) {
 		const list = items.value;
-		const idx = list.findIndex((c) => c.type === type && c.id === id);
+		const idx = findItemIndex(list, type, id);
 		if (idx === -1) return;
 		if (list[idx].quantity > 1) {
 			list[idx].quantity -= 1;
@@ -214,7 +230,7 @@ export function useCart() {
 	 */
 	function removeItem(type, id) {
 		const list = items.value;
-		const idx = list.findIndex((c) => c.type === type && c.id === id);
+		const idx = findItemIndex(list, type, id);
 		if (idx !== -1) list.splice(idx, 1);
 		saveToStorage(list);
 	}

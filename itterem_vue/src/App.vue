@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import CartDrawer from './components/user/CartDrawer.vue';
@@ -55,8 +55,10 @@ try {
 // localStorage tamper detection
 // ---------------------------------------------------------------------------
 
-window.addEventListener('storage', onStorageChange);
-window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+onMounted(() => {
+	window.addEventListener('storage', onStorageChange);
+	window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+});
 
 onUnmounted(() => {
 	window.removeEventListener('storage', onStorageChange);
@@ -133,11 +135,15 @@ const isAdminRoute = computed(() => route.name === 'admin');
 const isAccountRoute = computed(() => route.name === 'account');
 const isAboutRoute = computed(() => route.name === 'about');
 
-const routePropsMap = computed(() => ({
-	'account': { auth: auth.value },
-	'employee-orders': { auth: auth.value },
-	'menu-item': { itemData: selectedMenuItem.value },
-}));
+const currentRouteProps = computed(() => {
+	if (route.name === 'account' || route.name === 'employee-orders') {
+		return { auth: auth.value };
+	}
+	if (route.name === 'menu-item') {
+		return { itemData: selectedMenuItem.value };
+	}
+	return {};
+});
 
 function goAbout() {
 	router.push({ name: 'about' });
@@ -269,10 +275,10 @@ function switchLocale(event) {
 		</header>
 
 		<main class="grow">
-			<router-view v-slot="{ Component, route: currentRoute }">
+			<router-view v-slot="{ Component }">
 				<component
 					:is="Component"
-					v-bind="routePropsMap[currentRoute.name] || {}"
+					v-bind="currentRouteProps"
 					@open-item="openMenuItem"
 					@back="goMenu"
 					@login-success="handleLoginSuccess"

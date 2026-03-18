@@ -1,5 +1,5 @@
 import { onMounted, onUnmounted, watch } from 'vue';
-import { useSignalR } from './useSignalR.js';
+import { SIGNALR_CONNECTION_STATE, useSignalR } from './useSignalR.js';
 
 export function useEmployeeOrdersBoot({
 	initializePanel,
@@ -32,7 +32,12 @@ export function useEmployeeOrdersBoot({
 		pollTimer = window.setInterval(() => {
 			if (savingStatus.value) return;
 			if (typeof isDragCooldown === 'function' && isDragCooldown()) return;
-			if (connectionState.value === 'connected' || connectionState.value === 'connecting') return;
+			if (
+				connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTED
+				|| connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTING
+			) {
+				return;
+			}
 			loadOrders();
 		}, pollIntervalMs);
 

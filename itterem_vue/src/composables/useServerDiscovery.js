@@ -11,6 +11,12 @@ const HELPER_HOST = import.meta.env.VITE_DISCOVERY_HELPER_HOST || '127.0.0.1';
 const HELPER_PORT = Number(import.meta.env.VITE_DISCOVERY_HELPER_PORT || 41721);
 const HELPER_BASE_URL = `http://${HELPER_HOST}:${HELPER_PORT}`;
 const RESULT_POLL_MS = 500;
+const DISCOVERY_TRIGGER = 'server-discovery-modal';
+const ERROR_NO_SERVER = 'A helper nem talált használható szervert.';
+const ERROR_HELPER_UNAVAILABLE = 'A discovery helper nem elérhető.';
+const ERROR_DEV_ONLY = 'Ez a funkció csak fejlesztői módban érhető el.';
+const ERROR_SCAN_FAILED = 'A keresés sikertelen volt.';
+const ERROR_MANUAL_REJECTED = 'A megadott szerver nem lett elfogadva a helper által.';
 
 // ---------------------------------------------------------------------------
 // Persistence helpers (used outside composable too)
@@ -95,6 +101,32 @@ function readDiscoveredUrl(snapshot) {
 	return resultUrl || null;
 }
 
+function isDevMode() {
+	return import.meta.env.DEV;
+}
+
+function normalizeBaseUrl(url) {
+	return String(url ?? '').replace(/\/+$/, '');
+}
+
+function isAbortError(error) {
+	return error?.name === 'AbortError';
+}
+
+function waitForPollTick(signal) {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(resolve, RESULT_POLL_MS);
+		signal.addEventListener(
+			'abort',
+			() => {
+				clearTimeout(timer);
+				reject(new DOMException('Aborted', 'AbortError'));
+			},
+			{ once: true },
+		);
+	});
+}
+
 // ---------------------------------------------------------------------------
 // Composable
 // ---------------------------------------------------------------------------
@@ -119,18 +151,40 @@ export function useServerDiscovery() {
 			clearPersistedServerUrl();
 		}
 		if (snapshot?.status === 'error') {
-			error.value = snapshot?.error || 'A helper nem talált használható szervert.';
+			error.value = snapshot?.error || ERROR_NO_SERVER;
 		}
 	}
 
+	function resetScanProgress() {
+		scanned.value = 0;
+		total.value = 0;
+	}
+
+	function clearDiscoveredServer() {
+		clearPersistedServerUrl();
+		discoveredUrl.value = null;
+		resetScanProgress();
+	}
+
+	function startScanState() {
+		scanning.value = true;
+		resetScanProgress();
+		error.value = null;
+		pollController = new AbortController();
+	}
+
+	function stopScanState() {
+		scanning.value = false;
+	}
+
 	async function refreshState({ silent = false } = {}) {
-		if (!import.meta.env.DEV) return;
+		if (!isDevMode()) return;
 		try {
 			const snapshot = await helperFetch('/status');
 			applySnapshot(snapshot);
 		} catch (e) {
 			if (!silent) {
-				error.value = e.message || 'A discovery helper nem elérhető.';
+				error.value = e.message || ERROR_HELPER_UNAVAILABLE;
 			}
 		}
 	}
@@ -138,22 +192,18 @@ export function useServerDiscovery() {
 	async function scan() {
 		if (scanning.value) return;
 
-		if (!import.meta.env.DEV) {
-			error.value = 'Ez a funkció csak fejlesztői módban érhető el.';
+		if (!isDevMode()) {
+			error.value = ERROR_DEV_ONLY;
 			return;
 		}
 
-		scanning.value = true;
-		scanned.value = 0;
-		total.value = 0;
-		error.value = null;
-		pollController = new AbortController();
+		startScanState();
 
 		try {
 			await helperFetch('/discover', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ trigger: 'server-discovery-modal' }),
+				body: JSON.stringify({ trigger: DISCOVERY_TRIGGER }),
 			});
 
 			while (!pollController.signal.aborted) {
@@ -163,31 +213,21 @@ export function useServerDiscovery() {
 				if (snapshot?.status === 'found') return;
 				if (snapshot?.status === 'error') return;
 
-				await new Promise((resolve, reject) => {
-					const timer = setTimeout(resolve, RESULT_POLL_MS);
-					pollController.signal.addEventListener(
-						'abort',
-						() => {
-							clearTimeout(timer);
-							reject(new DOMException('Aborted', 'AbortError'));
-						},
-						{ once: true },
-					);
-				});
+				await waitForPollTick(pollController.signal);
 			}
 		} catch (e) {
-			if (e?.name === 'AbortError') return;
+			if (isAbortError(e)) return;
 			if (!pollController?.signal.aborted) {
-				error.value = e.message || 'A keresés sikertelen volt.';
+				error.value = e.message || ERROR_SCAN_FAILED;
 			}
 		} finally {
-			scanning.value = false;
+			stopScanState();
 		}
 	}
 
 	function stopScan() {
 		pollController?.abort();
-		scanning.value = false;
+		stopScanState();
 	}
 
 	async function setManual(url) {
@@ -195,11 +235,11 @@ export function useServerDiscovery() {
 		await helperFetch('/override', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ baseUrl: url.replace(/\/+$/, '') }),
+			body: JSON.stringify({ baseUrl: normalizeBaseUrl(url) }),
 		});
 		await scan();
 		if (!discoveredUrl.value) {
-			throw new Error('A megadott szerver nem lett elfogadva a helper által.');
+			throw new Error(ERROR_MANUAL_REJECTED);
 		}
 		return discoveredUrl.value;
 	}
@@ -210,10 +250,7 @@ export function useServerDiscovery() {
 		try {
 			await helperFetch('/override', { method: 'DELETE' });
 		} finally {
-			clearPersistedServerUrl();
-			discoveredUrl.value = null;
-			total.value = 0;
-			scanned.value = 0;
+			clearDiscoveredServer();
 		}
 	}
 

@@ -7,7 +7,7 @@ import { useEmployeeOrdersBoot } from '../../composables/useEmployeeOrdersBoot.j
 import { useEmployeeOrderBoardColumns } from '../../composables/useEmployeeOrderBoardColumns.js';
 import { useFloatingPanel } from '../../composables/useFloatingPanel.js';
 import { useOrderIngredientsLookup } from '../../composables/useOrderIngredientsLookup.js';
-import { useOrderColumns } from '../../composables/useOrderColumns.js';
+import { toOrderId, useOrderColumns } from '../../composables/useOrderColumns.js';
 import { useOrderStatusDnD } from '../../composables/useOrderStatusDnD.js';
 import {
 	normalizeOrderDto,
@@ -78,10 +78,7 @@ const {
 	allOrders,
 	normalizeOrders,
 	findOrderLocation,
-	listRefForStatus,
-	removeOrderFromLists,
 	upsertOrderIntoColumns,
-	upsertOrdersIntoColumns,
 	getListRef,
 	ensureOrderInColumn,
 } = useOrderColumns({
@@ -91,25 +88,59 @@ const {
 	readText,
 });
 
-const { connectionState } = useSignalR();
+const { connectionState, SIGNALR_CONNECTION_STATE } = useSignalR();
 
 // DEV helper: make it obvious that data arrived via SignalR.
 const showRealtimeDebug = import.meta.env.DEV;
 
 const pendingRefresh = ref(false);
+const queuedOrdersReload = ref(false);
+const STATUS_DONE = 'Átvett';
+
+const columnChangeHandlers = new Map();
+
+function isOrderSelected(orderId) {
+	return toOrderId(selectedOrderId.value) === toOrderId(orderId);
+}
+
+function getColumnChangeHandler(status) {
+	if (!columnChangeHandlers.has(status)) {
+		columnChangeHandlers.set(status, (event) => onDraggableChange(event, status));
+	}
+	return columnChangeHandlers.get(status);
+}
+
+function getOrderCardItemCount(order) {
+	return Array.isArray(order?.rendelesElemeks) ? order.rendelesElemeks.length : 0;
+}
+
+function getOrderElapsedLabel(order) {
+	return formatElapsed(order?.datum);
+}
+
+function getColumnCount(columnKey) {
+	return getListRef(columnKey).value.length;
+}
+
+const realtimeIndicatorClass = computed(() => {
+	if (connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTED) return 'bg-green-500';
+	if (
+		connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTING
+		|| connectionState.value === SIGNALR_CONNECTION_STATE.RECONNECTING
+	) {
+		return 'bg-yellow-500';
+	}
+	return 'bg-red-500';
+});
 
 function handleOrderPlaced(payload) {
-	if (!payload) return;
 	const normalized = normalizeOrderDto(payload);
-	if (normalized) {
-		upsertOrderIntoColumns(normalized);
-	} else {
-		loadOrders();
-	}
+	if (normalized) return upsertOrderIntoColumns(normalized);
+	void loadOrders();
 }
 
 function handleOrderUpdated(orderId, status, _message) {
-	const idKey = String(orderId ?? '').trim();
+	const idKey = toOrderId(orderId);
 	if (!idKey) return;
 
 	if (savingStatus.value || isDragCooldown()) {
@@ -118,17 +149,21 @@ function handleOrderUpdated(orderId, status, _message) {
 	}
 
 	const newStatus = readText(status);
-	if (newStatus) {
-		// Use the status from SignalR directly — no need for a full reload.
-		const loc = findOrderLocation(idKey);
-		if (loc?.order) {
-			upsertOrderIntoColumns({ ...loc.order, statusz: newStatus });
-		} else if (newStatus !== 'Átvett') {
-			// Order not in our lists yet — fetch all to pick it up.
-			loadOrders();
-		}
-	} else {
-		loadOrders();
+	if (!newStatus) {
+		void loadOrders();
+		return;
+	}
+
+	// Use the status from SignalR directly — no need for a full reload.
+	const location = findOrderLocation(idKey);
+	if (location?.order) {
+		upsertOrderIntoColumns({ ...location.order, statusz: newStatus });
+		return;
+	}
+
+	if (newStatus !== STATUS_DONE) {
+		// Order not in our lists yet — fetch all to pick it up.
+		void loadOrders();
 	}
 }
 
@@ -141,12 +176,18 @@ const { getOrderEntryIngredients } = useOrderIngredientsLookup({
 });
 
 async function loadOrders() {
+	if (loading.value) {
+		queuedOrdersReload.value = true;
+		return;
+	}
+
 	loading.value = true;
 	try {
 		const list = await getOrders();
 		normalizeOrders(list);
 		if (selectedOrderId.value != null && Array.isArray(list)) {
-			const found = list.find((o) => String(o?.id ?? '') === String(selectedOrderId.value ?? '')) ?? null;
+			const selectedId = toOrderId(selectedOrderId.value);
+			const found = list.find((order) => toOrderId(order?.id) === selectedId) ?? null;
 			if (found) selectedOrderSnapshot.value = found;
 		}
 	} catch (err) {
@@ -154,6 +195,10 @@ async function loadOrders() {
 		error.value = err?.message || 'Rendelések betöltése sikertelen.';
 	} finally {
 		loading.value = false;
+		if (queuedOrdersReload.value) {
+			queuedOrdersReload.value = false;
+			void loadOrders();
+		}
 	}
 }
 
@@ -169,10 +214,19 @@ async function loadCatalog() {
 }
 
 const selectedOrder = computed(() =>
-	allOrders.value.find((o) => String(o?.id ?? '') === String(selectedOrderId.value ?? '')) ?? null,
+	allOrders.value.find((order) => toOrderId(order?.id) === toOrderId(selectedOrderId.value)) ?? null,
 );
 
 const visibleOrder = computed(() => selectedOrder.value ?? selectedOrderSnapshot.value);
+
+const visibleOrderEntries = computed(() => {
+	const entries = Array.isArray(visibleOrder.value?.rendelesElemeks) ? visibleOrder.value.rendelesElemeks : [];
+	return entries.map((entry) => ({
+		entry,
+		itemName: getOrderItemName(entry),
+		ingredients: getOrderEntryIngredients(entry),
+	}));
+});
 
 const ingredientFontSize = computed(() => Math.min(32, Math.max(12, detailFontSize.value + 2)));
 
@@ -245,7 +299,7 @@ watch(
 			>
 				<span
 					class="inline-flex h-3.5 w-3.5 rounded-full ring-1 ring-gray-300"
-					:class="connectionState === 'connected' ? 'bg-green-500' : connectionState === 'connecting' || connectionState === 'reconnecting' ? 'bg-yellow-500' : 'bg-red-500'"
+					:class="realtimeIndicatorClass"
 				/>
 			</div>
 		</teleport>
@@ -290,13 +344,13 @@ watch(
 					<div v-if="columnOpen[col.key]" class="flex items-center gap-2">
 						<div class="text-sm font-semibold text-gray-900">{{ col.label }}</div>
 						<div class="rounded-full bg-gray-900 px-2 py-0.5 text-xs font-semibold text-white">
-							{{ getListRef(col.key).value.length }}
+							{{ getColumnCount(col.key) }}
 						</div>
 					</div>
 
 					<div v-else class="flex w-full items-center justify-center">
 						<div class="-rotate-90 whitespace-nowrap text-xs font-semibold text-gray-800">
-							{{ col.label }} ({{ getListRef(col.key).value.length }})
+							{{ col.label }} ({{ getColumnCount(col.key) }})
 						</div>
 					</div>
 
@@ -349,14 +403,14 @@ watch(
 						ghost-class="opacity-50"
 						:animation="150"
 						class="min-h-full min-h-[4.5rem] pb-2"
-						@change="(e) => onDraggableChange(e, col.status)"
+						@change="getColumnChangeHandler(col.status)"
 					>
 						<template #item="{ element }">
 							<button
 								type="button"
 								class="mb-3 w-full cursor-grab rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm active:cursor-grabbing"
 								:class="
-									selectedOrderId != null && String(selectedOrderId) === String(element?.id)
+									isOrderSelected(element?.id)
 										? 'ring-2 ring-indigo-500'
 										: 'hover:bg-gray-50'
 								"
@@ -377,11 +431,11 @@ watch(
 									</div>
 								</div>
 								<div class="mt-2 flex items-center justify-between gap-3 text-sm text-gray-700">
-									<div>Eltelt idő: <span class="font-semibold">{{ formatElapsed(element?.datum) }}</span></div>
+									<div>Eltelt idő: <span class="font-semibold">{{ getOrderElapsedLabel(element) }}</span></div>
 									<div class="text-xs text-gray-500">{{ formatDateTime(element?.datum) }}</div>
 								</div>
 								<div class="mt-2 text-sm text-gray-700">
-									Tételek: <span class="font-semibold">{{ Array.isArray(element?.rendelesElemeks) ? element.rendelesElemeks.length : 0 }}</span>
+									Tételek: <span class="font-semibold">{{ getOrderCardItemCount(element) }}</span>
 								</div>
 							</button>
 						</template>
@@ -463,24 +517,24 @@ watch(
 				</div>
 
 				<div class="mt-3">
-					<p v-if="!Array.isArray(visibleOrder?.rendelesElemeks) || visibleOrder.rendelesElemeks.length === 0" class="text-sm text-gray-600">
+					<p v-if="visibleOrderEntries.length === 0" class="text-sm text-gray-600">
 						Nincs tétel.
 					</p>
 					<ul v-else class="space-y-2">
 						<li
-							v-for="entry in visibleOrder.rendelesElemeks"
-							:key="entry.id"
+							v-for="entryView in visibleOrderEntries"
+							:key="entryView.entry.id"
 							class="flex items-start justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2"
 						>
 							<div class="min-w-0">
-								<div class="font-semibold text-gray-900">{{ getOrderItemName(entry) }}</div>
-								<div v-if="getOrderEntryIngredients(entry).length" class="mt-1 text-gray-700" :style="{ fontSize: ingredientFontSize + 'px' }">
+								<div class="font-semibold text-gray-900">{{ entryView.itemName }}</div>
+								<div v-if="entryView.ingredients.length" class="mt-1 text-gray-700" :style="{ fontSize: ingredientFontSize + 'px' }">
 									<ul class="space-y-0.5">
-										<li v-for="(name, i) in getOrderEntryIngredients(entry)" :key="`${entry.id ?? 'entry'}-${name}-${i}`">{{ name }}</li>
+										<li v-for="(name, i) in entryView.ingredients" :key="`${entryView.entry.id ?? 'entry'}-${name}-${i}`">{{ name }}</li>
 									</ul>
 								</div>
 							</div>
-							<div class="shrink-0 text-gray-800">× {{ entry?.mennyiseg ?? 0 }}</div>
+							<div class="shrink-0 text-gray-800">× {{ entryView.entry?.mennyiseg ?? 0 }}</div>
 						</li>
 					</ul>
 				</div>

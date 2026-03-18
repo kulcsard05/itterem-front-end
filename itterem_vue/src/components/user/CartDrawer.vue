@@ -22,12 +22,41 @@ const { t } = useI18n();
 
 const { items, totalItems, totalPrice, addItem, decrementItem, removeItem, clearCart, buildOrderItems, resolveImage } = useCart();
 
-const resolvedUserId = computed(() => resolveUserId(props.auth));
-
 const ordering = ref(false);
 const orderError = ref('');
 const orderSuccess = ref(false);
 const orderSuccessMessage = ref('');
+
+const resolvedUserId = computed(() => resolveUserId(props.auth));
+const hasItems = computed(() => items.value.length > 0);
+const canPlaceOrder = computed(() => !!resolvedUserId.value && hasItems.value && !ordering.value);
+
+function resetOrderFeedback() {
+	orderError.value = '';
+	orderSuccess.value = false;
+	orderSuccessMessage.value = '';
+}
+
+function formatOrderSuccessMessage(result) {
+	const apiMessage = typeof result?.message === 'string' ? result.message.trim() : '';
+	const orderId = result?.orderId;
+
+	if (apiMessage && orderId != null) {
+		return `${apiMessage} (${t('common.orderIdLabel')}: ${orderId})`;
+	}
+
+	if (apiMessage) {
+		return apiMessage;
+	}
+
+	return t('cart.orderPlaced');
+}
+
+function closeAfterSuccess() {
+	orderSuccess.value = false;
+	orderSuccessMessage.value = '';
+	emit('close');
+}
 
 function withTimeout(promise, ms) {
 	let timeoutId;
@@ -45,27 +74,15 @@ async function submitOrder() {
 		orderError.value = t('cart.loginRequired');
 		return;
 	}
-	if (items.value.length === 0) return;
+	if (!hasItems.value) return;
 
 	ordering.value = true;
-	orderError.value = '';
-	orderSuccess.value = false;
-	orderSuccessMessage.value = '';
+	resetOrderFeedback();
 
 	try {
 		const orderItems = buildOrderItems();
 		const result = await withTimeout(placeOrder(resolvedUserId.value, orderItems), ORDER_TIMEOUT_MS);
-		const apiMessage = typeof result?.message === 'string' ? result.message.trim() : '';
-		const orderId = result?.orderId;
-
-		if (apiMessage && orderId != null) {
-			orderSuccessMessage.value = `${apiMessage} (${t('common.orderIdLabel')}: ${orderId})`;
-		} else if (apiMessage) {
-			orderSuccessMessage.value = apiMessage;
-		} else {
-			orderSuccessMessage.value = t('cart.orderPlaced');
-		}
-
+		orderSuccessMessage.value = formatOrderSuccessMessage(result);
 		orderSuccess.value = true;
 		clearCart();
 		emit('order-success');
@@ -136,7 +153,7 @@ async function submitOrder() {
 				<button
 					type="button"
 					class="mt-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-					@click="orderSuccess = false; orderSuccessMessage = ''; emit('close')"
+					@click="closeAfterSuccess"
 				>
 					{{ t('common.close') }}
 				</button>
@@ -199,7 +216,7 @@ async function submitOrder() {
 			</ul>
 
 			<!-- Footer: total + checkout -->
-			<div v-if="items.length > 0 && !orderSuccess" class="border-t border-gray-200 px-4 py-4 space-y-3">
+			<div v-if="hasItems && !orderSuccess" class="border-t border-gray-200 px-4 py-4 space-y-3">
 				<div class="flex items-center justify-between text-sm font-semibold text-gray-900">
 					<span>{{ t('common.total') }}</span>
 					<span>{{ formatCurrency(totalPrice) }}</span>
@@ -212,7 +229,7 @@ async function submitOrder() {
 				<button
 					type="button"
 					class="w-full rounded-md bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-					:disabled="ordering || !resolvedUserId"
+					:disabled="!canPlaceOrder"
 					@click="submitOrder"
 				>
 					{{ ordering ? t('cart.ordering') : t('cart.placeOrder') }}
