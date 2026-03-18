@@ -6,6 +6,7 @@ import {
 } from '../constants.js';
 import { findById, getItemTypeLabel } from '../utils.js';
 import { readStorageJson, writeStorageJson } from '../storage-utils.js';
+import { persistInlineImagesForDatasets, toPersistentImageRef } from './useMenuImageCache.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton – every component shares the same menu data.
@@ -28,12 +29,30 @@ const menuFingerprints = ref({
 const MENU_DATASET_KEYS = ['categories', 'meals', 'sides', 'menus', 'drinks'];
 
 const MENU_DATASET_STORAGE_KEYS = {
-	categories: 'menu-cache-categories-v1',
-	meals: 'menu-cache-meals-v1',
-	sides: 'menu-cache-sides-v1',
-	menus: 'menu-cache-menus-v1',
-	drinks: 'menu-cache-drinks-v1',
+	categories: 'menu-cache-categories-v4',
+	meals: 'menu-cache-meals-v4',
+	sides: 'menu-cache-sides-v4',
+	menus: 'menu-cache-menus-v4',
+	drinks: 'menu-cache-drinks-v4',
 };
+
+const LEGACY_MENU_DATASET_STORAGE_KEYS = [
+	'menu-cache-categories-v1',
+	'menu-cache-meals-v1',
+	'menu-cache-sides-v1',
+	'menu-cache-menus-v1',
+	'menu-cache-drinks-v1',
+	'menu-cache-categories-v2',
+	'menu-cache-meals-v2',
+	'menu-cache-sides-v2',
+	'menu-cache-menus-v2',
+	'menu-cache-drinks-v2',
+	'menu-cache-categories-v3',
+	'menu-cache-meals-v3',
+	'menu-cache-sides-v3',
+	'menu-cache-menus-v3',
+	'menu-cache-drinks-v3',
+];
 
 const MENU_FIELD_MAP = {
 	categories: ['categories', 'kategoriak', 'Kategoria', 'Kategoriak'],
@@ -50,6 +69,8 @@ const MENU_DATASET_REFS = {
 	menus,
 	drinks,
 };
+
+let didCleanupLegacyCaches = false;
 
 // ---------------------------------------------------------------------------
 // Fingerprinting – avoid unnecessary updates when data hasn't changed.
@@ -92,13 +113,12 @@ const MEAL_FIELDS = ['id', 'nev', 'ar', 'kep', 'elerheto', 'kategoriaId'];
 const SIDE_DRINK_FIELDS = ['id', 'nev', 'ar', 'kep', 'elerheto'];
 
 function minimiseImageRef(value) {
-	if (typeof value !== 'string') return value;
-	const trimmed = value.trim();
+	const persistent = toPersistentImageRef(value);
+	if (typeof persistent !== 'string') return persistent;
+	const trimmed = persistent.trim();
 	if (!trimmed) return '';
-
-	// Avoid storing very large inline image payloads in menu cache.
-	if (trimmed.startsWith('data:')) return '';
-	if (trimmed.length > 512) return '';
+	// Guard against unusually large textual payloads accidentally stored as image refs.
+	if (trimmed.length > 1024) return '';
 	return trimmed;
 }
 
@@ -165,7 +185,30 @@ function removeLegacyMenuCache() {
 	}
 }
 
-function saveMenuCache() {
+function cleanupLegacyDatasetCachesOnce() {
+	if (didCleanupLegacyCaches) return;
+	didCleanupLegacyCaches = true;
+	for (const key of LEGACY_MENU_DATASET_STORAGE_KEYS) {
+		try {
+			localStorage.removeItem(key);
+		} catch {
+			// ignore storage failures
+		}
+	}
+}
+
+async function saveMenuCache() {
+	cleanupLegacyDatasetCachesOnce();
+
+	// Persist inline image payloads to Cache API before serializing pointers.
+	await persistInlineImagesForDatasets(
+		categories.value,
+		meals.value,
+		sides.value,
+		menus.value,
+		drinks.value,
+	);
+
 	const datasets = {
 		categories: categories.value.map(minimiseCategory),
 		meals: meals.value.map(minimiseMeal),
@@ -277,6 +320,8 @@ function readDatasetFromStorage(datasetKey) {
 }
 
 function hydrateMenuCache() {
+	cleanupLegacyDatasetCachesOnce();
+
 	const legacyPayload = readStorageJson(MENU_CACHE_STORAGE_KEY, {
 		storage: localStorage,
 		fallback: null,

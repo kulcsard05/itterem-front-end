@@ -10,10 +10,14 @@ import { toImageSrc } from '../utils.js';
 // ---------------------------------------------------------------------------
 
 const CACHE_NAME = 'itterem-images-v1';
+const INLINE_POINTER_PREFIX = 'cache-img:';
+const INLINE_POINTER_URL_BASE = 'https://itterem.local/__inline-image-cache__/';
 
 // In-memory set of kep keys known to be cached → avoids async cache lookups
 // for already-fetched images during the same session.
 const _known = shallowRef(/** @type {Set<string>} */ (new Set()));
+const _inlineBlobUrlByPointer = new Map();
+const _inlineResolutionVersion = shallowRef(0);
 let _initialised = false;
 
 /**
@@ -59,6 +63,99 @@ function looksLikeInlineImage(value) {
 	return s.length >= 40 && !/\s/.test(s) && /^[A-Za-z0-9+/=]+$/.test(s);
 }
 
+function isInlineDataImage(value) {
+	return /^data:image\//i.test(String(value ?? '').trim());
+}
+
+function isInlineImagePointer(value) {
+	return String(value ?? '').startsWith(INLINE_POINTER_PREFIX);
+}
+
+function pointerToCacheUrl(pointer) {
+	const id = String(pointer ?? '').slice(INLINE_POINTER_PREFIX.length).trim();
+	if (!id) return '';
+	return `${INLINE_POINTER_URL_BASE}${id}`;
+}
+
+function simpleHash(value) {
+	let hash = 0;
+	for (let i = 0; i < value.length; i += 1) {
+		hash = ((hash << 5) - hash) + value.charCodeAt(i);
+		hash |= 0; // Keep as signed 32-bit integer.
+	}
+	return Math.abs(hash).toString(36);
+}
+
+function pointerFromInlineDataUrl(value) {
+	const s = String(value ?? '').trim();
+	if (!isInlineDataImage(s)) return '';
+	const id = `${simpleHash(s)}-${s.length}`;
+	return `${INLINE_POINTER_PREFIX}${id}`;
+}
+
+function collectInlinePointersFromDatasets(datasets) {
+	const inlineToPersist = new Map(); // pointer -> data URL
+	for (const dataset of datasets) {
+		if (!Array.isArray(dataset)) continue;
+		for (const item of dataset) {
+			const kep = String(item?.kep ?? '').trim();
+			if (!isInlineDataImage(kep)) continue;
+			const pointer = pointerFromInlineDataUrl(kep);
+			if (pointer) inlineToPersist.set(pointer, kep);
+		}
+	}
+	return inlineToPersist;
+}
+
+async function dataUrlToResponse(dataUrl) {
+	const response = await fetch(dataUrl);
+	const blob = await response.blob();
+	const contentType = blob.type || 'image/jpeg';
+	return new Response(blob, {
+		headers: { 'Content-Type': contentType },
+	});
+}
+
+async function ensureInlinePointerCached(cache, pointer, dataUrl) {
+	if (!pointer || !dataUrl) return;
+	const cacheUrl = pointerToCacheUrl(pointer);
+	if (!cacheUrl) return;
+	if (_known.value.has(cacheUrl)) return;
+
+	const existing = await cache.match(cacheUrl);
+	if (existing) {
+		_known.value = new Set([..._known.value, cacheUrl]);
+		return;
+	}
+
+	const response = await dataUrlToResponse(dataUrl);
+	await cache.put(cacheUrl, response);
+	_known.value = new Set([..._known.value, cacheUrl]);
+}
+
+async function resolveInlinePointer(pointer) {
+	if (!pointer) return '';
+	if (_inlineBlobUrlByPointer.has(pointer)) {
+		return _inlineBlobUrlByPointer.get(pointer) || '';
+	}
+
+	const cacheUrl = pointerToCacheUrl(pointer);
+	if (!cacheUrl) return '';
+
+	try {
+		const cache = await caches.open(CACHE_NAME);
+		const match = await cache.match(cacheUrl);
+		if (!match) return '';
+		const blob = await match.blob();
+		const blobUrl = URL.createObjectURL(blob);
+		_inlineBlobUrlByPointer.set(pointer, blobUrl);
+		_inlineResolutionVersion.value += 1;
+		return blobUrl;
+	} catch {
+		return '';
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -74,8 +171,19 @@ function looksLikeInlineImage(value) {
  * @returns {string}
  */
 export function getImageSrc(kep) {
+	// Touch a reactive ref so views re-render when pointer URLs become available.
+	void _inlineResolutionVersion.value;
+
 	const k = String(kep ?? '').trim();
 	if (!k) return '';
+
+	if (isInlineImagePointer(k)) {
+		const resolved = _inlineBlobUrlByPointer.get(k);
+		if (resolved) return resolved;
+		void resolveInlinePointer(k);
+		return '';
+	}
+
 	return toImageSrc(k);
 }
 
@@ -95,22 +203,27 @@ export async function cacheImagesForDatasets(...datasets) {
 	// Ensure we know what's already cached.
 	await initKnownKeys();
 
-	const known = _known.value;
+	const known = new Set(_known.value);
 
 	// Collect image URLs that need fetching.
 	const toFetch = new Map(); // url → kep
+	const inlineToPersist = collectInlinePointersFromDatasets(datasets);
 	for (const dataset of datasets) {
 		if (!Array.isArray(dataset)) continue;
 		for (const item of dataset) {
 			const kep = String(item?.kep ?? '').trim();
-			if (!kep || looksLikeInlineImage(kep)) continue;
+			if (!kep) continue;
+
+			if (isInlineDataImage(kep)) continue;
+
+			if (isInlineImagePointer(kep)) continue;
+			if (looksLikeInlineImage(kep)) continue;
+
 			const url = toImageSrc(kep);
 			if (!url || known.has(url)) continue;
 			toFetch.set(url, kep);
 		}
 	}
-
-	if (toFetch.size === 0) return;
 
 	let cache;
 	try {
@@ -119,6 +232,16 @@ export async function cacheImagesForDatasets(...datasets) {
 		// Cache API unavailable – nothing we can do; images load from network.
 		return;
 	}
+
+	if (inlineToPersist.size > 0) {
+		await Promise.allSettled(
+			[...inlineToPersist.entries()].map(async ([pointer, dataUrl]) => {
+				await ensureInlinePointerCached(cache, pointer, dataUrl);
+			}),
+		);
+	}
+
+	if (toFetch.size === 0) return;
 
 	const newKnown = new Set(known);
 
@@ -146,4 +269,69 @@ export async function cacheImagesForDatasets(...datasets) {
 	if (newKnown.size !== known.size) {
 		_known.value = newKnown;
 	}
+}
+
+/**
+ * Ensure inline data:image payloads are written into Cache API under stable
+ * pointer keys before localStorage serialization replaces them with pointers.
+ *
+ * @param {...Array} datasets
+ * @returns {Promise<void>}
+ */
+export async function persistInlineImagesForDatasets(...datasets) {
+	await initKnownKeys();
+	const inlineToPersist = collectInlinePointersFromDatasets(datasets);
+	if (inlineToPersist.size === 0) return;
+
+	let cache;
+	try {
+		cache = await caches.open(CACHE_NAME);
+	} catch {
+		return;
+	}
+
+	await Promise.allSettled(
+		[...inlineToPersist.entries()].map(async ([pointer, dataUrl]) => {
+			await ensureInlinePointerCached(cache, pointer, dataUrl);
+		}),
+	);
+}
+
+/**
+ * Convert inline base64 image refs in-memory into lightweight cache pointers.
+ * Call before serializing data to localStorage.
+ *
+ * @param {string|null|undefined} value
+ * @returns {string|null|undefined}
+ */
+export function toPersistentImageRef(value) {
+	if (typeof value !== 'string') return value;
+	const trimmed = value.trim();
+	if (!trimmed) return '';
+	if (isInlineImagePointer(trimmed)) return trimmed;
+	if (!isInlineDataImage(trimmed)) return trimmed;
+	const pointer = pointerFromInlineDataUrl(trimmed);
+	return pointer || '';
+}
+
+/**
+ * Resolve any cached image pointers found in datasets to displayable blob URLs.
+ *
+ * @param {...Array} datasets
+ * @returns {Promise<void>}
+ */
+export async function resolveImagePointersForDatasets(...datasets) {
+	await initKnownKeys();
+
+	const pointers = new Set();
+	for (const dataset of datasets) {
+		if (!Array.isArray(dataset)) continue;
+		for (const item of dataset) {
+			const kep = String(item?.kep ?? '').trim();
+			if (isInlineImagePointer(kep)) pointers.add(kep);
+		}
+	}
+
+	if (pointers.size === 0) return;
+	await Promise.allSettled([...pointers].map((pointer) => resolveInlinePointer(pointer)));
 }

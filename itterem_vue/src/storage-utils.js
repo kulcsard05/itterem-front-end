@@ -31,14 +31,7 @@ export function warnQuotaExceeded(context, error) {
 		}
 	}
 
-	// In production, attempt sessionStorage as a fallback when quota is exceeded.
-	if (isQuota) {
-		try {
-			console.warn(`${context} falling back to sessionStorage.`);
-		} catch {
-			// ignore
-		}
-	}
+	// Keep logging side effects minimal in production.
 }
 
 /**

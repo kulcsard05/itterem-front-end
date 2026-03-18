@@ -15,7 +15,7 @@ import {
 } from '../../api.js';
 import { findById, formatCurrency, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, getOrderItemIdKey } from '../../utils.js';
 
-import { getImageSrc, cacheImagesForDatasets } from '../../composables/useMenuImageCache.js';
+import { getImageSrc, cacheImagesForDatasets, resolveImagePointersForDatasets } from '../../composables/useMenuImageCache.js';
 import { useAuth } from '../../composables/useAuth.js';
 import { useCart } from '../../composables/useCart.js';
 import { useMenuData } from '../../composables/useMenuData.js';
@@ -394,7 +394,7 @@ async function refreshAll() {
 	]);
 
 	const hasChanges = changes.some((entry) => entry.status === 'fulfilled' && entry.value === true);
-	if (hasChanges) saveMenuCache();
+	if (hasChanges) await saveMenuCache();
 
 	// Re-hydrate cart items with the latest menu data (names, prices, images).
 	rehydrateItems();
@@ -407,6 +407,13 @@ async function refreshAll() {
 
 onMounted(() => {
 	hydrateMenuCache();
+	void resolveImagePointersForDatasets(
+		categories.value,
+		meals.value,
+		sides.value,
+		menus.value,
+		drinks.value,
+	);
 	rehydrateItems();
 	refreshAll();
 });
