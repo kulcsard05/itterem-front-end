@@ -3,6 +3,9 @@ import {
 	AUTH_EXPIRED_EVENT,
 	AUTH_EXPIRED_MESSAGE,
 	ORDER_STATUS_CLASSES as _ORDER_STATUS_CLASSES,
+	ROLE_USER,
+	ROLE_EMPLOYEE,
+	ROLE_ADMIN,
 } from './constants.js';
 import { i18n, getIntlLocale } from './i18n.js';
 
@@ -61,16 +64,80 @@ export function isValidPhone(value) {
 }
 
 /**
+ * Return a plain object fallback for non-object values.
+ * @param {*} value
+ * @returns {Object}
+ */
+export function asObject(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	return value;
+}
+
+/**
+ * Return an array fallback for non-array values.
+ * @param {*} value
+ * @returns {Array}
+ */
+export function asArray(value) {
+	return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Normalize an id-like value to a trimmed string key.
+ * @param {*} value
+ * @returns {string}
+ */
+export function normalizeId(value) {
+	return String(value ?? '').trim();
+}
+
+/**
+ * Resolve dynamic form field options with defensive fallbacks.
+ * @param {Array} fields
+ * @returns {Object<string, Array>}
+ */
+export function buildFieldOptionsMap(fields = []) {
+	const map = {};
+	for (const field of asArray(fields)) {
+		if (!field || typeof field !== 'object') continue;
+		if (field.type !== 'select' && field.type !== 'multiselect') continue;
+		try {
+			const resolved = typeof field.options === 'function' ? field.options() : field.options;
+			map[field.key] = asArray(resolved);
+		} catch {
+			map[field.key] = [];
+		}
+	}
+	return map;
+}
+
+/**
+ * Read resolved options for a field key from an options map.
+ * @param {Object} optionsMap
+ * @param {string} fieldKey
+ * @returns {Array}
+ */
+export function getFieldOptions(optionsMap, fieldKey) {
+	return asArray(asObject(optionsMap)?.[fieldKey]);
+}
+
+/**
  * Check whether a value looks like an auth payload returned by the backend.
  * @param {*} value
- * @param {{requireToken?: boolean}} [options]
+ * @param {{requireToken?: boolean, requireRole?: boolean}} [options]
  * @returns {boolean}
  */
 export function isAuthPayload(value, options = {}) {
-	const { requireToken = false } = options;
+	const { requireToken = false, requireRole = false } = options;
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-	if (!requireToken) return true;
-	return Boolean(String(value.token ?? '').trim());
+
+	if (requireToken && !String(value.token ?? '').trim()) return false;
+
+	const normalizedRole = String(value.jogosultsag ?? value.role ?? '').trim();
+	if (!normalizedRole) return !requireRole;
+
+	const roleNumber = Number(normalizedRole);
+	return [ROLE_USER, ROLE_EMPLOYEE, ROLE_ADMIN].includes(roleNumber);
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +274,7 @@ export function clearStoredAuth(options = {}) {
 export function findById(list, idValue) {
 	const normalizedId = String(idValue ?? '').trim();
 	if (!normalizedId) return null;
-	const items = Array.isArray(list) ? list : [];
+	const items = asArray(list);
 	return items.find((item) => String(item?.id ?? '').trim() === normalizedId) ?? null;
 }
 
@@ -294,6 +361,43 @@ export function readFirstText(candidates = []) {
 	return '';
 }
 
+/**
+ * Parse an integer and return null for invalid or non-positive values.
+ * @param {*} value
+ * @returns {number|null}
+ */
+export function toPositiveIntOrNull(value) {
+	const parsed = Number(value);
+	if (!Number.isInteger(parsed) || parsed <= 0) return null;
+	return parsed;
+}
+
+/**
+ * Parse and clamp an integer to a positive range.
+ * Returns fallback when the input is invalid.
+ * @param {*} value
+ * @param {{min?: number, max?: number, fallback?: number}} [options]
+ * @returns {number}
+ */
+export function toBoundedPositiveInt(value, options = {}) {
+	const { min = 1, max = Number.MAX_SAFE_INTEGER, fallback = 0 } = options;
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) return fallback;
+	const whole = Math.trunc(parsed);
+	if (whole < min) return fallback;
+	if (whole > max) return max;
+	return whole;
+}
+
+/**
+ * Check whether a value is a valid positive entity id.
+ * @param {*} value
+ * @returns {boolean}
+ */
+export function hasValidEntityId(value) {
+	return toPositiveIntOrNull(value) != null;
+}
+
 // ---------------------------------------------------------------------------
 // Order status helpers
 // ---------------------------------------------------------------------------
@@ -358,7 +462,7 @@ export function getOrderItemName(entry) {
 }
 
 export function formatOrderItems(order) {
-	const list = Array.isArray(order?.rendelesElemeks) ? order.rendelesElemeks : [];
+	const list = asArray(order?.rendelesElemeks);
 	if (list.length === 0) return '-';
 
 	return list.map((entry) => `${getOrderItemName(entry)} × ${entry?.mennyiseg ?? 0}`).join(' | ');
@@ -379,7 +483,7 @@ export function formatOrderItems(order) {
  * @returns {string[]}
  */
 export function getMealIngredientNames(meal) {
-	const list = Array.isArray(meal?.hozzavalok) ? meal.hozzavalok : [];
+	const list = asArray(meal?.hozzavalok);
 	return list
 		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
 		.filter(Boolean);

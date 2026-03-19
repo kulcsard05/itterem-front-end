@@ -39,6 +39,7 @@ import {
 	validateAll,
 } from '../admin-helpers.js';
 import {
+	asArray,
 	formatDateTime,
 	formatOrderItems,
 	getImageSrcFromItem,
@@ -187,7 +188,7 @@ export function useAdminEntityConfigs({ kategoriak, hozzavalok, keszetelek, kore
 				id: item?.id,
 				nev: String(item?.nev ?? ''),
 				leiras: String(item?.leiras ?? ''),
-				hozzavalokIds: (Array.isArray(item?.hozzavalok) ? item.hozzavalok : [])
+				hozzavalokIds: asArray(item?.hozzavalok)
 					.map((h) => h?.id)
 					.filter((v) => v != null)
 					.map((v) => String(v)),
@@ -220,7 +221,7 @@ export function useAdminEntityConfigs({ kategoriak, hozzavalok, keszetelek, kore
 				),
 			buildPayload: (form, isCreate) => {
 				const base = buildBasePayload(form, { includeDescription: true });
-				const hozzavalokIds = (Array.isArray(form.hozzavalokIds) ? form.hozzavalokIds : [])
+				const hozzavalokIds = asArray(form.hozzavalokIds)
 					.map((v) => String(v).trim())
 					.filter(Boolean);
 				return isCreate

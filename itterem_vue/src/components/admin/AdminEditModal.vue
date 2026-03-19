@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { asArray, asObject, buildFieldOptionsMap, getFieldOptions as readFieldOptions } from '../../utils.js';
 
 const props = defineProps({
 	show: { type: Boolean, default: false },
@@ -16,12 +17,14 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save', 'image-selected', 'update:form']);
 
 function updateField(key, value) {
-	if (props.form?.[key] === value) return;
-	emit('update:form', { ...props.form, [key]: value });
+	const currentForm = asObject(props.form);
+	if (currentForm?.[key] === value) return;
+	emit('update:form', { ...currentForm, [key]: value });
 }
 
 function toggleMultiSelect(key, optionValue, checked) {
-	const current = Array.isArray(props.form?.[key]) ? props.form[key] : [];
+	const currentForm = asObject(props.form);
+	const current = asArray(currentForm?.[key]);
 	const normalizedValue = String(optionValue);
 	const set = new Set(current.map((v) => String(v)));
 	if (checked) set.add(normalizedValue);
@@ -29,14 +32,13 @@ function toggleMultiSelect(key, optionValue, checked) {
 	updateField(key, Array.from(set));
 }
 
+function isMultiSelected(fieldKey, optionValue) {
+	const values = asArray(asObject(props.form)?.[fieldKey]).map((value) => String(value));
+	return values.includes(String(optionValue));
+}
+
 const resolvedFieldOptions = computed(() => {
-	const map = {};
-	for (const field of props.fields) {
-		if (field.type === 'select' || field.type === 'multiselect') {
-			map[field.key] = typeof field.options === 'function' ? field.options() : (field.options ?? []);
-		}
-	}
-	return map;
+	return buildFieldOptionsMap(props.fields);
 });
 </script>
 
@@ -86,13 +88,13 @@ const resolvedFieldOptions = computed(() => {
 					<div v-else-if="field.type === 'multiselect'" class="space-y-2">
 						<div class="max-h-44 overflow-auto rounded-lg border-2 border-gray-200 bg-white">
 							<label
-								v-for="opt in (typeof field.options === 'function' ? field.options() : field.options)"
+								v-for="opt in readFieldOptions(resolvedFieldOptions, field.key)"
 								:key="opt.value"
 								class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
 							>
 								<input
 									type="checkbox"
-									:checked="Array.isArray(form[field.key]) && form[field.key].map(String).includes(String(opt.value))"
+									:checked="isMultiSelected(field.key, opt.value)"
 									@change="toggleMultiSelect(field.key, opt.value, $event.target.checked)"
 								/>
 								<span>{{ opt.label }}</span>
@@ -107,7 +109,7 @@ const resolvedFieldOptions = computed(() => {
 						@change="updateField(field.key, $event.target.value)"
 					>
 						<option v-if="field.placeholder" value="">{{ field.placeholder }}</option>
-						<option v-for="opt in resolvedFieldOptions[field.key]" :key="opt.value" :value="opt.value">
+						<option v-for="opt in readFieldOptions(resolvedFieldOptions, field.key)" :key="opt.value" :value="opt.value">
 							{{ opt.label }}
 						</option>
 					</select>

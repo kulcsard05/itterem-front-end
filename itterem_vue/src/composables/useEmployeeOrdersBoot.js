@@ -10,6 +10,7 @@ export function useEmployeeOrdersBoot({
 	onOrderUpdated,
 	savingStatus,
 	isDragCooldown,
+	isDraggingRef,
 	connectionState,
 	pollIntervalMs,
 	authExpiredEvent,
@@ -30,15 +31,15 @@ export function useEmployeeOrdersBoot({
 		await Promise.all([loadOrders(), loadCatalog()]);
 
 		pollTimer = window.setInterval(() => {
+			if (isDraggingRef?.value) return;
 			if (savingStatus.value) return;
 			if (typeof isDragCooldown === 'function' && isDragCooldown()) return;
-			if (
-				connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTED
-				|| connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTING
-			) {
+			if (connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTING) {
 				return;
 			}
-			loadOrders();
+			// Reconcile periodically even when SignalR is connected.
+			// This heals occasional dropped realtime events.
+			void loadOrders();
 		}, pollIntervalMs);
 
 		unsubPlaced = on('OrderPlaced', onOrderPlaced);

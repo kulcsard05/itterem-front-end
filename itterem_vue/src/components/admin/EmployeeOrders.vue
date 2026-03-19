@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../api.js';
 import { useSignalR } from '../../composables/useSignalR.js';
@@ -14,6 +14,7 @@ import {
 	readText,
 } from '../../order-dto.js';
 import {
+	asArray,
 	findById,
 	formatDateTime,
 	getOrderItemName,
@@ -95,23 +96,50 @@ const showRealtimeDebug = import.meta.env.DEV;
 
 const pendingRefresh = ref(false);
 const queuedOrdersReload = ref(false);
+const isDraggingOrder = ref(false);
 const STATUS_DONE = 'Átvett';
+let pendingRefreshTimer = null;
 
-const columnChangeHandlers = new Map();
+function clearPendingRefreshTimer() {
+	if (pendingRefreshTimer != null) {
+		window.clearTimeout(pendingRefreshTimer);
+		pendingRefreshTimer = null;
+	}
+}
+
+function schedulePendingRefreshFlush() {
+	clearPendingRefreshTimer();
+	if (!pendingRefresh.value) return;
+
+	const needsDelay = isDraggingOrder.value || savingStatus.value || isDragCooldown();
+	pendingRefreshTimer = window.setTimeout(async () => {
+		pendingRefreshTimer = null;
+		if (!pendingRefresh.value) return;
+		if (isDraggingOrder.value || savingStatus.value || isDragCooldown()) {
+			schedulePendingRefreshFlush();
+			return;
+		}
+
+		pendingRefresh.value = false;
+		await loadOrders();
+	}, needsDelay ? 300 : 0);
+}
+
+function onOrderDragStart() {
+	isDraggingOrder.value = true;
+}
+
+function onOrderDragEnd() {
+	isDraggingOrder.value = false;
+	if (pendingRefresh.value) schedulePendingRefreshFlush();
+}
 
 function isOrderSelected(orderId) {
 	return toOrderId(selectedOrderId.value) === toOrderId(orderId);
 }
 
-function getColumnChangeHandler(status) {
-	if (!columnChangeHandlers.has(status)) {
-		columnChangeHandlers.set(status, (event) => onDraggableChange(event, status));
-	}
-	return columnChangeHandlers.get(status);
-}
-
 function getOrderCardItemCount(order) {
-	return Array.isArray(order?.rendelesElemeks) ? order.rendelesElemeks.length : 0;
+	return asArray(order?.rendelesElemeks).length;
 }
 
 function getOrderElapsedLabel(order) {
@@ -134,6 +162,12 @@ const realtimeIndicatorClass = computed(() => {
 });
 
 function handleOrderPlaced(payload) {
+	if (isDraggingOrder.value) {
+		pendingRefresh.value = true;
+		schedulePendingRefreshFlush();
+		return;
+	}
+
 	const normalized = normalizeOrderDto(payload);
 	if (normalized) return upsertOrderIntoColumns(normalized);
 	void loadOrders();
@@ -143,8 +177,9 @@ function handleOrderUpdated(orderId, status, _message) {
 	const idKey = toOrderId(orderId);
 	if (!idKey) return;
 
-	if (savingStatus.value || isDragCooldown()) {
+	if (isDraggingOrder.value || savingStatus.value || isDragCooldown()) {
 		pendingRefresh.value = true;
+		schedulePendingRefreshFlush();
 		return;
 	}
 
@@ -184,10 +219,13 @@ async function loadOrders() {
 	loading.value = true;
 	try {
 		const list = await getOrders();
-		normalizeOrders(list);
-		if (selectedOrderId.value != null && Array.isArray(list)) {
+		const normalizedList = asArray(list)
+			.map((order) => normalizeOrderDto(order))
+			.filter(Boolean);
+		normalizeOrders(normalizedList);
+		if (selectedOrderId.value != null) {
 			const selectedId = toOrderId(selectedOrderId.value);
-			const found = list.find((order) => toOrderId(order?.id) === selectedId) ?? null;
+			const found = normalizedList.find((order) => toOrderId(order?.id) === selectedId) ?? null;
 			if (found) selectedOrderSnapshot.value = found;
 		}
 	} catch (err) {
@@ -205,8 +243,8 @@ async function loadOrders() {
 async function loadCatalog() {
 	try {
 		const [mealsRes, menusRes] = await Promise.allSettled([getMeals(), getMenus()]);
-		meals.value = mealsRes.status === 'fulfilled' && Array.isArray(mealsRes.value) ? mealsRes.value : [];
-		menus.value = menusRes.status === 'fulfilled' && Array.isArray(menusRes.value) ? menusRes.value : [];
+		meals.value = mealsRes.status === 'fulfilled' ? asArray(mealsRes.value) : [];
+		menus.value = menusRes.status === 'fulfilled' ? asArray(menusRes.value) : [];
 	} catch {
 		meals.value = [];
 		menus.value = [];
@@ -220,7 +258,7 @@ const selectedOrder = computed(() =>
 const visibleOrder = computed(() => selectedOrder.value ?? selectedOrderSnapshot.value);
 
 const visibleOrderEntries = computed(() => {
-	const entries = Array.isArray(visibleOrder.value?.rendelesElemeks) ? visibleOrder.value.rendelesElemeks : [];
+	const entries = asArray(visibleOrder.value?.rendelesElemeks);
 	return entries.map((entry) => ({
 		entry,
 		itemName: getOrderItemName(entry),
@@ -264,6 +302,7 @@ useEmployeeOrdersBoot({
 	onOrderUpdated: handleOrderUpdated,
 	savingStatus,
 	isDragCooldown,
+	isDraggingRef: isDraggingOrder,
 	connectionState,
 	pollIntervalMs: POLL_INTERVAL_MS,
 	authExpiredEvent: AUTH_EXPIRED_EVENT,
@@ -283,6 +322,10 @@ watch(
 		handlePanelRefChange(el, prev);
 	},
 );
+
+onBeforeUnmount(() => {
+	clearPendingRefreshTimer();
+});
 </script>
 
 <template>
@@ -403,7 +446,9 @@ watch(
 						ghost-class="opacity-50"
 						:animation="150"
 						class="min-h-full min-h-[4.5rem] pb-2"
-						@change="getColumnChangeHandler(col.status)"
+						@start="onOrderDragStart"
+						@end="onOrderDragEnd"
+						@change="onDraggableChange($event, col.status)"
 					>
 						<template #item="{ element }">
 							<button
@@ -530,7 +575,7 @@ watch(
 								<div class="font-semibold text-gray-900">{{ entryView.itemName }}</div>
 								<div v-if="entryView.ingredients.length" class="mt-1 text-gray-700" :style="{ fontSize: ingredientFontSize + 'px' }">
 									<ul class="space-y-0.5">
-										<li v-for="(name, i) in entryView.ingredients" :key="`${entryView.entry.id ?? 'entry'}-${name}-${i}`">{{ name }}</li>
+										<li v-for="name in entryView.ingredients" :key="`${entryView.entry.id ?? 'entry'}-${name}`">{{ name }}</li>
 									</ul>
 								</div>
 							</div>

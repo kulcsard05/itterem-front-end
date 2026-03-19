@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { placeOrder } from '../../api.js';
 import { useCart } from '../../composables/useCart.js';
+import { usePromiseTimeout } from '../../composables/usePromiseTimeout.js';
 import { formatCurrency, getItemTypeLabel, resolveUserId } from '../../utils.js';
 import { ORDER_TIMEOUT_MS } from '../../constants.js';
 
@@ -26,6 +27,7 @@ const ordering = ref(false);
 const orderError = ref('');
 const orderSuccess = ref(false);
 const orderSuccessMessage = ref('');
+const { withTimeout } = usePromiseTimeout();
 
 const resolvedUserId = computed(() => resolveUserId(props.auth));
 const hasItems = computed(() => items.value.length > 0);
@@ -58,17 +60,6 @@ function closeAfterSuccess() {
 	emit('close');
 }
 
-function withTimeout(promise, ms) {
-	let timeoutId;
-	const timeoutPromise = new Promise((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error(t('quickBuy.serverTimeout')));
-		}, ms);
-	});
-
-	return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-}
-
 async function submitOrder() {
 	if (!resolvedUserId.value) {
 		orderError.value = t('cart.loginRequired');
@@ -81,7 +72,11 @@ async function submitOrder() {
 
 	try {
 		const orderItems = buildOrderItems();
-		const result = await withTimeout(placeOrder(resolvedUserId.value, orderItems), ORDER_TIMEOUT_MS);
+		if (!Array.isArray(orderItems) || orderItems.length === 0) {
+			orderError.value = t('cart.invalidItems');
+			return;
+		}
+		const result = await withTimeout(placeOrder(resolvedUserId.value, orderItems), ORDER_TIMEOUT_MS, t('quickBuy.serverTimeout'));
 		orderSuccessMessage.value = formatOrderSuccessMessage(result);
 		orderSuccess.value = true;
 		clearCart();

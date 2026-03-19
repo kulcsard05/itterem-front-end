@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { ORDER_STATUSES } from '../../constants.js';
+import { asObject } from '../../utils.js';
 
 const props = defineProps({
 	show: { type: Boolean, default: false },
@@ -37,8 +38,16 @@ const actionOptions = computed(() => {
 const statusOptions = computed(() => ORDER_STATUSES.map((status) => ({ value: status, label: status })));
 
 function updateField(key, value) {
-	emit('update:form', { ...props.form, [key]: value });
+	emit('update:form', { ...asObject(props.form), [key]: value });
 }
+
+const selectedActionType = computed(() => {
+	const form = asObject(props.form);
+	const requested = String(form?.actionType ?? '').trim();
+	if (!requested) return actionOptions.value?.[0]?.value ?? '';
+	const isAllowed = actionOptions.value.some((option) => option.value === requested);
+	return isAllowed ? requested : (actionOptions.value?.[0]?.value ?? '');
+});
 </script>
 
 <template>
@@ -65,7 +74,7 @@ function updateField(key, value) {
 				<div class="space-y-2">
 					<label class="block text-sm font-semibold text-gray-700">Művelet</label>
 					<select
-						:value="form.actionType"
+						:value="selectedActionType"
 						class="w-full rounded-lg border-2 border-gray-200 px-3.5 py-2.5 text-sm text-gray-800 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/10"
 						@change="updateField('actionType', $event.target.value)"
 					>
@@ -75,7 +84,7 @@ function updateField(key, value) {
 					</select>
 				</div>
 
-				<div v-if="form.actionType === 'status'" class="space-y-2">
+				<div v-if="selectedActionType === 'status'" class="space-y-2">
 					<label class="block text-sm font-semibold text-gray-700">Új státusz</label>
 					<select
 						:value="form.status"
@@ -88,7 +97,7 @@ function updateField(key, value) {
 					</select>
 				</div>
 
-				<div v-else-if="form.actionType === 'availability'" class="space-y-2">
+				<div v-else-if="selectedActionType === 'availability'" class="space-y-2">
 					<label class="block text-sm font-semibold text-gray-700">Elérhetőség</label>
 					<select
 						:value="form.availability"
@@ -102,7 +111,7 @@ function updateField(key, value) {
 
 				<div v-else class="space-y-2">
 					<label class="block text-sm font-semibold text-gray-700">
-						{{ form.actionType?.includes('percent') ? 'Százalék (%)' : 'Árváltozás (Ft)' }}
+						{{ selectedActionType?.includes('percent') ? 'Százalék (%)' : 'Árváltozás (Ft)' }}
 					</label>
 					<input
 						:value="form.priceValue"

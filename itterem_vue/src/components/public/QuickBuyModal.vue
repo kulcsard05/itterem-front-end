@@ -2,8 +2,9 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { placeOrder } from '../../api.js';
+import { usePromiseTimeout } from '../../composables/usePromiseTimeout.js';
 import { formatCurrency, resolveUserId, getOrderItemIdKey } from '../../utils.js';
-import { ORDER_TIMEOUT_MS } from '../../constants.js';
+import { MAX_ORDER_QUANTITY, ORDER_TIMEOUT_MS } from '../../constants.js';
 
 const props = defineProps({
 	item: { type: Object, default: null },
@@ -18,10 +19,20 @@ const ordering = ref(false);
 const error = ref('');
 const success = ref(false);
 const successMessage = ref('');
+const { withTimeout } = usePromiseTimeout();
 
 const total = computed(() => {
 	if (!props.item || props.item.price == null) return null;
 	return props.item.price * qty.value;
+});
+
+const canSubmit = computed(() => {
+	if (ordering.value) return false;
+	if (!props.item) return false;
+	const idKey = getOrderItemIdKey(props.item.type);
+	const itemId = Number(props.item?.item?.id);
+	if (!idKey || !Number.isInteger(itemId) || itemId <= 0) return false;
+	return qty.value >= 1 && qty.value <= MAX_ORDER_QUANTITY;
 });
 
 function reset() {
@@ -36,16 +47,6 @@ function close() {
 	emit('close');
 }
 
-function withTimeout(promise, ms) {
-	let timeoutId;
-	const timeoutPromise = new Promise((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error(t('quickBuy.serverTimeout')));
-		}, ms);
-	});
-	return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-}
-
 async function confirm() {
 	const resolved = resolveUserId(props.auth);
 	if (!resolved) {
@@ -55,13 +56,22 @@ async function confirm() {
 	const data = props.item;
 	if (!data) return;
 	const idKey = getOrderItemIdKey(data.type);
-	if (!idKey) return;
+	const itemId = Number(data?.item?.id);
+	if (!idKey || !Number.isInteger(itemId) || itemId <= 0) {
+		error.value = t('quickBuy.invalidItem');
+		return;
+	}
+
+	const safeQty = Number.isFinite(Number(qty.value))
+		? Math.min(MAX_ORDER_QUANTITY, Math.max(1, Math.trunc(Number(qty.value))))
+		: 1;
+	qty.value = safeQty;
 
 	ordering.value = true;
 	error.value = '';
 	try {
-		const payload = [{ [idKey]: data.item?.id, mennyiseg: qty.value }];
-		const result = await withTimeout(placeOrder(resolved, payload), ORDER_TIMEOUT_MS);
+		const payload = [{ [idKey]: itemId, mennyiseg: safeQty }];
+		const result = await withTimeout(placeOrder(resolved, payload), ORDER_TIMEOUT_MS, t('quickBuy.serverTimeout'));
 		const apiMessage = typeof result?.message === 'string' ? result.message.trim() : '';
 		const orderId = result?.orderId;
 		if (apiMessage && orderId != null) {
@@ -173,7 +183,8 @@ defineExpose({ reset });
 								<button
 									type="button"
 									class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
-									@click="qty++"
+									:disabled="qty >= MAX_ORDER_QUANTITY"
+									@click="qty < MAX_ORDER_QUANTITY && qty++"
 									:aria-label="t('quickBuy.increaseQuantity')"
 								>
 									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -206,7 +217,7 @@ defineExpose({ reset });
 							<button
 								type="button"
 								class="flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-60"
-								:disabled="ordering"
+								:disabled="!canSubmit"
 								@click="confirm"
 							>
 								{{ ordering ? t('quickBuy.ordering') : t('quickBuy.placeOrder') }}

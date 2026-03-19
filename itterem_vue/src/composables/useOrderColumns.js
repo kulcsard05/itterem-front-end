@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue';
 import { ORDER_STATUSES } from '../constants.js';
+import { asArray } from '../utils.js';
 
 const STATUS_PENDING = ORDER_STATUSES[0];     // 'Függőben'
 const STATUS_PROCESSING = ORDER_STATUSES[1]; // 'Folyamatban'
@@ -25,7 +26,7 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 	}
 
 	function readList(listRef) {
-		return Array.isArray(listRef?.value) ? listRef.value : [];
+		return asArray(listRef?.value);
 	}
 
 	function rebuildIndex() {
@@ -126,7 +127,7 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 	}
 
 	function upsertOrdersIntoColumns(incomingList) {
-		const items = Array.isArray(incomingList) ? incomingList : [];
+		const items = asArray(incomingList);
 		for (const dto of items) {
 			const normalized = normalizeOrderDto(dto);
 			upsertOrderIntoColumns(normalized);
@@ -138,7 +139,7 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 		processingOrders.value = [];
 		readyOrders.value = [];
 
-		const items = Array.isArray(list) ? list : [];
+		const items = asArray(list);
 		for (const order of items) {
 			const status = toStatus(order?.statusz);
 			if (status === STATUS_DONE) continue;
@@ -180,9 +181,9 @@ export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normal
 	}
 
 	const allOrders = computed(() => [
-		...(Array.isArray(pendingOrders.value) ? pendingOrders.value : []),
-		...(Array.isArray(processingOrders.value) ? processingOrders.value : []),
-		...(Array.isArray(readyOrders.value) ? readyOrders.value : []),
+		...asArray(pendingOrders.value),
+		...asArray(processingOrders.value),
+		...asArray(readyOrders.value),
 	]);
 
 	return {

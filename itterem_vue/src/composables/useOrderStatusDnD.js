@@ -13,9 +13,28 @@ export function useOrderStatusDnD({ persistStatus, reloadOrders, pendingRefreshR
 		return Date.now() - lastDragTime < DRAG_COOLDOWN_MS;
 	}
 
+	function readOrderId(order) {
+		return order?.id ?? order?.Id ?? order?.rendelesId ?? order?.RendelesId ?? null;
+	}
+
 	async function onDraggableChange(event, newStatus) {
 		const added = event?.added?.element;
-		if (!added?.id) return;
+		// vuedraggable emits change for removed/moved events as well.
+		// We only persist when an item is added to a target status column.
+		if (!added) return;
+
+		const orderId = readOrderId(added);
+		if (orderId == null || String(orderId).trim() === '') {
+			if (typeof onError === 'function') {
+				onError('Hiányzó rendelés azonosító, a státusz nem menthető.');
+			}
+			await reloadOrders();
+			return;
+		}
+
+		if (added && added.statusz == null && added.Statusz != null) {
+			added.statusz = added.Statusz;
+		}
 
 		// Safety net: ensure vuedraggable actually placed the item in the
 		// correct column.  No-op when the splice already succeeded.
@@ -23,8 +42,9 @@ export function useOrderStatusDnD({ persistStatus, reloadOrders, pendingRefreshR
 
 		savingStatus.value = true;
 		try {
-			await persistStatus(added.id, newStatus);
+			await persistStatus(orderId, newStatus);
 			added.statusz = newStatus;
+			await reloadOrders();
 			lastDragTime = Date.now();
 		} catch (err) {
 			if (typeof onError === 'function') {
@@ -33,7 +53,6 @@ export function useOrderStatusDnD({ persistStatus, reloadOrders, pendingRefreshR
 			await reloadOrders();
 		} finally {
 			savingStatus.value = false;
-			pendingRefreshRef.value = false;
 		}
 	}
 

@@ -81,6 +81,7 @@
   "quickBuy": {
     "title": "Quick order",
     "loginRequired": "You need to sign in before ordering.",
+    "invalidItem": "This item cannot be ordered right now.",
     "orderPlacedTitle": "Order placed!",
     "orderPlacedFallback": "Thank you for your order.",
     "orderPlaced": "Order placed.",
@@ -95,6 +96,7 @@
     "title": "Cart ({count})",
     "empty": "Your cart is empty.",
     "loginRequired": "You need to sign in before ordering.",
+    "invalidItems": "Your cart contains invalid items. Please refresh and try again.",
     "orderPlacedTitle": "Order placed!",
     "orderPlacedFallback": "Thank you for your order.",
     "orderPlaced": "Order placed.",

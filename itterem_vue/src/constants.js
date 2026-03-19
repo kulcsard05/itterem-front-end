@@ -55,3 +55,4 @@ export const PANEL_FONT_MAX = 28;
 
 // ── Validation ──────────────────────────────────────────────────
 export const PASSWORD_MIN_LENGTH = 6;
+export const MAX_ORDER_QUANTITY = 50;

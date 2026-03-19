@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import {
 	getCategories,
 	getDrinks,
@@ -17,7 +17,8 @@ import ConfirmModal from './ConfirmModal.vue';
 import { ORDER_STATUSES } from '../../constants.js';
 import { applyBulkPriceAdjustment, parseBulkAdjustmentValue } from '../../admin-helpers.js';
 import { useAdminEntityConfigs } from '../../composables/useAdminEntityConfigs.js';
-import { getEntityNameById, sortOrdersByDateDesc } from '../../utils.js';
+import { useObjectUrlPreview } from '../../composables/useObjectUrlPreview.js';
+import { asArray, getEntityNameById, hasValidEntityId, normalizeId, sortOrdersByDateDesc } from '../../utils.js';
 
 // ── Events ──────────────────────────────────────────────────────
 const emit = defineEmits(['back', 'logout']);
@@ -42,7 +43,6 @@ const showEditModal = ref(false);
 const editMode = ref('edit');
 const editType = ref('');
 const editForm = ref({});
-const selectedImagePreviewUrl = ref('');
 const saving = ref(false);
 
 const showConfirmModal = ref(false);
@@ -70,10 +70,6 @@ function clearFeedback() {
 	actionSuccess.value = '';
 }
 
-function normalizeId(value) {
-	return String(value ?? '').trim();
-}
-
 function formatEntityItemLabel(item) {
 	return (
 		String(
@@ -89,29 +85,18 @@ function formatEntityItemLabel(item) {
 }
 
 // ── Image Preview ───────────────────────────────────────────────
-function clearSelectedImagePreview() {
-	if (selectedImagePreviewUrl.value) {
-		URL.revokeObjectURL(selectedImagePreviewUrl.value);
-		selectedImagePreviewUrl.value = '';
-	}
-}
-
-onUnmounted(() => {
-	clearSelectedImagePreview();
-});
+const currentImageUrl = computed(() => String(editForm.value?.currentImageUrl ?? '').trim());
+const {
+	displayedPreviewUrl,
+	setPreviewFile,
+	clearPreviewUrl: clearSelectedImagePreview,
+} = useObjectUrlPreview(currentImageUrl);
 
 const showImageUploadSection = computed(() => entityConfigs[editType.value]?.hasImage ?? false);
 
-const displayedImagePreview = computed(() => {
-	return selectedImagePreviewUrl.value || String(editForm.value?.currentImageUrl ?? '').trim();
-});
-
 function onEditImageSelected(event) {
-	clearSelectedImagePreview();
 	const file = event?.target?.files?.[0] ?? null;
-	if (file instanceof File) {
-		selectedImagePreviewUrl.value = URL.createObjectURL(file);
-	}
+	setPreviewFile(file);
 	editForm.value = { ...editForm.value, kepFile: file };
 }
 
@@ -136,12 +121,12 @@ const tabs = [
 ];
 
 const rendelesek = computed(() =>
-	[...(Array.isArray(rendelesekRaw.value) ? rendelesekRaw.value : [])].sort(sortOrdersByDateDesc),
+	[...asArray(rendelesekRaw.value)].sort(sortOrdersByDateDesc),
 );
 
 // Menus need enrichment (display names resolved from current local FK arrays)
 const menuk = computed(() =>
-	(menukRaw.value || []).map((menu) => ({
+	asArray(menukRaw.value).map((menu) => ({
 		...menu,
 		menuDisplayName: String(menu?.menuNev ?? '-'),
 		keszetel: getEntityNameById(keszetelek.value, getMenuMealId(menu)),
@@ -217,7 +202,7 @@ async function loadAdminData() {
 	results.forEach((result, i) => {
 		const load = dataLoads[i];
 		if (result.status === 'fulfilled') {
-			load.ref.value = Array.isArray(result.value) ? result.value : [];
+			load.ref.value = asArray(result.value);
 		} else {
 			load.ref.value = [];
 			loadError.value =
@@ -230,7 +215,9 @@ async function loadAdminData() {
 	isLoading.value = false;
 }
 
-onMounted(loadAdminData);
+onMounted(() => {
+	void loadAdminData();
+});
 
 // ── Modal ───────────────────────────────────────────────────────
 const isCreateMode = computed(() => editMode.value === 'create');
@@ -287,13 +274,14 @@ async function openModal(type, item = null) {
 	showEditModal.value = true;
 }
 
-function closeEditModal() {
+function closeEditModal(options = {}) {
+	const { clearFeedback: shouldClearFeedback = true } = options;
 	clearSelectedImagePreview();
 	showEditModal.value = false;
 	editMode.value = 'edit';
 	editType.value = '';
 	editForm.value = {};
-	clearFeedback();
+	if (shouldClearFeedback) clearFeedback();
 }
 
 function clearSelection() {
@@ -394,6 +382,7 @@ function validateBulkForm() {
 async function buildBulkUpdatePayload(entityType, item, actionType) {
 	const config = entityConfigs[entityType];
 	if (!config) throw new Error('Ismeretlen típus.');
+	if (!hasValidEntityId(item?.id)) throw new Error('Érvénytelen azonosító.');
 
 	const resolvedItem = config.bulk?.resolveItemForUpdate ? await config.bulk.resolveItemForUpdate(item) : item;
 	const form = config.mapItemToForm(resolvedItem);
@@ -515,8 +504,8 @@ async function saveEdit() {
 		const apiFn = isCreate ? config.api.create : config.api.update;
 		await apiFn(payload);
 
+		closeEditModal({ clearFeedback: false });
 		actionSuccess.value = isCreate ? config.messages.create : config.messages.update;
-		showEditModal.value = false;
 		await loadAdminData();
 	} catch (err) {
 		actionError.value = err instanceof Error ? err.message : 'Mentés sikertelen';
@@ -537,6 +526,12 @@ async function confirmDelete() {
 	const { type, item } = deleteTarget.value;
 	const config = entityConfigs[type];
 	if (!config) return;
+	if (!hasValidEntityId(item?.id)) {
+		actionError.value = 'Érvénytelen azonosító.';
+		showConfirmModal.value = false;
+		deleteTarget.value = null;
+		return;
+	}
 
 	deleting.value = true;
 	clearFeedback();
@@ -570,6 +565,7 @@ async function confirmBulkDelete() {
 
 	try {
 		const result = await runBulkQueue(items, async (item) => {
+			if (!hasValidEntityId(item?.id)) throw new Error('Érvénytelen azonosító.');
 			await config.api.delete(item.id);
 		});
 
@@ -577,6 +573,8 @@ async function confirmBulkDelete() {
 		await loadAdminData();
 		clearSelection();
 		updateBulkFeedback(config, result.successCount, result.failureCount, result.stopped);
+	} catch (error) {
+		actionError.value = error instanceof Error ? error.message : 'Tömeges törlés sikertelen.';
 	} finally {
 		bulkDeleteLoading.value = false;
 	}
@@ -740,7 +738,7 @@ watch(currentTabItems, () => {
 			:fields="activeFormFields"
 			:form="editForm"
 			:show-image-upload="showImageUploadSection"
-			:image-preview="displayedImagePreview"
+			:image-preview="displayedPreviewUrl"
 			:saving="saving"
 			@close="closeEditModal"
 			@save="saveEdit"

@@ -4,11 +4,11 @@ import {
 	getApiBaseUrl,
 	isAuthPayload,
 	readStoredAuth,
+	asArray,
+	toPositiveIntOrNull,
 } from './utils.js';
-import {
-	MENU_ETAG_STORAGE_KEY,
-} from './constants.js';
 import { i18n } from './i18n.js';
+import { deleteMenuEtag, readMenuEtags, writeMenuEtag } from './storage/menu-etags.js';
 
 // ---------------------------------------------------------------------------
 // Fetch with timeout — prevents requests from hanging indefinitely.
@@ -95,13 +95,31 @@ async function readJsonOrText(response) {
 	return raw;
 }
 
+function extractErrorMessage(body, fallbackErrorMessage) {
+	if (typeof body === 'string') {
+		const text = body.trim();
+		if (text) return text;
+		return fallbackErrorMessage;
+	}
+
+	if (body && typeof body === 'object') {
+		const messageFields = ['message', 'error', 'detail', 'title'];
+		for (const field of messageFields) {
+			const value = String(body?.[field] ?? '').trim();
+			if (value) return value;
+		}
+	}
+
+	return fallbackErrorMessage;
+}
+
 async function requestJsonOrThrow(response, fallbackErrorMessage) {
 	const body = await readJsonOrText(response);
 	if (response.ok) return body;
 
 	if (response.status === 401) handleAuthFailure();
 
-	const message = typeof body === 'string' ? body : body?.message || fallbackErrorMessage;
+	const message = extractErrorMessage(body, fallbackErrorMessage);
 	throw new Error(message || fallbackErrorMessage);
 }
 
@@ -202,16 +220,15 @@ export async function login(email, password) {
 
 		if (response.ok) {
 			if (typeof body === 'string') throw new Error(body || 'Bejelentkezés sikertelen');
-			if (!isAuthPayload(body, { requireToken: true })) {
-				throw new Error(body?.message || 'Bejelentkezés sikertelen');
+			if (!isAuthPayload(body, { requireToken: true, requireRole: true })) {
+				throw new Error(extractErrorMessage(body, 'Érvénytelen bejelentkezési válasz a szervertől'));
 			}
 			return body;
 		}
 		if (response.status === 401) {
 			throw new Error('Hibás email vagy jelszó');
 		}
-		if (typeof body === 'string') throw new Error(body);
-		throw new Error(body?.message || 'Bejelentkezés sikertelen');
+		throw new Error(extractErrorMessage(body, 'Bejelentkezés sikertelen'));
 	} catch (error) {
 		throwKnownOrFallback(error, NETWORK_ERROR_MESSAGE);
 	}
@@ -235,11 +252,57 @@ export async function register({ teljesNev, email, password, telefonSzam }) {
 		const body = await readJsonOrText(response);
 
 		if (response.ok) return body;
-		if (typeof body === 'string') throw new Error(body);
-		throw new Error(body?.message || 'Regisztráció sikertelen');
+		throw new Error(extractErrorMessage(body, 'Regisztráció sikertelen'));
 	} catch (error) {
 		throwKnownOrFallback(error, NETWORK_ERROR_MESSAGE);
 	}
+}
+
+function normalizeOrderCreateResponse(payload) {
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+		throw new Error('Érvénytelen rendelés-válasz a szervertől');
+	}
+
+	const orderId = toPositiveIntOrNull(payload.orderId ?? payload.rendelesId ?? payload.id);
+	const message = String(payload.message ?? payload.uzenet ?? '').trim();
+
+	if (orderId == null && !message) {
+		throw new Error('Érvénytelen rendelés-válasz a szervertől');
+	}
+
+	return {
+		...payload,
+		orderId,
+		message,
+	};
+}
+
+function normalizeOrderItems(orderItems) {
+	const source = asArray(orderItems);
+	const normalized = [];
+	for (const rawItem of source) {
+		if (!rawItem || typeof rawItem !== 'object') continue;
+
+		const quantity = Number(rawItem.mennyiseg);
+		if (!Number.isInteger(quantity) || quantity <= 0) continue;
+
+		const item = { mennyiseg: quantity };
+		if (toPositiveIntOrNull(rawItem.keszetelId) != null) item.keszetelId = toPositiveIntOrNull(rawItem.keszetelId);
+		if (toPositiveIntOrNull(rawItem.koretId) != null) item.koretId = toPositiveIntOrNull(rawItem.koretId);
+		if (toPositiveIntOrNull(rawItem.uditoId) != null) item.uditoId = toPositiveIntOrNull(rawItem.uditoId);
+		if (toPositiveIntOrNull(rawItem.menuId) != null) item.menuId = toPositiveIntOrNull(rawItem.menuId);
+
+		const idFieldCount = ['keszetelId', 'koretId', 'uditoId', 'menuId'].filter((key) => key in item).length;
+		if (idFieldCount !== 1) continue;
+
+		normalized.push(item);
+	}
+
+	if (normalized.length === 0) {
+		throw new Error('A rendelés nem tartalmaz érvényes tételeket');
+	}
+
+	return normalized;
 }
 
 /**
@@ -274,7 +337,7 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 		if (!response.ok) {
 			if (response.status === 401) handleAuthFailure();
 
-			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
+			throw new Error(extractErrorMessage(body, fallbackErrorMessage));
 		}
 
 		const list = extractListFromBody(body, extraArrayKeys);
@@ -290,40 +353,6 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 			throw error;
 		}
 		throwKnownOrFallback(error, fallbackErrorMessage);
-	}
-}
-
-function readMenuEtags() {
-	try {
-		const raw = localStorage.getItem(MENU_ETAG_STORAGE_KEY);
-		if (!raw) return {};
-		const parsed = JSON.parse(raw);
-		return parsed && typeof parsed === 'object' ? parsed : {};
-	} catch {
-		return {};
-	}
-}
-
-function writeMenuEtag(key, value) {
-	if (!key || !value) return;
-	try {
-		const etags = readMenuEtags();
-		etags[key] = value;
-		localStorage.setItem(MENU_ETAG_STORAGE_KEY, JSON.stringify(etags));
-	} catch {
-		// ignore storage write failures
-	}
-}
-
-function deleteMenuEtag(key) {
-	if (!key) return;
-	try {
-		const etags = readMenuEtags();
-		if (!(key in etags)) return;
-		delete etags[key];
-		localStorage.setItem(MENU_ETAG_STORAGE_KEY, JSON.stringify(etags));
-	} catch {
-		// ignore storage write failures
 	}
 }
 
@@ -391,7 +420,7 @@ async function getListWithEtag(endpointPath, fallbackErrorMessage, extraArrayKey
 
 		if (!response.ok) {
 			if (response.status === 401) handleAuthFailure();
-			throw new Error(typeof body === 'string' ? body : fallbackErrorMessage);
+			throw new Error(extractErrorMessage(body, fallbackErrorMessage));
 		}
 
 		const nextEtag = response.headers.get('etag');
@@ -418,21 +447,76 @@ async function getListWithEtag(endpointPath, fallbackErrorMessage, extraArrayKey
 	}
 }
 
+const DATASET_CONFIG = Object.freeze({
+	categories: {
+		endpointPath: '/api/Kategoria',
+		fallbackErrorMessage: 'Kategóriák betöltése sikertelen',
+		extraArrayKeys: ['categories'],
+		etagKey: 'categories',
+	},
+	meals: {
+		endpointPath: '/api/Keszetelek',
+		fallbackErrorMessage: 'Készételek betöltése sikertelen',
+		extraArrayKeys: ['keszetelek', 'Keszetelek', 'meals'],
+		etagKey: 'meals',
+	},
+	sides: {
+		endpointPath: '/api/Koretek',
+		fallbackErrorMessage: 'Köretek betöltése sikertelen',
+		extraArrayKeys: ['koretek', 'Koretek', 'sides'],
+		etagKey: 'sides',
+	},
+	menus: {
+		endpointPath: '/api/Menuk',
+		fallbackErrorMessage: 'Menük betöltése sikertelen',
+		extraArrayKeys: ['menuk', 'Menuk', 'menus'],
+		etagKey: 'menus',
+	},
+	drinks: {
+		endpointPath: '/api/Uditok',
+		fallbackErrorMessage: 'Üdítők betöltése sikertelen',
+		extraArrayKeys: ['uditok', 'Uditok', 'drinks'],
+		etagKey: 'drinks',
+	},
+});
+
+function getDataset(datasetKey, conditional = false) {
+	const config = DATASET_CONFIG[datasetKey];
+	if (!config) {
+		throw new Error('Ismeretlen adatkészlet');
+	}
+
+	if (conditional) {
+		return getListWithEtag(
+			config.endpointPath,
+			config.fallbackErrorMessage,
+			config.extraArrayKeys,
+			config.etagKey,
+		);
+	}
+
+	return getList(
+		config.endpointPath,
+		config.fallbackErrorMessage,
+		config.extraArrayKeys,
+	);
+}
+
 export function getCategories() {
-	return getList('/api/Kategoria', 'Kategóriák betöltése sikertelen', ['categories']);
+	return getDataset('categories');
 }
 
 export function getCategoriesConditional() {
-	return getListWithEtag('/api/Kategoria', 'Kategóriák betöltése sikertelen', ['categories'], 'categories');
+	return getDataset('categories', true);
 }
 
 /** Keszetelek = Készételek */
 export function getMeals() {
-	return getList('/api/Keszetelek', 'Készételek betöltése sikertelen');
+	return getDataset('meals');
 }
 
 export function getMealsConditional() {
-	return getListWithEtag('/api/Keszetelek', 'Készételek betöltése sikertelen', ['keszetelek', 'Keszetelek', 'meals'], 'meals');
+	return getDataset('meals', true);
 }
 
 export function getMealById(id) {
@@ -441,27 +525,27 @@ export function getMealById(id) {
 
 /** Koretek = Köretek */
 export function getSides() {
-	return getList('/api/Koretek', 'Köretek betöltése sikertelen');
+	return getDataset('sides');
 }
 
 export function getSidesConditional() {
-	return getListWithEtag('/api/Koretek', 'Köretek betöltése sikertelen', ['koretek', 'Koretek', 'sides'], 'sides');
+	return getDataset('sides', true);
 }
 
 export function getMenus() {
-	return getList('/api/Menuk', 'Menük betöltése sikertelen', ['menuk', 'Menuk', 'menus']);
+	return getDataset('menus');
 }
 
 export function getMenusConditional() {
-	return getListWithEtag('/api/Menuk', 'Menük betöltése sikertelen', ['menuk', 'Menuk', 'menus'], 'menus');
+	return getDataset('menus', true);
 }
 
 export function getDrinks() {
-	return getList('/api/Uditok', 'Üdítők betöltése sikertelen', ['uditok', 'Uditok', 'drinks']);
+	return getDataset('drinks');
 }
 
 export function getDrinksConditional() {
-	return getListWithEtag('/api/Uditok', 'Üdítők betöltése sikertelen', ['uditok', 'Uditok', 'drinks'], 'drinks');
+	return getDataset('drinks', true);
 }
 
 // ---------------------------------------------------------------------------
@@ -481,17 +565,46 @@ export function getOwnOrders() {
 }
 
 export function updateOrderStatus(id, status) {
+	const normalizedId = String(id ?? '').trim();
 	const normalizedStatus = String(status ?? '').trim();
+	if (!normalizedId) {
+		throw new Error('Érvénytelen rendelés azonosító.');
+	}
 	if (!ORDER_STATUSES.includes(normalizedStatus)) {
 		throw new Error(`Érvénytelen státusz. Engedélyezett értékek: ${ORDER_STATUSES.join(', ')}`);
 	}
 
-	return mutate({
-		method: 'PUT',
-		endpoint: `/api/Rendelesek/${encodeURIComponent(String(id ?? ''))}`,
-		params: { status: normalizedStatus },
-		fallbackError: 'Rendelés státusz frissítése sikertelen',
-	});
+	const fallbackError = 'Rendelés státusz frissítése sikertelen';
+	const encodedId = encodeURIComponent(normalizedId);
+	const encodedStatus = encodeURIComponent(normalizedStatus);
+	const baseUrl = getApiBaseUrl();
+	const candidateUrls = [
+		`${baseUrl}/api/Rendelesek/${encodedId}?status=${encodedStatus}`,
+		`${baseUrl}/api/Rendelesek?id=${encodedId}&status=${encodedStatus}`,
+	];
+
+	const tryUpdate = async () => {
+		let lastError = null;
+
+		for (const url of candidateUrls) {
+			try {
+				const response = await abortableFetch(url, {
+					method: 'PUT',
+					headers: authHeaders(),
+				});
+				return await requestJsonOrThrow(response, fallbackError);
+			} catch (err) {
+				if (err instanceof Error && err.message === AUTH_EXPIRED_MESSAGE) {
+					throw err;
+				}
+				lastError = err;
+			}
+		}
+
+		throwKnownOrFallback(lastError, fallbackError);
+	};
+
+	return tryUpdate();
 }
 
 /**
@@ -503,13 +616,21 @@ export function updateOrderStatus(id, status) {
  * @returns {Promise<*>}
  */
 export async function placeOrder(felhasznaloId, orderItems) {
+	const normalizedUserId = toPositiveIntOrNull(felhasznaloId);
+	if (normalizedUserId == null) {
+		throw new Error('A felhasználó azonosító érvénytelen');
+	}
+
+	const normalizedOrderItems = normalizeOrderItems(orderItems);
+
 	const baseUrl = getApiBaseUrl();
 	const response = await abortableFetch(`${baseUrl}/api/Rendelesek`, {
 		method: 'POST',
 		headers: authHeaders({ 'Content-Type': 'application/json' }),
-		body: JSON.stringify({ felhasznaloId, items: orderItems }),
+		body: JSON.stringify({ felhasznaloId: normalizedUserId, items: normalizedOrderItems }),
 	});
-	return requestJsonOrThrow(response, 'Rendelés leadása sikertelen');
+	const body = await requestJsonOrThrow(response, 'Rendelés leadása sikertelen');
+	return normalizeOrderCreateResponse(body);
 }
 
 export function deleteOrder(id) {

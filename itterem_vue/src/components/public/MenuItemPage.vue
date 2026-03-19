@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { formatCurrency, getItemTypeLabel, readFirstText } from '../../utils.js';
+import { asArray, formatCurrency, getItemTypeLabel, readFirstText } from '../../utils.js';
 
 const props = defineProps({
 	itemData: {
@@ -33,7 +33,7 @@ const itemMeta = computed(() => props.itemData?.meta ?? '');
 const itemType = computed(() => props.itemData?.type ?? 'item');
 
 const itemIngredients = computed(() => {
-	const list = Array.isArray(props.itemData?.ingredients) ? props.itemData.ingredients : [];
+	const list = asArray(props.itemData?.ingredients);
 	return list.map((v) => String(v ?? '').trim()).filter(Boolean);
 });
 
@@ -51,7 +51,7 @@ const isMenuType = computed(() => itemType.value === 'menus' || itemType.value =
 const menuBreakdown = computed(() => {
 	if (!isMenuType.value) return [];
 
-	const predefinedBreakdown = Array.isArray(props.itemData?.menuBreakdown) ? props.itemData.menuBreakdown : [];
+	const predefinedBreakdown = asArray(props.itemData?.menuBreakdown);
 	if (predefinedBreakdown.length > 0) {
 		return predefinedBreakdown.map((entry) => ({
 			key: String(entry?.key ?? ''),

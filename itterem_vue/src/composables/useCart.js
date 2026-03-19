@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue';
-import { getItemTypeLabel, getOrderItemIdKey, toImageSrc } from '../utils.js';
+import { asArray, getItemTypeLabel, getOrderItemIdKey, toBoundedPositiveInt, toImageSrc } from '../utils.js';
 import { readStorageText, writeStorageText } from '../storage-utils.js';
 import { useMenuData } from './useMenuData.js';
 
@@ -7,7 +7,7 @@ import { useMenuData } from './useMenuData.js';
 // Module-level singleton so every component shares the same cart.
 // ---------------------------------------------------------------------------
 
-import { CART_STORAGE_KEY } from '../constants.js';
+import { CART_STORAGE_KEY, MAX_ORDER_QUANTITY } from '../constants.js';
 
 const STORAGE_KEY = CART_STORAGE_KEY;
 const SESSION_FALLBACK_KEY = `${STORAGE_KEY}:session`;
@@ -33,14 +33,22 @@ function getMenuData() {
 // ---------------------------------------------------------------------------
 
 function toSerializableItems(value) {
-	const list = Array.isArray(value) ? value : [];
+	const list = asArray(value);
 	return list
 		.map((item) => ({
 			type: String(item?.type ?? ''),
 			id: item?.id,
-			quantity: Number(item?.quantity ?? 0) || 0,
+			quantity: sanitizeQuantity(item?.quantity),
 		}))
 		.filter((item) => item.type && item.id != null && item.quantity > 0);
+}
+
+function sanitizeQuantity(value) {
+	return toBoundedPositiveInt(value, {
+		min: 1,
+		max: MAX_ORDER_QUANTITY,
+		fallback: 0,
+	});
 }
 
 /**
@@ -74,7 +82,7 @@ function parseStoredItems(raw) {
 				.map((item) => ({
 					type: String(item?.type ?? ''),
 					id: item?.id,
-					quantity: Number(item?.quantity ?? 0) || 0,
+					quantity: sanitizeQuantity(item?.quantity),
 					// Accept legacy fields if present so existing carts still work.
 					name: item?.name,
 					price: item?.price,
@@ -192,7 +200,7 @@ export function useCart() {
 		const existingIndex = findItemIndex(list, type, id);
 		if (existingIndex !== -1) {
 			const existing = list[existingIndex];
-			existing.quantity += 1;
+			existing.quantity = Math.min(MAX_ORDER_QUANTITY, sanitizeQuantity(existing.quantity) + 1);
 			if (!String(existing.typeLabel ?? '').trim()) {
 				existing.typeLabel = typeLabel;
 			}
@@ -204,7 +212,7 @@ export function useCart() {
 				name: String(itemData?.name ?? ''),
 				price: itemData?.price ?? null,
 				kep: rawKep,
-				quantity: 1,
+				quantity: sanitizeQuantity(1),
 			});
 		}
 		saveToStorage(list);
@@ -217,8 +225,9 @@ export function useCart() {
 		const list = items.value;
 		const idx = findItemIndex(list, type, id);
 		if (idx === -1) return;
-		if (list[idx].quantity > 1) {
-			list[idx].quantity -= 1;
+		const currentQty = sanitizeQuantity(list[idx].quantity);
+		if (currentQty > 1) {
+			list[idx].quantity = currentQty - 1;
 		} else {
 			list.splice(idx, 1);
 		}
@@ -256,7 +265,9 @@ export function useCart() {
 				console.warn(`[Cart] Unknown item type "${item.type}" — skipped from order payload.`);
 				continue;
 			}
-			result.push({ [idKey]: item.id, mennyiseg: item.quantity });
+			const quantity = sanitizeQuantity(item.quantity);
+			if (quantity <= 0) continue;
+			result.push({ [idKey]: item.id, mennyiseg: quantity });
 		}
 		return result;
 	}

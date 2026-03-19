@@ -1,3 +1,5 @@
+import { asArray } from './utils.js';
+
 export function readText(value) {
 	return String(value ?? '').trim();
 }
@@ -24,7 +26,7 @@ export function normalizeOrderDto(dto) {
 	const id = dto?.id ?? dto?.Id ?? null;
 	if (id == null) return null;
 	const entriesRaw = dto?.rendelesElemeks ?? dto?.RendelesElemeks ?? dto?.rendelesElemek ?? dto?.RendelesElemek ?? [];
-	const rendelesElemeks = (Array.isArray(entriesRaw) ? entriesRaw : [])
+	const rendelesElemeks = asArray(entriesRaw)
 		.map((e) => normalizeOrderEntryDto(e))
 		.filter(Boolean);
 

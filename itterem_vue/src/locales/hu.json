@@ -81,6 +81,7 @@
   "quickBuy": {
     "title": "Gyors rendeles",
     "loginRequired": "A rendeleshez be kell jelentkezni.",
+    "invalidItem": "Ez a tetel jelenleg nem rendelheto.",
     "orderPlacedTitle": "Rendeles leadva!",
     "orderPlacedFallback": "Koszonjuk a rendelest.",
     "orderPlaced": "Rendeles leadva.",
@@ -95,6 +96,7 @@
     "title": "Kosar ({count})",
     "empty": "A kosar ures.",
     "loginRequired": "A rendeleshez be kell jelentkezni.",
+    "invalidItems": "A kosar ervenytelen tetelt tartalmaz. Frissits, majd probald ujra.",
     "orderPlacedTitle": "Rendeles leadva!",
     "orderPlacedFallback": "Koszonjuk a rendelest.",
     "orderPlaced": "Rendeles leadva.",

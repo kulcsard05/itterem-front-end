@@ -3,6 +3,8 @@
  * Reduces duplicated validation and payload-building logic across entities.
  */
 
+import { asArray } from './utils.js';
+
 // ---------------------------------------------------------------------------
 // Validators — return an error string or null (valid).
 // ---------------------------------------------------------------------------
@@ -34,7 +36,7 @@ export function requiredSelect(form, key, label) {
 
 /** Require at least one non-empty select value among multiple keys. */
 export function requiredAtLeastOneSelect(form, keys, label) {
-	const keyList = Array.isArray(keys) ? keys : [];
+	const keyList = asArray(keys);
 	const hasAny = keyList.some((key) => String(form?.[key] ?? '').trim() !== '');
 	const safeLabel = String(label ?? 'Mezők').trim() || 'Mezők';
 	if (!hasAny) return `${safeLabel} közül legalább egy kötelező.`;
@@ -146,7 +148,7 @@ export function buildSelectOptions(
 	list,
 	{ valueKey = 'id', labelKey = 'nev', valueCast = (v) => String(v) } = {},
 ) {
-	const items = Array.isArray(list) ? list : [];
+	const items = asArray(list);
 	return items
 		.map((item) => {
 			const value = item?.[valueKey];

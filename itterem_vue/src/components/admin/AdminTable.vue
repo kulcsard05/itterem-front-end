@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
 import { ORDER_STATUS_CLASSES } from '../../constants.js';
+import { normalizeId } from '../../utils.js';
 
 const props = defineProps({
 	columns: { type: Array, required: true },
@@ -31,10 +32,6 @@ watchEffect(() => {
 		selectAllCheckbox.value.indeterminate = props.someSelected && !props.allSelected;
 	}
 });
-
-function normalizeId(value) {
-	return String(value ?? '').trim();
-}
 
 function isItemSelected(item) {
 	return selectedIdSet.value.has(normalizeId(item?.id));

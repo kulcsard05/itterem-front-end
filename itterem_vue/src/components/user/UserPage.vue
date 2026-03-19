@@ -5,7 +5,7 @@ import Login from './Login.vue';
 import Register from './Register.vue';
 import { getOwnOrders, updatePhone } from '../../api.js';
 import { useSignalR } from '../../composables/useSignalR.js';
-import { formatDateTime, formatOrderItems, getOrderStatusClasses, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../utils.js';
+import { asArray, formatDateTime, formatOrderItems, getOrderStatusClasses, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../utils.js';
 import {
 	DONE_NOTICE_TIMEOUT_MS,
 	ROLE_ADMIN,
@@ -62,20 +62,24 @@ function handleOrderUpdated(orderId, _message) {
 	if (!normalizedId) return;
 
 	// Check if this order belongs to us.
-	const list = Array.isArray(ownOrders.value) ? ownOrders.value : [];
+	const list = asArray(ownOrders.value);
 	const found = list.find((o) => String(o?.id ?? '').trim() === normalizedId);
 	if (!found) return;
 
 	// Refresh own orders to get the actual new status.
-	loadOwnOrders().then(() => {
-		const updated = (Array.isArray(ownOrders.value) ? ownOrders.value : []).find(
-			(o) => String(o?.id ?? '').trim() === normalizedId,
-		);
-		const status = String(updated?.statusz ?? '').trim();
-		if (status === 'Átvehető' || status === 'Átvett') {
-			showDoneNotice(t('account.doneNotice', { id: normalizedId, status: getOrderStatusLabel(status) }));
-		}
-	});
+	void loadOwnOrders()
+		.then(() => {
+			const updated = asArray(ownOrders.value).find(
+				(o) => String(o?.id ?? '').trim() === normalizedId,
+			);
+			const status = String(updated?.statusz ?? '').trim();
+			if (status === 'Átvehető' || status === 'Átvett') {
+				showDoneNotice(t('account.doneNotice', { id: normalizedId, status: getOrderStatusLabel(status) }));
+			}
+		})
+		.catch(() => {
+			// loadOwnOrders already updates user-facing error state.
+		});
 }
 
 function getPhoneFromAuth(auth) {
@@ -152,7 +156,7 @@ function toggleForm() {
 // formatDateTime / formatOrderItems moved to utils.js
 
 const displayedOrders = computed(() =>
-	[...(Array.isArray(ownOrders.value) ? ownOrders.value : [])].sort(sortOrdersByDateDesc),
+	[...asArray(ownOrders.value)].sort(sortOrdersByDateDesc),
 );
 
 async function loadOwnOrders() {
@@ -167,7 +171,7 @@ async function loadOwnOrders() {
 	ordersLoading.value = true;
 	try {
 		const orders = await getOwnOrders();
-		ownOrders.value = Array.isArray(orders) ? orders : [];
+		ownOrders.value = asArray(orders);
 	} catch (err) {
 		ownOrders.value = [];
 		ordersError.value = err?.message || t('account.ordersFailed');
@@ -183,10 +187,10 @@ watch(
 			unsubOrderUpdated();
 			unsubOrderUpdated = null;
 		}
-		loadOwnOrders();
+		void loadOwnOrders();
 		if (newToken && !isAdminAccount.value) {
 			unsubOrderUpdated = on('OrderUpdated', handleOrderUpdated);
-			start();
+			void start();
 		}
 	},
 	{ immediate: true },

@@ -1,12 +1,12 @@
 import { ref } from 'vue';
 import {
 	MENU_CACHE_STORAGE_KEY,
-	MENU_ETAG_STORAGE_KEY,
 	MENU_IMAGES_STORAGE_KEY,
 } from '../constants.js';
-import { findById, getItemTypeLabel } from '../utils.js';
+import { asArray, findById, getItemTypeLabel } from '../utils.js';
 import { readStorageJson, writeStorageJson } from '../storage-utils.js';
 import { persistInlineImagesForDatasets, toPersistentImageRef } from './useMenuImageCache.js';
+import { dropMenuEtags } from '../storage/menu-etags.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton – every component shares the same menu data.
@@ -77,7 +77,7 @@ let didCleanupLegacyCaches = false;
 // ---------------------------------------------------------------------------
 
 function toDatasetFingerprint(value) {
-	const list = Array.isArray(value) ? value : [];
+	const list = asArray(value);
 	if (list.length === 0) return '0';
 	// Lightweight fingerprint: item count + first/last item IDs.
 	const first = list[0]?.id ?? '';
@@ -86,7 +86,7 @@ function toDatasetFingerprint(value) {
 }
 
 function setDatasetIfChanged(key, targetRef, value) {
-	const nextList = Array.isArray(value) ? value : [];
+	const nextList = asArray(value);
 	const nextFingerprint = toDatasetFingerprint(nextList);
 	if (menuFingerprints.value[key] === nextFingerprint) return false;
 	targetRef.value = nextList;
@@ -201,13 +201,17 @@ async function saveMenuCache() {
 	cleanupLegacyDatasetCachesOnce();
 
 	// Persist inline image payloads to Cache API before serializing pointers.
-	await persistInlineImagesForDatasets(
-		categories.value,
-		meals.value,
-		sides.value,
-		menus.value,
-		drinks.value,
-	);
+	try {
+		await persistInlineImagesForDatasets(
+			categories.value,
+			meals.value,
+			sides.value,
+			menus.value,
+			drinks.value,
+		);
+	} catch {
+		// Continue with localStorage payload write even if image cache persistence fails.
+	}
 
 	const datasets = {
 		categories: categories.value.map(minimiseCategory),
@@ -260,38 +264,6 @@ function hasArrayForAnyKey(payload, keys) {
 		if (Array.isArray(payload?.[key])) return true;
 	}
 	return false;
-}
-
-function readMenuEtags() {
-	try {
-		const raw = localStorage.getItem(MENU_ETAG_STORAGE_KEY);
-		if (!raw) return {};
-		const parsed = JSON.parse(raw);
-		return parsed && typeof parsed === 'object' ? parsed : {};
-	} catch {
-		return {};
-	}
-}
-
-function writeMenuEtags(etags) {
-	try {
-		localStorage.setItem(MENU_ETAG_STORAGE_KEY, JSON.stringify(etags || {}));
-	} catch {
-		// ignore storage failures
-	}
-}
-
-function dropMenuEtags(keys) {
-	if (!Array.isArray(keys) || keys.length === 0) return;
-	const etags = readMenuEtags();
-	let changed = false;
-	for (const key of keys) {
-		if (key in etags) {
-			delete etags[key];
-			changed = true;
-		}
-	}
-	if (changed) writeMenuEtags(etags);
 }
 
 function readDatasetFromStorage(datasetKey) {

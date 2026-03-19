@@ -20,6 +20,7 @@ export const SIGNALR_RECONNECT_DELAYS_MS = Object.freeze([0, 2000, 5000, 10000, 
 const connectionState = ref(SIGNALR_CONNECTION_STATE.DISCONNECTED);
 
 let connection = null;
+let startInFlight = null;
 
 // Registered callbacks per event name.
 const listenersByEvent = new Map();
@@ -101,6 +102,8 @@ function bindRegisteredEvents(conn) {
 }
 
 async function start() {
+	if (startInFlight) return startInFlight;
+
 	const { auth } = useAuth();
 	const token = auth.value?.token;
 	if (!token) return;
@@ -108,18 +111,26 @@ async function start() {
 	// Already connected with a live connection — nothing to do.
 	if (connection && connection.state === HubConnectionState.Connected) return;
 
-	await stop();
+	startInFlight = (async () => {
+		await stop();
 
-	connection = buildConnection(token);
-	bindConnectionLifecycle(connection);
-	bindRegisteredEvents(connection);
+		connection = buildConnection(token);
+		bindConnectionLifecycle(connection);
+		bindRegisteredEvents(connection);
 
-	connectionState.value = SIGNALR_CONNECTION_STATE.CONNECTING;
+		connectionState.value = SIGNALR_CONNECTION_STATE.CONNECTING;
+		try {
+			await connection.start();
+			connectionState.value = SIGNALR_CONNECTION_STATE.CONNECTED;
+		} catch {
+			connectionState.value = SIGNALR_CONNECTION_STATE.DISCONNECTED;
+		}
+	})();
+
 	try {
-		await connection.start();
-		connectionState.value = SIGNALR_CONNECTION_STATE.CONNECTED;
-	} catch {
-		connectionState.value = SIGNALR_CONNECTION_STATE.DISCONNECTED;
+		await startInFlight;
+	} finally {
+		startInFlight = null;
 	}
 }
 
@@ -171,9 +182,9 @@ function ensureAuthWatcher() {
 		() => auth.value?.token,
 		(newToken, oldToken) => {
 			if (newToken && newToken !== oldToken) {
-				start();
+				void start();
 			} else if (!newToken) {
-				stop();
+				void stop();
 			}
 		},
 	);
