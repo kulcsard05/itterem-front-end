@@ -25,6 +25,7 @@ import {
 import {
 	AUTH_EXPIRED_EVENT,
 	POLL_INTERVAL_MS,
+	ENABLE_EMPLOYEE_ORDER_POLLING,
 	PANEL_PREFS_KEY,
 	PANEL_MIN_WIDTH,
 	PANEL_MIN_HEIGHT,
@@ -227,6 +228,7 @@ useEmployeeOrdersBoot({
 	isDragCooldown,
 	isDraggingRef: isDraggingOrder,
 	connectionState,
+	enableOrderPolling: ENABLE_EMPLOYEE_ORDER_POLLING,
 	pollIntervalMs: POLL_INTERVAL_MS,
 	authExpiredEvent: AUTH_EXPIRED_EVENT,
 });

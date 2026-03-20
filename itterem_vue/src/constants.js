@@ -43,6 +43,7 @@ export const SIGNALR_HUB_PATH = '/orderHub';
 // ── Timeouts ────────────────────────────────────────────────────
 export const ORDER_TIMEOUT_MS = 15_000;
 export const POLL_INTERVAL_MS = 15_000;
+export const ENABLE_EMPLOYEE_ORDER_POLLING = false;
 export const DONE_NOTICE_TIMEOUT_MS = 8000;
 
 // ── Panel defaults ──────────────────────────────────────────────
