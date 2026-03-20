@@ -24,10 +24,6 @@ function isWindows() {
 	return process.platform === 'win32';
 }
 
-function getNpmCommand() {
-	return isWindows() ? 'npm.cmd' : 'npm';
-}
-
 function parseDotEnv(content) {
 	const result = {};
 	for (const rawLine of content.split(/\r?\n/)) {
@@ -195,13 +191,15 @@ async function cleanupAndExit(exitCode = 0) {
 }
 
 function launchVite(targetUrl) {
-	const npmCommand = getNpmCommand();
 	const npmArgs = ['run', 'dev:raw'];
 	if (viteCliArgs.length > 0) {
 		npmArgs.push('--', ...viteCliArgs);
 	}
 
-	viteProcess = spawn(npmCommand, npmArgs, {
+	const command = isWindows() ? 'cmd.exe' : 'npm';
+	const args = isWindows() ? ['/d', '/s', '/c', `npm ${npmArgs.join(' ')}`] : npmArgs;
+
+	viteProcess = spawn(command, args, {
 		cwd: projectRoot,
 		stdio: 'inherit',
 		env: {
