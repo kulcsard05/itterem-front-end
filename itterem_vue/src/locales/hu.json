@@ -173,7 +173,7 @@
     "realtimeUpdates": "AZONNALI FRISSITES",
     "status": "Statusz:",
     "items": "Tetelek: {items}",
-    "doneNotice": "A rendelesed elkeszult: #{id} ({status})"
+    "doneNotice": "A rendelesed statusza frissult: #{id} ({status})"
   },
   "orderStatuses": {
     "pending": "Fuggoben",

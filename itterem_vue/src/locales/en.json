@@ -173,7 +173,7 @@
     "realtimeUpdates": "REAL-TIME UPDATES",
     "status": "Status:",
     "items": "Items: {items}",
-    "doneNotice": "Your order is ready: #{id} ({status})"
+    "doneNotice": "Your order status was updated: #{id} ({status})"
   },
   "orderStatuses": {
     "pending": "Pending",

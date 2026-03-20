@@ -606,6 +606,7 @@ watch(activeTab, () => {
 					v-if="activeTab === tab.key"
 					:columns="entityConfigs[tab.entityType].columns"
 					:items="tabItemsMap[tab.key] ?? []"
+					:loading="isLoading"
 					:title="entityConfigs[tab.entityType].tableTitle"
 					:add-label="entityConfigs[tab.entityType].addLabel"
 					:show-create="entityConfigs[tab.entityType].showCreate ?? true"

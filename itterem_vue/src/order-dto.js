@@ -50,3 +50,26 @@ export function extractOrderStatusFromPayload(payload) {
 		payload?.statusz ?? payload?.Statusz ?? payload?.status ?? payload?.Status ?? payload?.order?.statusz ?? payload?.order?.Statusz ?? payload?.order?.status ?? payload?.order?.Status,
 	);
 }
+
+export function extractOrderUpdateEvent(args = []) {
+	const [firstArg, secondArg, thirdArg] = asArray(args);
+	const payload = firstArg && typeof firstArg === 'object' ? firstArg : null;
+
+	const orderId = payload
+		? extractOrderIdFromPayload(payload)
+		: firstArg;
+
+	const status = payload
+		? extractOrderStatusFromPayload(payload)
+		: readText(secondArg);
+
+	const message = payload
+		? readText(payload?.message ?? payload?.Message ?? payload?.uzenet ?? payload?.Uzenet)
+		: readText(thirdArg);
+
+	return {
+		orderId,
+		status,
+		message,
+	};
+}

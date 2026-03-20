@@ -5,6 +5,7 @@ import Login from './Login.vue';
 import Register from './Register.vue';
 import { getOwnOrders, updatePhone } from '../../api.js';
 import { useSignalR } from '../../composables/useSignalR.js';
+import { extractOrderUpdateEvent } from '../../order-dto.js';
 import { asArray, formatDateTime, formatOrderItems, getOrderStatusClasses, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../utils.js';
 import {
 	DONE_NOTICE_TIMEOUT_MS,
@@ -57,7 +58,8 @@ function showDoneNotice(message) {
 	}, DONE_NOTICE_TIMEOUT_MS);
 }
 
-function handleOrderUpdated(orderId, _message) {
+function handleOrderUpdated(firstArg, secondArg, thirdArg) {
+	const { orderId, status } = extractOrderUpdateEvent([firstArg, secondArg, thirdArg]);
 	const normalizedId = String(orderId ?? '').trim();
 	if (!normalizedId) return;
 
@@ -66,6 +68,21 @@ function handleOrderUpdated(orderId, _message) {
 	const found = list.find((o) => String(o?.id ?? '').trim() === normalizedId);
 	if (!found) return;
 
+	const resolvedStatus = String(status ?? '').trim();
+	if (resolvedStatus) {
+		ownOrders.value = list.map((order) => (
+			String(order?.id ?? '').trim() === normalizedId
+				? { ...order, statusz: resolvedStatus }
+				: order
+		));
+		showDoneNotice(t('account.doneNotice', {
+			id: normalizedId,
+			status: getOrderStatusLabel(resolvedStatus),
+		}));
+		void loadOwnOrders();
+		return;
+	}
+
 	// Refresh own orders to get the actual new status.
 	void loadOwnOrders()
 		.then(() => {
@@ -73,7 +90,7 @@ function handleOrderUpdated(orderId, _message) {
 				(o) => String(o?.id ?? '').trim() === normalizedId,
 			);
 			const status = String(updated?.statusz ?? '').trim();
-			if (status === 'Átvehető' || status === 'Átvett') {
+			if (status) {
 				showDoneNotice(t('account.doneNotice', { id: normalizedId, status: getOrderStatusLabel(status) }));
 			}
 		})

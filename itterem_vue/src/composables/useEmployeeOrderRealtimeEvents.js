@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { extractOrderUpdateEvent } from '../order-dto.js';
 
 const STATUS_DONE = 'Átvett';
 
@@ -64,25 +65,12 @@ export function useEmployeeOrderRealtimeEvents({
 		void loadOrders();
 	}
 
-	function handleOrderUpdated(orderId, status) {
-		const isObjectPayload = orderId && typeof orderId === 'object';
-		const payload = isObjectPayload ? orderId : null;
-		const resolvedOrderId = payload
-			? payload?.id ?? payload?.Id ?? payload?.orderId ?? payload?.OrderId ?? payload?.rendelesId ?? payload?.RendelesId ?? payload?.order?.id ?? payload?.order?.Id
-			: orderId;
-		const idKey = toOrderId(resolvedOrderId);
+	function handleOrderUpdated(firstArg, secondArg, thirdArg) {
+		const { orderId, status } = extractOrderUpdateEvent([firstArg, secondArg, thirdArg]);
+		const idKey = toOrderId(orderId);
 		if (!idKey) return;
 
-		if (isDraggingOrder.value || savingStatus.value || isDragCooldown()) {
-			pendingRefresh.value = true;
-			schedulePendingRefreshFlush();
-			return;
-		}
-
-		const resolvedStatus = payload
-			? payload?.statusz ?? payload?.Statusz ?? payload?.status ?? payload?.Status ?? payload?.order?.statusz ?? payload?.order?.Statusz ?? payload?.order?.status ?? payload?.order?.Status
-			: status;
-		const newStatus = readText(resolvedStatus);
+		const newStatus = readText(status);
 		if (!newStatus) {
 			void loadOrders();
 			return;

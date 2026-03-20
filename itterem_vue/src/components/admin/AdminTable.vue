@@ -6,6 +6,7 @@ import { normalizeId } from '../../utils.js';
 const props = defineProps({
 	columns: { type: Array, required: true },
 	items: { type: Array, required: true },
+	loading: { type: Boolean, required: false, default: false },
 	title: { type: String, required: true },
 	addLabel: { type: String, required: false, default: '' },
 	showCreate: { type: Boolean, required: false, default: true },
@@ -221,7 +222,7 @@ onBeforeUnmount(() => {
 
 					<!-- Empty state -->
 					<tr v-if="items.length === 0">
-						<td :colspan="columns.length + (hasActions ? 1 : 0) + (selectionEnabled ? 1 : 0)" class="p-8 text-center text-gray-400 text-sm">Nincs adat.</td>
+						<td :colspan="columns.length + (hasActions ? 1 : 0) + (selectionEnabled ? 1 : 0)" class="p-8 text-center text-gray-400 text-sm">{{ loading ? 'Betöltés...' : 'Nincs adat.' }}</td>
 					</tr>
 				</tbody>
 			</table>
