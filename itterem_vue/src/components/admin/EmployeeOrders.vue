@@ -2,9 +2,11 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../api.js';
+import { useEmployeeOrderDisplay } from '../../composables/useEmployeeOrderDisplay.js';
 import { useSignalR } from '../../composables/useSignalR.js';
 import { useEmployeeOrdersBoot } from '../../composables/useEmployeeOrdersBoot.js';
 import { useEmployeeOrderBoardColumns } from '../../composables/useEmployeeOrderBoardColumns.js';
+import { useEmployeeOrderRealtimeEvents } from '../../composables/useEmployeeOrderRealtimeEvents.js';
 import { useFloatingPanel } from '../../composables/useFloatingPanel.js';
 import { useOrderIngredientsLookup } from '../../composables/useOrderIngredientsLookup.js';
 import { toOrderId, useOrderColumns } from '../../composables/useOrderColumns.js';
@@ -31,10 +33,6 @@ import {
 	PANEL_FONT_MIN,
 	PANEL_FONT_MAX,
 } from '../../constants.js';
-
-const props = defineProps({
-	auth: { type: Object, default: null },
-});
 
 const emit = defineEmits(['logout']);
 
@@ -94,114 +92,7 @@ const { connectionState, SIGNALR_CONNECTION_STATE } = useSignalR();
 // DEV helper: make it obvious that data arrived via SignalR.
 const showRealtimeDebug = import.meta.env.DEV;
 
-const pendingRefresh = ref(false);
 const queuedOrdersReload = ref(false);
-const isDraggingOrder = ref(false);
-const STATUS_DONE = 'Átvett';
-let pendingRefreshTimer = null;
-
-function clearPendingRefreshTimer() {
-	if (pendingRefreshTimer != null) {
-		window.clearTimeout(pendingRefreshTimer);
-		pendingRefreshTimer = null;
-	}
-}
-
-function schedulePendingRefreshFlush() {
-	clearPendingRefreshTimer();
-	if (!pendingRefresh.value) return;
-
-	const needsDelay = isDraggingOrder.value || savingStatus.value || isDragCooldown();
-	pendingRefreshTimer = window.setTimeout(async () => {
-		pendingRefreshTimer = null;
-		if (!pendingRefresh.value) return;
-		if (isDraggingOrder.value || savingStatus.value || isDragCooldown()) {
-			schedulePendingRefreshFlush();
-			return;
-		}
-
-		pendingRefresh.value = false;
-		await loadOrders();
-	}, needsDelay ? 300 : 0);
-}
-
-function onOrderDragStart() {
-	isDraggingOrder.value = true;
-}
-
-function onOrderDragEnd() {
-	isDraggingOrder.value = false;
-	if (pendingRefresh.value) schedulePendingRefreshFlush();
-}
-
-function isOrderSelected(orderId) {
-	return toOrderId(selectedOrderId.value) === toOrderId(orderId);
-}
-
-function getOrderCardItemCount(order) {
-	return asArray(order?.rendelesElemeks).length;
-}
-
-function getOrderElapsedLabel(order) {
-	return formatElapsed(order?.datum);
-}
-
-function getColumnCount(columnKey) {
-	return getListRef(columnKey).value.length;
-}
-
-const realtimeIndicatorClass = computed(() => {
-	if (connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTED) return 'bg-green-500';
-	if (
-		connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTING
-		|| connectionState.value === SIGNALR_CONNECTION_STATE.RECONNECTING
-	) {
-		return 'bg-yellow-500';
-	}
-	return 'bg-red-500';
-});
-
-function handleOrderPlaced(payload) {
-	if (isDraggingOrder.value) {
-		pendingRefresh.value = true;
-		schedulePendingRefreshFlush();
-		return;
-	}
-
-	const normalized = normalizeOrderDto(payload);
-	if (normalized) return upsertOrderIntoColumns(normalized);
-	void loadOrders();
-}
-
-function handleOrderUpdated(orderId, status, _message) {
-	const idKey = toOrderId(orderId);
-	if (!idKey) return;
-
-	if (isDraggingOrder.value || savingStatus.value || isDragCooldown()) {
-		pendingRefresh.value = true;
-		schedulePendingRefreshFlush();
-		return;
-	}
-
-	const newStatus = readText(status);
-	if (!newStatus) {
-		void loadOrders();
-		return;
-	}
-
-	// Use the status from SignalR directly — no need for a full reload.
-	const location = findOrderLocation(idKey);
-	if (location?.order) {
-		upsertOrderIntoColumns({ ...location.order, statusz: newStatus });
-		return;
-	}
-
-	if (newStatus !== STATUS_DONE) {
-		// Order not in our lists yet — fetch all to pick it up.
-		void loadOrders();
-	}
-}
-
 const { columnOpen, columns, toggleColumn } = useEmployeeOrderBoardColumns();
 
 const { getOrderEntryIngredients } = useOrderIngredientsLookup({
@@ -273,24 +164,56 @@ function closePanel() {
 	selectedOrderSnapshot.value = null;
 }
 
-function formatElapsed(value) {
-	const d = new Date(value);
-	const ms = d instanceof Date ? d.getTime() : NaN;
-	if (!Number.isFinite(ms)) return '-';
-	const diff = Math.max(0, Date.now() - ms);
-	const totalMin = Math.floor(diff / 60000);
-	const hours = Math.floor(totalMin / 60);
-	const minutes = totalMin % 60;
-	if (hours <= 0) return `${minutes}p`;
-	return `${hours}ó ${minutes}p`;
-}
-
 const { savingStatus, onDraggableChange, isDragCooldown } = useOrderStatusDnD({
 	persistStatus: updateOrderStatus,
 	reloadOrders: loadOrders,
-	pendingRefreshRef: pendingRefresh,
 	ensureOrderInColumn,
 	onError: (msg) => { error.value = msg; },
+});
+
+const {
+	pendingRefresh,
+	isDraggingOrder,
+	clearPendingRefreshTimer,
+	schedulePendingRefreshFlush,
+	onOrderDragStart,
+	onOrderDragEnd,
+	handleOrderPlaced,
+	handleOrderUpdated,
+} = useEmployeeOrderRealtimeEvents({
+	loadOrders,
+	normalizeOrderDto,
+	upsertOrderIntoColumns,
+	findOrderLocation,
+	readText,
+	toOrderId,
+	savingStatus,
+	isDragCooldown,
+});
+
+const {
+	formatElapsed,
+	isOrderSelected,
+	getOrderCardItemCount,
+	getOrderElapsedLabel,
+	getColumnCount,
+	realtimeIndicatorClass,
+} = useEmployeeOrderDisplay({
+	connectionState,
+	SIGNALR_CONNECTION_STATE,
+	selectedOrderId,
+	toOrderId,
+	getListRef,
+});
+
+watch(pendingRefresh, () => {
+	if (pendingRefresh.value) schedulePendingRefreshFlush();
+});
+
+watch(savingStatus, () => {
+	if (pendingRefresh.value && !savingStatus.value) {
+		schedulePendingRefreshFlush();
+	}
 });
 
 useEmployeeOrdersBoot({
@@ -306,7 +229,6 @@ useEmployeeOrdersBoot({
 	connectionState,
 	pollIntervalMs: POLL_INTERVAL_MS,
 	authExpiredEvent: AUTH_EXPIRED_EVENT,
-	watchToken: () => props.auth?.token,
 });
 
 watch(

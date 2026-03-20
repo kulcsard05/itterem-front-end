@@ -1,24 +1,18 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
-import {
-	getCategories,
-	getDrinks,
-	getIngredients,
-	getMeals,
-	getMealById,
-	getMenus,
-	getOrders,
-	getSides,
-} from '../../api.js';
-import AdminTable from './AdminTable.vue';
-import AdminEditModal from './AdminEditModal.vue';
-import AdminBulkEditModal from './AdminBulkEditModal.vue';
-import ConfirmModal from './ConfirmModal.vue';
-import { ORDER_STATUSES } from '../../constants.js';
-import { applyBulkPriceAdjustment, parseBulkAdjustmentValue } from '../../admin-helpers.js';
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
+import { getMealById } from '../../api.js';
+import { useAdminBulkActionEngine } from '../../composables/useAdminBulkActionEngine.js';
+import { useAdminBulkFailurePrompt } from '../../composables/useAdminBulkFailurePrompt.js';
+import { useAdminDataLoader } from '../../composables/useAdminDataLoader.js';
 import { useAdminEntityConfigs } from '../../composables/useAdminEntityConfigs.js';
+import { useAdminSelectionState } from '../../composables/useAdminSelectionState.js';
 import { useObjectUrlPreview } from '../../composables/useObjectUrlPreview.js';
-import { asArray, getEntityNameById, hasValidEntityId, normalizeId, sortOrdersByDateDesc } from '../../utils.js';
+import { asArray, getEntityNameById, hasValidEntityId, sortOrdersByDateDesc } from '../../utils.js';
+
+const AdminTable = defineAsyncComponent(() => import('./AdminTable.vue'));
+const AdminEditModal = defineAsyncComponent(() => import('./AdminEditModal.vue'));
+const AdminBulkEditModal = defineAsyncComponent(() => import('./AdminBulkEditModal.vue'));
+const ConfirmModal = defineAsyncComponent(() => import('./ConfirmModal.vue'));
 
 // ── Events ──────────────────────────────────────────────────────
 const emit = defineEmits(['back', 'logout']);
@@ -49,8 +43,6 @@ const showConfirmModal = ref(false);
 const deleteTarget = ref(null);
 const deleting = ref(false);
 
-const selectedIds = ref([]);
-
 const showBulkEditModal = ref(false);
 const bulkForm = ref({});
 const bulkError = ref('');
@@ -58,11 +50,6 @@ const bulkSaving = ref(false);
 
 const showBulkDeleteConfirm = ref(false);
 const bulkDeleteLoading = ref(false);
-
-const showBulkFailureModal = ref(false);
-const bulkFailureError = ref('');
-const bulkFailureMessage = ref('');
-let bulkFailureResolver = null;
 
 // ── Helpers ─────────────────────────────────────────────────────
 function clearFeedback() {
@@ -83,6 +70,18 @@ function formatEntityItemLabel(item) {
 		) || '?'
 	);
 }
+
+const {
+	showBulkFailureModal,
+	bulkFailureError,
+	bulkFailureMessage,
+	clearBulkFailurePrompt,
+	confirmBulkFailureContinue,
+	cancelBulkFailureContinue,
+	promptBulkFailure,
+} = useAdminBulkFailurePrompt({
+	formatEntityItemLabel,
+});
 
 // ── Image Preview ───────────────────────────────────────────────
 const currentImageUrl = computed(() => String(editForm.value?.currentImageUrl ?? '').trim());
@@ -149,71 +148,62 @@ const activeTabDefinition = computed(() => tabs.find((tab) => tab.key === active
 const activeEntityType = computed(() => activeTabDefinition.value?.entityType ?? '');
 const activeEntityConfig = computed(() => entityConfigs[activeEntityType.value] ?? null);
 const currentTabItems = computed(() => tabItemsMap.value[activeTab.value] ?? []);
-const selectedIdSet = computed(() => new Set(selectedIds.value.map((id) => normalizeId(id)).filter(Boolean)));
-const selectedItems = computed(() =>
-	currentTabItems.value.filter((item) => selectedIdSet.value.has(normalizeId(item?.id))),
-);
-const selectedCount = computed(() => selectedItems.value.length);
-const allSelected = computed(() => currentTabItems.value.length > 0 && selectedCount.value === currentTabItems.value.length);
-const someSelected = computed(() => selectedCount.value > 0 && !allSelected.value);
-const activeBulkCapabilities = computed(
-	() => activeEntityConfig.value?.bulk ?? { canDelete: false, supportsAvailability: false, supportsPrice: false, supportsStatus: false },
-);
-const canBulkEdit = computed(
-	() =>
-		Boolean(
-			activeBulkCapabilities.value?.supportsAvailability ||
-				activeBulkCapabilities.value?.supportsPrice ||
-				activeBulkCapabilities.value?.supportsStatus,
-		),
-);
-const canBulkDelete = computed(() => Boolean(activeBulkCapabilities.value?.canDelete));
-const selectionBusy = computed(
-	() => isLoading.value || saving.value || bulkSaving.value || bulkDeleteLoading.value || deleting.value,
-);
-const bulkActionHint = computed(() => {
-	if (activeBulkCapabilities.value?.supportsStatus) return 'Tömeges státuszváltás és törlés érhető el.';
-	if (activeBulkCapabilities.value?.supportsAvailability && activeBulkCapabilities.value?.supportsPrice) {
-		return 'Ár és elérhetőség módosítható tömegesen, más mező nem.';
-	}
-	if (canBulkDelete.value) return 'Ehhez a típushoz csak tömeges törlés érhető el.';
-	return '';
+const {
+	selectedIds,
+	selectedItems,
+	selectedCount,
+	allSelected,
+	someSelected,
+	activeBulkCapabilities,
+	canBulkEdit,
+	canBulkDelete,
+	selectionBusy,
+	bulkActionHint,
+	clearSelection,
+	reconcileSelection,
+	toggleSelectAll,
+	toggleSelectItem,
+} = useAdminSelectionState({
+	currentTabItems,
+	activeEntityConfig,
+	isLoading,
+	saving,
+	bulkSaving,
+	bulkDeleteLoading,
+	deleting,
 });
 
-// ── Data Loading ────────────────────────────────────────────────
-const dataLoads = [
-	{ fn: getOrders, ref: rendelesekRaw, label: 'orders' },
-	{ fn: getMenus, ref: menukRaw, label: 'menus' },
-	{ fn: getCategories, ref: kategoriak, label: 'categories' },
-	{ fn: getIngredients, ref: hozzavalok, label: 'ingredients' },
-	{ fn: getMeals, ref: keszetelek, label: 'meals' },
-	{ fn: getSides, ref: koretek, label: 'sides' },
-	{ fn: getDrinks, ref: uditok, label: 'drinks' },
-];
+const {
+	loadAdminData,
+	loadAdminDataForEntity,
+	showingStorageSnapshot,
+	storageSnapshotLoadedAt,
+} = useAdminDataLoader({
+	isLoading,
+	loadError,
+	clearFeedback,
+	reconcileSelection,
+	rendelesekRaw,
+	menukRaw,
+	kategoriak,
+	hozzavalok,
+	keszetelek,
+	koretek,
+	uditok,
+});
 
-async function loadAdminData() {
-	if (isLoading.value) return;
-	isLoading.value = true;
-	loadError.value = '';
-	clearFeedback();
-
-	const results = await Promise.allSettled(dataLoads.map((l) => l.fn()));
-
-	results.forEach((result, i) => {
-		const load = dataLoads[i];
-		if (result.status === 'fulfilled') {
-			load.ref.value = asArray(result.value);
-		} else {
-			load.ref.value = [];
-			loadError.value =
-				loadError.value ||
-				(result.reason instanceof Error ? result.reason.message : `Failed to load ${load.label}`);
-		}
-	});
-
-	reconcileSelection();
-	isLoading.value = false;
-}
+const storageSnapshotTimeLabel = computed(() => {
+	if (!storageSnapshotLoadedAt.value) return '';
+	try {
+		return new Intl.DateTimeFormat('hu-HU', {
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+		}).format(new Date(storageSnapshotLoadedAt.value));
+	} catch {
+		return '';
+	}
+});
 
 onMounted(() => {
 	void loadAdminData();
@@ -230,24 +220,19 @@ const editModalTitle = computed(() => {
 });
 
 const activeFormFields = computed(() => entityConfigs[editType.value]?.formFields ?? []);
+const {
+	createDefaultBulkForm,
+	validateBulkForm,
+	buildBulkUpdatePayload,
+	runBulkQueue,
+	createBulkFeedback,
+} = useAdminBulkActionEngine({
+	entityConfigs,
+	bulkForm,
+	promptBulkFailure,
+});
 
-function createDefaultBulkForm(entityType = activeEntityType.value) {
-	const bulk = entityConfigs[entityType]?.bulk ?? {};
-	return {
-		actionType: bulk.supportsStatus
-			? 'status'
-			: bulk.supportsAvailability
-				? 'availability'
-				: bulk.supportsPrice
-					? 'increase-amount'
-					: '',
-		status: ORDER_STATUSES[0] ?? '',
-		availability: '1',
-		priceValue: '',
-	};
-}
-
-bulkForm.value = createDefaultBulkForm();
+bulkForm.value = createDefaultBulkForm(activeEntityType.value);
 
 async function openModal(type, item = null) {
 	clearFeedback();
@@ -284,39 +269,25 @@ function closeEditModal(options = {}) {
 	if (shouldClearFeedback) clearFeedback();
 }
 
-function clearSelection() {
-	selectedIds.value = [];
+function handleEditFormUpdate(nextForm) {
+	editForm.value = nextForm;
 }
 
-function reconcileSelection() {
-	const allowedIds = new Set(currentTabItems.value.map((item) => normalizeId(item?.id)).filter(Boolean));
-	selectedIds.value = selectedIds.value.filter((id) => allowedIds.has(normalizeId(id)));
-}
-
-function toggleSelectAll(checked) {
-	selectedIds.value = checked ? currentTabItems.value.map((item) => normalizeId(item?.id)).filter(Boolean) : [];
-}
-
-function toggleSelectItem({ item, selected }) {
-	const itemId = normalizeId(item?.id);
-	if (!itemId) return;
-	const next = new Set(selectedIds.value.map((id) => normalizeId(id)).filter(Boolean));
-	if (selected) next.add(itemId);
-	else next.delete(itemId);
-	selectedIds.value = Array.from(next);
+function handleBulkFormUpdate(nextForm) {
+	bulkForm.value = nextForm;
 }
 
 function closeBulkEditModal() {
 	showBulkEditModal.value = false;
 	bulkError.value = '';
-	bulkForm.value = createDefaultBulkForm();
+	bulkForm.value = createDefaultBulkForm(activeEntityType.value);
 }
 
 function openBulkEditModal() {
 	if (!canBulkEdit.value || selectedCount.value === 0) return;
 	clearFeedback();
 	bulkError.value = '';
-	bulkForm.value = createDefaultBulkForm();
+	bulkForm.value = createDefaultBulkForm(activeEntityType.value);
 	showBulkEditModal.value = true;
 }
 
@@ -328,113 +299,6 @@ function openBulkDeleteConfirm() {
 
 function closeBulkDeleteConfirm() {
 	showBulkDeleteConfirm.value = false;
-}
-
-function clearBulkFailurePrompt() {
-	showBulkFailureModal.value = false;
-	bulkFailureError.value = '';
-	bulkFailureMessage.value = '';
-	bulkFailureResolver = null;
-}
-
-function confirmBulkFailureContinue() {
-	const resolve = bulkFailureResolver;
-	clearBulkFailurePrompt();
-	resolve?.(true);
-}
-
-function cancelBulkFailureContinue() {
-	const resolve = bulkFailureResolver;
-	clearBulkFailurePrompt();
-	resolve?.(false);
-}
-
-function promptBulkFailure(error, item, remainingCount) {
-	const message = error instanceof Error ? error.message : 'A művelet sikertelen.';
-	bulkFailureError.value = message;
-	bulkFailureMessage.value = `${formatEntityItemLabel(item)} elem feldolgozása sikertelen. ${remainingCount > 0 ? `Még ${remainingCount} elem van hátra.` : 'Nincs több hátralévő elem.'}`;
-	showBulkFailureModal.value = true;
-	return new Promise((resolve) => {
-		bulkFailureResolver = resolve;
-	});
-}
-
-function validateBulkForm() {
-	const actionType = String(bulkForm.value?.actionType ?? '').trim();
-	if (!actionType) return 'Válassz tömeges műveletet.';
-	if (actionType === 'status') {
-		const status = String(bulkForm.value?.status ?? '').trim();
-		if (!ORDER_STATUSES.includes(status)) return 'Érvényes státusz kötelező.';
-		return null;
-	}
-	if (actionType === 'availability') {
-		if (!['0', '1'].includes(String(bulkForm.value?.availability ?? ''))) {
-			return 'Érvényes elérhetőségi érték kötelező.';
-		}
-		return null;
-	}
-	if (parseBulkAdjustmentValue(bulkForm.value?.priceValue) === null) {
-		return 'Adj meg 0-nál nagyobb árváltozást.';
-	}
-	return null;
-}
-
-async function buildBulkUpdatePayload(entityType, item, actionType) {
-	const config = entityConfigs[entityType];
-	if (!config) throw new Error('Ismeretlen típus.');
-	if (!hasValidEntityId(item?.id)) throw new Error('Érvénytelen azonosító.');
-
-	const resolvedItem = config.bulk?.resolveItemForUpdate ? await config.bulk.resolveItemForUpdate(item) : item;
-	const form = config.mapItemToForm(resolvedItem);
-
-	if (actionType === 'status') {
-		form.status = String(bulkForm.value.status ?? '').trim();
-	} else if (actionType === 'availability') {
-		form.elerheto = String(bulkForm.value.availability ?? '0') === '1' ? 1 : 0;
-	} else {
-		const nextPrice = applyBulkPriceAdjustment(resolvedItem?.ar ?? form.ar, {
-			mode: actionType,
-			value: bulkForm.value.priceValue,
-		});
-		if (nextPrice === null) throw new Error('Az új ár nem számolható ki.');
-		form.ar = String(nextPrice);
-	}
-
-	const validationError = config.validate(form, false);
-	if (validationError) throw new Error(validationError);
-	return config.buildPayload(form, false);
-}
-
-function updateBulkFeedback(config, successCount, failureCount, stopped) {
-	if (successCount > 0) {
-		actionSuccess.value = `${config.label} tömeges művelet kész: ${successCount} sikeres.`;
-	}
-	if (failureCount > 0 || stopped) {
-		actionError.value = `${config.label} tömeges művelet: ${failureCount} sikertelen${stopped ? ', a folyamat leállt a kérésedre.' : '.'}`;
-	}
-}
-
-async function runBulkQueue(items, executor) {
-	let successCount = 0;
-	let failureCount = 0;
-	let stopped = false;
-
-	for (let index = 0; index < items.length; index += 1) {
-		const item = items[index];
-		try {
-			await executor(item);
-			successCount += 1;
-		} catch (error) {
-			failureCount += 1;
-			const shouldContinue = await promptBulkFailure(error, item, items.length - index - 1);
-			if (!shouldContinue) {
-				stopped = true;
-				break;
-			}
-		}
-	}
-
-	return { successCount, failureCount, stopped };
 }
 
 async function saveBulkEdit() {
@@ -467,11 +331,13 @@ async function saveBulkEdit() {
 			const payload = await buildBulkUpdatePayload(entityType, item, actionType);
 			await config.api.update(payload);
 		});
+		const feedback = createBulkFeedback(config, result.successCount, result.failureCount, result.stopped);
 
 		closeBulkEditModal();
-		await loadAdminData();
+		await loadAdminDataForEntity(entityType);
 		clearSelection();
-		updateBulkFeedback(config, result.successCount, result.failureCount, result.stopped);
+		actionSuccess.value = feedback.success;
+		actionError.value = feedback.error;
 	} catch (error) {
 		bulkError.value = error instanceof Error ? error.message : 'Tömeges mentés sikertelen.';
 	} finally {
@@ -506,7 +372,7 @@ async function saveEdit() {
 
 		closeEditModal({ clearFeedback: false });
 		actionSuccess.value = isCreate ? config.messages.create : config.messages.update;
-		await loadAdminData();
+		await loadAdminDataForEntity(editType.value);
 	} catch (err) {
 		actionError.value = err instanceof Error ? err.message : 'Mentés sikertelen';
 	} finally {
@@ -520,6 +386,18 @@ function requestDelete(type, item) {
 	deleteTarget.value = { type, item };
 	showConfirmModal.value = true;
 }
+
+const createHandlersByEntity = Object.fromEntries(
+	tabs.map((tab) => [tab.entityType, () => openModal(tab.entityType)]),
+);
+
+const editHandlersByEntity = Object.fromEntries(
+	tabs.map((tab) => [tab.entityType, (item) => openModal(tab.entityType, item)]),
+);
+
+const deleteHandlersByEntity = Object.fromEntries(
+	tabs.map((tab) => [tab.entityType, (item) => requestDelete(tab.entityType, item)]),
+);
 
 async function confirmDelete() {
 	if (!deleteTarget.value) return;
@@ -541,7 +419,7 @@ async function confirmDelete() {
 		actionSuccess.value = config.messages.delete;
 		showConfirmModal.value = false;
 		deleteTarget.value = null;
-		await loadAdminData();
+		await loadAdminDataForEntity(type);
 	} catch (err) {
 		actionError.value = err instanceof Error ? err.message : 'Törlés sikertelen';
 	} finally {
@@ -568,11 +446,13 @@ async function confirmBulkDelete() {
 			if (!hasValidEntityId(item?.id)) throw new Error('Érvénytelen azonosító.');
 			await config.api.delete(item.id);
 		});
+		const feedback = createBulkFeedback(config, result.successCount, result.failureCount, result.stopped);
 
 		showBulkDeleteConfirm.value = false;
-		await loadAdminData();
+		await loadAdminDataForEntity(activeEntityType.value);
 		clearSelection();
-		updateBulkFeedback(config, result.successCount, result.failureCount, result.stopped);
+		actionSuccess.value = feedback.success;
+		actionError.value = feedback.error;
 	} catch (error) {
 		actionError.value = error instanceof Error ? error.message : 'Tömeges törlés sikertelen.';
 	} finally {
@@ -595,9 +475,6 @@ watch(activeTab, () => {
 	closeBulkEditModal();
 	clearBulkFailurePrompt();
 	clearFeedback();
-});
-
-watch(currentTabItems, () => {
 	reconcileSelection();
 });
 </script>
@@ -653,40 +530,46 @@ watch(currentTabItems, () => {
 
 		<!-- Content Area -->
 		<div class="bg-white rounded-xl shadow-md p-8 min-h-[500px]">
-			<div
-				v-if="selectedCount > 0"
-				class="mb-4 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 p-4"
-			>
-				<div class="flex flex-wrap items-center justify-between gap-4">
-					<div>
-						<div class="text-sm font-semibold uppercase tracking-[0.18em] text-indigo-700">Kijelölt elemek</div>
-						<div class="mt-1 text-lg font-semibold text-gray-800">{{ selectedCount }} elem kiválasztva ezen a lapon</div>
-						<div v-if="bulkActionHint" class="mt-1 text-sm text-gray-600">{{ bulkActionHint }}</div>
-					</div>
-					<div class="flex flex-wrap gap-2">
-						<button
-							v-if="canBulkEdit"
-							class="cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
-							:disabled="selectionBusy"
-							@click="openBulkEditModal"
-						>
-							Tömeges szerkesztés
-						</button>
-						<button
-							v-if="canBulkDelete"
-							class="cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-							:disabled="selectionBusy"
-							@click="openBulkDeleteConfirm"
-						>
-							Kijelöltek törlése
-						</button>
-						<button
-							class="cursor-pointer rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 transition hover:bg-gray-50 disabled:opacity-50"
-							:disabled="selectionBusy"
-							@click="clearSelection"
-						>
-							Kijelölés törlése
-						</button>
+			<div class="mb-4 min-h-[116px]">
+				<div
+					:class="[
+						'rounded-2xl border p-4 transition-opacity duration-150',
+						selectedCount > 0
+							? 'border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 opacity-100'
+							: 'pointer-events-none border-transparent bg-transparent opacity-0',
+					]"
+				>
+					<div v-if="selectedCount > 0" class="flex flex-wrap items-center justify-between gap-4">
+						<div>
+							<div class="text-sm font-semibold uppercase tracking-[0.18em] text-indigo-700">Kijelölt elemek</div>
+							<div class="mt-1 text-lg font-semibold text-gray-800">{{ selectedCount }} elem kiválasztva ezen a lapon</div>
+							<div v-if="bulkActionHint" class="mt-1 text-sm text-gray-600">{{ bulkActionHint }}</div>
+						</div>
+						<div class="flex flex-wrap gap-2">
+							<button
+								v-if="canBulkEdit"
+								class="cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+								:disabled="selectionBusy"
+								@click="openBulkEditModal"
+							>
+								Tömeges szerkesztés
+							</button>
+							<button
+								v-if="canBulkDelete"
+								class="cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+								:disabled="selectionBusy"
+								@click="openBulkDeleteConfirm"
+							>
+								Kijelöltek törlése
+							</button>
+							<button
+								class="cursor-pointer rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 transition hover:bg-gray-50 disabled:opacity-50"
+								:disabled="selectionBusy"
+								@click="clearSelection"
+							>
+								Kijelölés törlése
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -696,6 +579,19 @@ watch(currentTabItems, () => {
 			</div>
 			<div v-else-if="loadError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">
 				{{ loadError }}
+			</div>
+
+			<div
+				v-if="showingStorageSnapshot"
+				class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800"
+			>
+				<div>
+					Gyorsítótárból betöltött adatok láthatók
+					<span v-if="storageSnapshotTimeLabel">({{ storageSnapshotTimeLabel }})</span>.
+				</div>
+				<div class="mt-1 text-xs text-amber-700">
+					{{ isLoading ? 'Frissítés folyamatban a szerverről…' : 'A szerverfrissítés részben vagy teljesen sikertelen volt, ezért a gyorsítótár maradt látható.' }}
+				</div>
 			</div>
 
 			<div v-if="actionError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">
@@ -720,9 +616,9 @@ watch(currentTabItems, () => {
 					:all-selected="allSelected"
 					:some-selected="someSelected"
 					:selection-disabled="selectionBusy"
-					@create="openModal(tab.entityType)"
-					@edit="(item) => openModal(tab.entityType, item)"
-					@delete="(item) => requestDelete(tab.entityType, item)"
+					@create="createHandlersByEntity[tab.entityType]"
+					@edit="editHandlersByEntity[tab.entityType]"
+					@delete="deleteHandlersByEntity[tab.entityType]"
 					@toggle-select-all="toggleSelectAll"
 					@toggle-select-item="toggleSelectItem"
 				/>
@@ -743,7 +639,7 @@ watch(currentTabItems, () => {
 			@close="closeEditModal"
 			@save="saveEdit"
 			@image-selected="onEditImageSelected"
-			@update:form="(val) => (editForm = val)"
+			@update:form="handleEditFormUpdate"
 		/>
 
 		<AdminBulkEditModal
@@ -756,7 +652,7 @@ watch(currentTabItems, () => {
 			:saving="bulkSaving"
 			@close="closeBulkEditModal"
 			@save="saveBulkEdit"
-			@update:form="(val) => (bulkForm = val)"
+			@update:form="handleBulkFormUpdate"
 		/>
 
 		<!-- Confirm Delete Modal -->

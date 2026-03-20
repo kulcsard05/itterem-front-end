@@ -1,14 +1,18 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import CartDrawer from './components/user/CartDrawer.vue';
 import FooterSection from './components/public/FooterSection.vue';
-import ServerDiscovery from './components/ServerDiscovery.vue';
 import { useCart } from './composables/useCart.js';
 import { useAuth } from './composables/useAuth.js';
 import { useLocale } from './composables/useLocale.js';
 import { AUTH_EXPIRED_EVENT, LOCALE_QUERY_KEY } from './constants.js';
+
+const isDevServerDiscoveryEnabled = import.meta.env.DEV;
+const ServerDiscovery = isDevServerDiscoveryEnabled
+	? defineAsyncComponent(() => import('./components/ServerDiscovery.vue'))
+	: null;
 
 const router = useRouter();
 const route = useRoute();
@@ -32,7 +36,6 @@ const selectedMenuItem = ref(null);
 const cartOpen = ref(false);
 const serverDiscoveryOpen = ref(false);
 const serverReachable = ref(null);
-const isDevServerDiscoveryEnabled = import.meta.env.DEV;
 
 const { addItem, totalItems } = useCart();
 

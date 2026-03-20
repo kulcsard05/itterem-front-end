@@ -26,6 +26,8 @@ const selectedIdSet = computed(() => new Set((props.selectedIds ?? []).map((id) 
 const selectAllCheckbox = ref(null);
 const isDragSelecting = ref(false);
 const dragSelectionValue = ref(false);
+const dragSelectionStartItem = ref(null);
+const dragSelectionMoved = ref(false);
 
 watchEffect(() => {
 	if (selectAllCheckbox.value) {
@@ -42,9 +44,19 @@ function emitItemSelection(item, selected) {
 }
 
 function stopDragSelection() {
+	if (
+		isDragSelecting.value
+		&& !dragSelectionMoved.value
+		&& dragSelectionStartItem.value
+	) {
+		emitItemSelection(dragSelectionStartItem.value, dragSelectionValue.value);
+	}
 	isDragSelecting.value = false;
 	dragSelectionValue.value = false;
+	dragSelectionStartItem.value = null;
+	dragSelectionMoved.value = false;
 	window.removeEventListener('pointerup', stopDragSelection);
+	window.removeEventListener('pointercancel', stopDragSelection);
 }
 
 function beginDragSelection(item, event) {
@@ -52,14 +64,28 @@ function beginDragSelection(item, event) {
 	if (event.button !== 0) return;
 	event.preventDefault();
 	dragSelectionValue.value = !isItemSelected(item);
+	dragSelectionStartItem.value = item;
+	dragSelectionMoved.value = false;
 	isDragSelecting.value = true;
-	emitItemSelection(item, dragSelectionValue.value);
 	window.addEventListener('pointerup', stopDragSelection);
+	window.addEventListener('pointercancel', stopDragSelection);
 }
 
 function extendDragSelection(item) {
 	if (!isDragSelecting.value || !props.selectionEnabled || props.selectionDisabled) return;
+	if (!dragSelectionMoved.value) {
+		if (normalizeId(item?.id) === normalizeId(dragSelectionStartItem.value?.id)) return;
+		dragSelectionMoved.value = true;
+		if (dragSelectionStartItem.value) {
+			emitItemSelection(dragSelectionStartItem.value, dragSelectionValue.value);
+		}
+	}
 	emitItemSelection(item, dragSelectionValue.value);
+}
+
+function toggleItemSelection(item) {
+	if (!props.selectionEnabled || props.selectionDisabled) return;
+	emitItemSelection(item, !isItemSelected(item));
 }
 
 onBeforeUnmount(() => {
@@ -125,14 +151,18 @@ onBeforeUnmount(() => {
 							v-if="selectionEnabled"
 							class="w-14 p-4 text-center align-top"
 							@pointerdown="beginDragSelection(item, $event)"
+							@pointerup="stopDragSelection"
 						>
 							<input
 								type="checkbox"
 								class="h-4 w-4 cursor-pointer rounded border-gray-300"
 								:checked="isItemSelected(item)"
 								:disabled="selectionDisabled"
-								@click.stop
-								@change="emitItemSelection(item, $event.target.checked)"
+								@pointerdown.stop.prevent="beginDragSelection(item, $event)"
+								@pointerup.stop="stopDragSelection"
+								@click.stop.prevent
+								@keydown.space.stop.prevent="toggleItemSelection(item)"
+								@keydown.enter.stop.prevent="toggleItemSelection(item)"
 							/>
 						</td>
 						<td v-for="col in columns" :key="col.key" class="p-4 text-gray-700">

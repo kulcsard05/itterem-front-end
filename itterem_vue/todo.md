@@ -494,3 +494,27 @@ const authStore = useAuthStore();
 - **Közepes volumen** — 5 composable átírás + összes felhasználó komponens
 - A singleton ref minta már jól működik, a migráció elsősorban DX és tesztelhetőség miatt éri meg
 - Javasolt: egyenként migrálni, nem egyszerre
+
+---
+
+## 5) Refactor Follow-up Backlog (2026-03-19)
+
+These items are intentionally postponed to keep current behavior stable while still tracking the next readability/performance steps.
+
+### High-priority follow-ups
+- AdminDashboard orchestration split: move edit/delete confirmation orchestration from `AdminDashboard.vue` into dedicated composables (same pattern as bulk + selection extraction).
+- Admin modal event surface cleanup: simplify prop/event contracts across `AdminEditModal.vue`, `AdminBulkEditModal.vue`, and `AdminTable.vue` to reduce glue logic in parent components.
+- EmployeeOrders chunk size reduction: lazy-load `vuedraggable` usage path to reduce initial employee page payload.
+
+### Medium-priority follow-ups
+- SignalR lazy boundary: defer SignalR-heavy code on routes that do not need realtime behavior.
+- i18n extraction in admin helpers/config messages: migrate remaining hardcoded HU strings from helper/config modules to locale keys.
+- Add lightweight component behavior tests (or smoke tests) for:
+  - bulk edit/delete flow and failure-continue prompt
+  - selection reconciliation across tab/data reload
+  - employee realtime update while dragging
+
+### Cleanup / consistency follow-ups
+- Normalize async component loading style across admin/public feature boundaries.
+- Consolidate reusable “operation feedback” text generation (success/error pairs) in one helper/composable.
+- Review composable naming/layout conventions and document them in README for future contributors.

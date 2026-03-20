@@ -2,7 +2,7 @@ import { ref } from 'vue';
 
 const DRAG_COOLDOWN_MS = 4000;
 
-export function useOrderStatusDnD({ persistStatus, reloadOrders, pendingRefreshRef, ensureOrderInColumn, onError }) {
+export function useOrderStatusDnD({ persistStatus, reloadOrders, ensureOrderInColumn, onError }) {
 	const savingStatus = ref(false);
 
 	// Timestamp of the last successful drag save.

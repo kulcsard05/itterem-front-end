@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, watch } from 'vue';
+import { onMounted, onUnmounted } from 'vue';
 import { SIGNALR_CONNECTION_STATE, useSignalR } from './useSignalR.js';
 
 export function useEmployeeOrdersBoot({
@@ -14,7 +14,6 @@ export function useEmployeeOrdersBoot({
 	connectionState,
 	pollIntervalMs,
 	authExpiredEvent,
-	watchToken,
 }) {
 	let pollTimer = null;
 	const { start, stop, on } = useSignalR();
@@ -22,7 +21,7 @@ export function useEmployeeOrdersBoot({
 	let unsubUpdated = null;
 
 	function handleAuthExpired() {
-		stop();
+		void stop();
 	}
 
 	onMounted(async () => {
@@ -45,7 +44,7 @@ export function useEmployeeOrdersBoot({
 		unsubPlaced = on('OrderPlaced', onOrderPlaced);
 		unsubUpdated = on('OrderUpdated', onOrderUpdated);
 
-		start();
+		void start();
 
 		try {
 			window.addEventListener(authExpiredEvent, handleAuthExpired);
@@ -57,7 +56,7 @@ export function useEmployeeOrdersBoot({
 	onUnmounted(() => {
 		if (unsubPlaced) unsubPlaced();
 		if (unsubUpdated) unsubUpdated();
-		stop();
+		void stop();
 		try {
 			window.removeEventListener(authExpiredEvent, handleAuthExpired);
 		} catch {
@@ -65,9 +64,5 @@ export function useEmployeeOrdersBoot({
 		}
 		cleanupPanel();
 		if (pollTimer != null) window.clearInterval(pollTimer);
-	});
-
-	watch(watchToken, () => {
-		start();
 	});
 }

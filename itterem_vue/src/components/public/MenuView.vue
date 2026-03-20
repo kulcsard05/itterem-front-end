@@ -1,34 +1,31 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {
-	getCategoriesConditional,
-	getDrinksConditional,
-	getMealsConditional,
-	getMenusConditional,
-	getSidesConditional,
-} from '../../api.js';
-import { asArray, findById, formatCurrency, getItemTypeLabel, getMealIngredientNames, getMealCategoryId, getOrderItemIdKey } from '../../utils.js';
+import { asArray, formatCurrency, getMealCategoryId, getOrderItemIdKey } from '../../utils.js';
 
-import { getImageSrc, cacheImagesForDatasets, resolveImagePointersForDatasets } from '../../composables/useMenuImageCache.js';
+import { resolveImagePointersForDatasets } from '../../composables/useMenuImageCache.js';
 import { useAuth } from '../../composables/useAuth.js';
 import { useCart } from '../../composables/useCart.js';
+import { useMenuCatalogRefresh } from '../../composables/useMenuCatalogRefresh.js';
 import { useMenuData } from '../../composables/useMenuData.js';
+import { useMenuItemPresentation } from '../../composables/useMenuItemPresentation.js';
+import { usePersistedMenuTab } from '../../composables/usePersistedMenuTab.js';
 import { useMealSections } from '../../composables/useMealSections.js';
-import AsyncStatePanel from './AsyncStatePanel.vue';
-import EndpointStatusBadges from './EndpointStatusBadges.vue';
-import MenuAddToCartButton from './MenuAddToCartButton.vue';
-import MenuItemCardShell from './MenuItemCardShell.vue';
-import MenuQuickOrderButton from './MenuQuickOrderButton.vue';
-import QuickBuyModal from './QuickBuyModal.vue';
+import { useTransientSetAnimation } from '../../composables/useTransientSetAnimation.js';
+
+const AsyncStatePanel = defineAsyncComponent(() => import('./AsyncStatePanel.vue'));
+const EndpointStatusBadges = defineAsyncComponent(() => import('./EndpointStatusBadges.vue'));
+const MenuAddToCartButton = defineAsyncComponent(() => import('./MenuAddToCartButton.vue'));
+const MenuItemCardShell = defineAsyncComponent(() => import('./MenuItemCardShell.vue'));
+const MenuQuickOrderButton = defineAsyncComponent(() => import('./MenuQuickOrderButton.vue'));
+const QuickBuyModal = defineAsyncComponent(() => import('./QuickBuyModal.vue'));
 
 const emit = defineEmits(['open-item', 'add-to-cart']);
 const isDev = import.meta.env.DEV;
 const { t } = useI18n();
 
 // cartAnimating: true briefly after each click to re-trigger the pop animation.
-const cartAnimating = ref(new Set());
-const animationTimers = new Map();
+const { isActive: isCartAnimatingKeyActive, trigger: triggerCartAnimation } = useTransientSetAnimation(350);
 
 const { auth } = useAuth();
 const { items: cartItems, rehydrateItems } = useCart();
@@ -36,6 +33,20 @@ const {
 	categories, meals, sides, menus, drinks,
 	setDatasetIfChanged, saveMenuCache, hydrateMenuCache,
 } = useMenuData();
+const {
+	getItemName,
+	getItemPrice,
+	getItemImage,
+	getMealIngredientsLabel,
+	getMenuIngredientsLabel,
+	getMenuMeta,
+	createItemPayload,
+} = useMenuItemPresentation({
+	t,
+	meals,
+	sides,
+	drinks,
+});
 
 const { mealSections } = useMealSections({
 	categories,
@@ -53,18 +64,6 @@ const datasetRefByType = {
 	drinks,
 };
 
-const MENU_ACTIVE_TAB_STORAGE_KEY = 'menu-active-tab-v1';
-const MENU_TAB_KEYS = ['meals', 'sides', 'menus', 'drinks'];
-
-function readStoredActiveType() {
-	try {
-		const stored = String(localStorage.getItem(MENU_ACTIVE_TAB_STORAGE_KEY) ?? '').trim();
-		return MENU_TAB_KEYS.includes(stored) ? stored : 'meals';
-	} catch {
-		return 'meals';
-	}
-}
-
 const cartCountByKey = computed(() => {
 	const map = {};
 	for (const cartItem of cartItems.value) {
@@ -74,15 +73,7 @@ const cartCountByKey = computed(() => {
 	return map;
 });
 
-const activeType = ref(readStoredActiveType()); // meals | sides | menus | drinks
-
-watch(activeType, (next) => {
-	try {
-		localStorage.setItem(MENU_ACTIVE_TAB_STORAGE_KEY, next);
-	} catch {
-		// ignore storage failures
-	}
-});
+const { activeType } = usePersistedMenuTab(); // meals | sides | menus | drinks
 
 const menuTabs = computed(() => [
 	{ key: 'meals', label: t('menu.tabs.meals') },
@@ -90,33 +81,24 @@ const menuTabs = computed(() => [
 	{ key: 'menus', label: t('menu.tabs.menus') },
 	{ key: 'drinks', label: t('menu.tabs.drinks') },
 ]);
-
-const loading = ref({
-	categories: false,
-	meals: false,
-	sides: false,
-	menus: false,
-	drinks: false,
+const {
+	loading,
+	errors,
+	endpointRefreshStatus,
+	refreshing,
+	refreshAll,
+} = useMenuCatalogRefresh({
+	t,
+	activeType,
+	categories,
+	meals,
+	sides,
+	menus,
+	drinks,
+	setDatasetIfChanged,
+	saveMenuCache,
+	rehydrateItems,
 });
-
-const errors = ref({
-	categories: '',
-	meals: '',
-	sides: '',
-	menus: '',
-	drinks: '',
-});
-
-const endpointRefreshStatus = ref({
-	categories: '-',
-	meals: '-',
-	sides: '-',
-	menus: '-',
-	drinks: '-',
-});
-
-// True while a background refresh is in flight (data already shown from cache).
-const refreshing = ref(false);
 
 const endpointDebugItems = computed(() => {
 	if (!isDev) return [];
@@ -133,13 +115,7 @@ function getCartCount(type, id) {
 }
 
 function isCartAnimating(type, id) {
-	return cartAnimating.value.has(cartKey(type, id));
-}
-
-function getItemName(type, item) {
-	if (!item) return t('common.notAvailable');
-	if (type === 'menus') return item?.menuNev ?? t('common.notAvailable');
-	return item?.nev ?? t('common.notAvailable');
+	return isCartAnimatingKeyActive(cartKey(type, id));
 }
 
 function getCategoryName(cat) {
@@ -174,166 +150,10 @@ function getSelectedListKey(type, item, itemIndex) {
 	return `${type}-fallback-${itemIndex}`;
 }
 
-function getItemPrice(item) {
-	return item?.ar ?? null;
-}
-
-function getItemImage(item) {
-	return getImageSrc(item?.kep);
-}
-
-function getMealIngredientsLabel(meal) {
-	const names = getMealIngredientNames(meal);
-	return names.length ? names.join(', ') : '';
-}
-
-function resolveMenuParts(menu) {
-	return {
-		meal: findById(meals.value, menu?.keszetelId),
-		side: findById(sides.value, menu?.koretId),
-		drink: findById(drinks.value, menu?.uditoId),
-	};
-}
-
-function getMenuMeta(menu) {
-	const parts = [];
-	const { meal, side, drink } = resolveMenuParts(menu);
-
-	const mealName = String(meal?.nev ?? '').trim();
-	const sideName = String(side?.nev ?? '').trim();
-	const drinkName = String(drink?.nev ?? '').trim();
-
-	if (mealName) parts.push(mealName);
-	if (sideName) parts.push(sideName);
-	if (drinkName) parts.push(drinkName);
-	return parts.join(' • ');
-}
-
-function buildMenuBreakdown(menu) {
-	const { meal, side, drink } = resolveMenuParts(menu);
-
-	const mealName = String(meal?.nev ?? '-');
-	const sideName = String(side?.nev ?? '-');
-	const drinkName = String(drink?.nev ?? '-');
-
-	const mealDescription = String(meal?.leiras ?? '').trim() || '-';
-	const sideDescription = String(side?.leiras ?? '').trim() || '-';
-
-	const mealPayload = meal
-		? {
-			type: 'meals',
-			typeLabel: getItemTypeLabel('meals'),
-			item: meal,
-			id: meal?.id,
-			name: mealName,
-			description: mealDescription,
-			price: meal?.ar ?? null,
-			image: getItemImage(meal),
-			meta: '',
-			menuBreakdown: [],
-			ingredients: getMealIngredientNames(meal),
-		}
-		: null;
-
-	const sidePayload = side
-		? {
-			type: 'sides',
-			typeLabel: getItemTypeLabel('sides'),
-			item: side,
-			id: side?.id,
-			name: sideName,
-			description: sideDescription,
-			price: side?.ar ?? null,
-			image: getItemImage(side),
-			meta: '',
-			menuBreakdown: [],
-			ingredients: [],
-		}
-		: null;
-
-	const drinkPayload = drink
-		? {
-			type: 'drinks',
-			typeLabel: getItemTypeLabel('drinks'),
-			item: drink,
-			id: drink?.id,
-			name: drinkName,
-			description: '',
-			price: drink?.ar ?? null,
-			image: getItemImage(drink),
-			meta: '',
-			menuBreakdown: [],
-			ingredients: [],
-		}
-		: null;
-
-	return [
-		{
-			key: 'meal',
-			label: t('itemTypes.meal'),
-			name: mealName,
-			description: mealDescription,
-			openPayload: mealPayload,
-		},
-		{
-			key: 'side',
-			label: t('itemTypes.side'),
-			name: sideName,
-			description: sideDescription,
-			openPayload: sidePayload,
-		},
-		{
-			key: 'drink',
-			label: t('itemTypes.drink'),
-			name: drinkName,
-			description: '',
-			openPayload: drinkPayload,
-		},
-	];
-}
-
-function getItemDescription(type, item, categoryName = '') {
-	const desc = String(item?.leiras ?? '').trim();
-	if (desc) return desc;
-
-	if (type === 'menus') {
-		return getMenuMeta(item) || t('menu.fallbackMenuItem');
-	}
-
-	if (type === 'meals' && categoryName) {
-		return t('menu.categoryPrefix', { name: categoryName });
-	}
-
-	return t('menu.noDescription');
-}
 
 function getCartButtonLabel(type, id) {
 	const count = getCartCount(type, id);
 	return count ? t('menu.addedCount', { count }) : t('menu.addToCart');
-}
-
-function createItemPayload(type, item, categoryName = '') {
-	const typeLabel = getItemTypeLabel(type);
-	const menuMeal = type === 'menus' ? findById(meals.value, item?.keszetelId) : null;
-	const ingredients = type === 'meals'
-		? getMealIngredientNames(item)
-		: type === 'menus'
-			? getMealIngredientNames(menuMeal)
-			: [];
-
-	return {
-		type,
-		typeLabel,
-		item,
-		name: getItemName(type, item),
-		price: getItemPrice(item),
-		image: getItemImage(item),
-		kep: item?.kep ?? '',
-		description: getItemDescription(type, item, categoryName),
-		meta: type === 'menus' ? getMenuMeta(item) : categoryName,
-		menuBreakdown: type === 'menus' ? buildMenuBreakdown(item) : [],
-		ingredients,
-	};
 }
 
 function openItem(type, item, categoryName = '') {
@@ -344,33 +164,20 @@ function quickAddToCart(event, type, item) {
 	event.stopPropagation();
 	const id = item?.id;
 	if (!id || !getOrderItemIdKey(type)) return;
-	const typeLabel = getItemTypeLabel(type);
+	const itemPayload = createItemPayload(type, item);
 	emit('add-to-cart', {
 		type,
-		typeLabel,
+		typeLabel: itemPayload.typeLabel,
 		id,
 		item,
-		name: getItemName(type, item),
-		price: getItemPrice(item),
-		image: getItemImage(item),
-		kep: item?.kep ?? '',
+		name: itemPayload.name,
+		price: itemPayload.price,
+		image: itemPayload.image,
+		kep: itemPayload.kep,
 	});
 
 	const key = cartKey(type, id);
-	const previousTimer = animationTimers.get(key);
-	if (previousTimer != null) {
-		window.clearTimeout(previousTimer);
-		animationTimers.delete(key);
-	}
-	cartAnimating.value.delete(key);
-	requestAnimationFrame(() => {
-		cartAnimating.value.add(key);
-		const timerId = window.setTimeout(() => {
-			cartAnimating.value.delete(key);
-			animationTimers.delete(key);
-		}, 350);
-		animationTimers.set(key, timerId);
-	});
+	triggerCartAnimation(key);
 }
 
 // ---------------------------------------------------------------------------
@@ -390,67 +197,6 @@ function closeQuickBuy() {
 	quickBuyItem.value = null;
 }
 
-async function loadOne(key, fn, targetRef, fallbackMessage) {
-	loading.value[key] = true;
-	errors.value[key] = '';
-	endpointRefreshStatus.value[key] = '...';
-	try {
-		const result = await fn();
-		if (result && typeof result === 'object' && 'notModified' in result && result.notModified) {
-			endpointRefreshStatus.value[key] = '304';
-			return false;
-		}
-
-		const data = result && typeof result === 'object' && 'notModified' in result
-			? result.data
-			: result;
-
-		endpointRefreshStatus.value[key] = '200';
-		return setDatasetIfChanged(key, targetRef, data);
-	} catch (err) {
-		endpointRefreshStatus.value[key] = 'ERR';
-		errors.value[key] = err instanceof Error ? err.message : fallbackMessage;
-		return false;
-	} finally {
-		loading.value[key] = false;
-	}
-}
-
-async function refreshAll() {
-	refreshing.value = true;
-	try {
-		const endpointLoaders = [
-			['categories', getCategoriesConditional, categories, t('menu.loadErrors.categories')],
-			['meals', getMealsConditional, meals, t('menu.loadErrors.meals')],
-			['sides', getSidesConditional, sides, t('menu.loadErrors.sides')],
-			['menus', getMenusConditional, menus, t('menu.loadErrors.menus')],
-			['drinks', getDrinksConditional, drinks, t('menu.loadErrors.drinks')],
-		];
-
-		const changes = await Promise.allSettled([
-			...endpointLoaders.map(([key, getter, targetRef, fallback]) => loadOne(key, getter, targetRef, fallback)),
-		]);
-
-		const hasChanges = changes.some((entry) => entry.status === 'fulfilled' && entry.value === true);
-		if (hasChanges) {
-			await saveMenuCache();
-		}
-
-		// Re-hydrate cart items with the latest menu data (names, prices, images).
-		rehydrateItems();
-
-		// Download and cache any new images in the background.
-		// Skips kep values that are already cached — cheap to call every time.
-		void cacheImagesForDatasets(categories.value, meals.value, sides.value, menus.value, drinks.value).catch(() => {
-			// Image prefetch failures are non-critical for menu rendering.
-		});
-	} catch {
-		errors.value[activeType.value] = t(`menu.loadErrors.${activeType.value}`);
-	} finally {
-		refreshing.value = false;
-	}
-}
-
 onMounted(() => {
 	hydrateMenuCache();
 	void resolveImagePointersForDatasets(
@@ -464,14 +210,6 @@ onMounted(() => {
 	});
 	rehydrateItems();
 	void refreshAll();
-});
-
-onUnmounted(() => {
-	for (const timerId of animationTimers.values()) {
-		window.clearTimeout(timerId);
-	}
-	animationTimers.clear();
-	cartAnimating.value.clear();
 });
 
 const selectedList = computed(() => {
@@ -559,12 +297,9 @@ const selectedIsEmpty = computed(() => selectedList.value.length === 0);
 							@open="openItem('meals', item, section.name)"
 						>
 							<h3 class="text-base font-semibold text-gray-900">{{ item.nev }}</h3>
-
-							<template v-for="label in [getMealIngredientsLabel(item)]" :key="`meal-ingredients-${item?.id ?? item?.nev ?? 'unknown'}`">
-								<p v-if="label" class="mt-1 text-xs text-gray-500">
-									{{ label }}
-								</p>
-							</template>
+							<p v-if="getMealIngredientsLabel(item)" class="mt-1 text-xs text-gray-500">
+								{{ getMealIngredientsLabel(item) }}
+							</p>
 
 							<div>
 								<p
@@ -618,11 +353,9 @@ const selectedIsEmpty = computed(() => selectedList.value.length === 0);
 							<p v-if="activeType === 'menus' && getMenuMeta(item)" class="text-xs text-gray-500">
 								{{ getMenuMeta(item) }}
 							</p>
-							<template v-for="ingLabel in [getMealIngredientsLabel(findById(meals.value, item?.keszetelId))]" :key="`menu-ingredients-${item?.id ?? item?.menuNev ?? 'unknown'}`">
-								<p v-if="activeType === 'menus' && ingLabel" class="mt-1 text-xs text-gray-500">
-									{{ ingLabel }}
-								</p>
-							</template>
+							<p v-if="activeType === 'menus' && getMenuIngredientsLabel(item)" class="mt-1 text-xs text-gray-500">
+								{{ getMenuIngredientsLabel(item) }}
+							</p>
 							<p
 								v-if="getItemPrice(item) != null"
 								class="mt-auto text-sm font-medium text-gray-700"

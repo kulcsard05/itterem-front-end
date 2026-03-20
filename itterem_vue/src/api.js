@@ -578,19 +578,55 @@ export function updateOrderStatus(id, status) {
 	const encodedId = encodeURIComponent(normalizedId);
 	const encodedStatus = encodeURIComponent(normalizedStatus);
 	const baseUrl = getApiBaseUrl();
-	const candidateUrls = [
-		`${baseUrl}/api/Rendelesek/${encodedId}?status=${encodedStatus}`,
-		`${baseUrl}/api/Rendelesek?id=${encodedId}&status=${encodedStatus}`,
+	const candidateRequests = [
+		{
+			url: `${baseUrl}/api/Rendelesek/${encodedId}?status=${encodedStatus}`,
+			method: 'PUT',
+			headers: authHeaders(),
+		},
+		{
+			url: `${baseUrl}/api/Rendelesek/${encodedId}?statusz=${encodedStatus}`,
+			method: 'PUT',
+			headers: authHeaders(),
+		},
+		{
+			url: `${baseUrl}/api/Rendelesek?id=${encodedId}&status=${encodedStatus}`,
+			method: 'PUT',
+			headers: authHeaders(),
+		},
+		{
+			url: `${baseUrl}/api/Rendelesek/ModifyStatus/${encodedId}?status=${encodedStatus}`,
+			method: 'PUT',
+			headers: authHeaders(),
+		},
+		{
+			url: `${baseUrl}/api/Rendelesek/ModifyStatus?id=${encodedId}&status=${encodedStatus}`,
+			method: 'PUT',
+			headers: authHeaders(),
+		},
+		{
+			url: `${baseUrl}/api/Rendelesek/${encodedId}`,
+			method: 'PUT',
+			headers: authHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify({ status: normalizedStatus }),
+		},
+		{
+			url: `${baseUrl}/api/Rendelesek/${encodedId}`,
+			method: 'PUT',
+			headers: authHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify({ statusz: normalizedStatus }),
+		},
 	];
 
 	const tryUpdate = async () => {
 		let lastError = null;
 
-		for (const url of candidateUrls) {
+		for (const request of candidateRequests) {
 			try {
-				const response = await abortableFetch(url, {
-					method: 'PUT',
-					headers: authHeaders(),
+				const response = await abortableFetch(request.url, {
+					method: request.method,
+					headers: request.headers,
+					body: request.body,
 				});
 				return await requestJsonOrThrow(response, fallbackError);
 			} catch (err) {
