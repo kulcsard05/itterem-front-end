@@ -8,7 +8,8 @@
 		"dev:raw": "vite",
 		"dev:discover": "node ./scripts/dev-with-discovery.mjs",
 		"build": "vite build",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"build:dev" : "vite build --mode development"
 	},
 	"dependencies": {
 		"@microsoft/signalr": "^10.0.0",
