@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { asArray, formatCurrency, getItemTypeLabel, readFirstText } from '../../utils.js';
@@ -16,11 +16,27 @@ const { t } = useI18n();
 
 const router = useRouter();
 
+function scrollToPageTop() {
+	if (typeof window !== 'undefined') {
+		window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+	}
+}
+
 onMounted(() => {
 	if (!props.itemData) {
 		router.replace({ name: 'menu' });
+		return;
 	}
+	scrollToPageTop();
 });
+
+watch(
+	() => props.itemData,
+	(nextItem, prevItem) => {
+		if (!nextItem || nextItem === prevItem) return;
+		scrollToPageTop();
+	},
+);
 
 const addedMessage = ref('');
 let addedTimer = null;
