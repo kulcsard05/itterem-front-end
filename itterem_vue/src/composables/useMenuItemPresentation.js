@@ -1,10 +1,11 @@
 import { computed } from 'vue';
 import { asArray, findById, getItemTypeLabel, getMealIngredientNames } from '../utils.js';
 import { getImageSrc } from './useMenuImageCache.js';
-
-function toStableTextKey(value) {
-	return String(value ?? '').trim().toLowerCase();
-}
+import {
+	toStableTextKey,
+	resolveMenuParts as resolveMenuPartsFromDatasets,
+	buildMenuMetaFromParts,
+} from '../menu-utils.js';
 
 export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 	function getItemName(type, item) {
@@ -43,25 +44,16 @@ export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 	}
 
 	function resolveMenuParts(menu) {
-		return {
-			meal: findById(meals.value, menu?.keszetelId),
-			side: findById(sides.value, menu?.koretId),
-			drink: findById(drinks.value, menu?.uditoId),
-		};
+		return resolveMenuPartsFromDatasets({
+			menu,
+			meals: meals.value,
+			sides: sides.value,
+			drinks: drinks.value,
+		});
 	}
 
 	function getMenuMeta(menu) {
-		const parts = [];
-		const { meal, side, drink } = resolveMenuParts(menu);
-
-		const mealName = String(meal?.nev ?? '').trim();
-		const sideName = String(side?.nev ?? '').trim();
-		const drinkName = String(drink?.nev ?? '').trim();
-
-		if (mealName) parts.push(mealName);
-		if (sideName) parts.push(sideName);
-		if (drinkName) parts.push(drinkName);
-		return parts.join(' • ');
+		return buildMenuMetaFromParts(resolveMenuParts(menu));
 	}
 
 	function buildMenuBreakdown(menu) {

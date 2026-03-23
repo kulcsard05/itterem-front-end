@@ -10,7 +10,7 @@ const props = defineProps({
 const emit = defineEmits(['add']);
 
 const buttonClass = computed(() => [
-	'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white transition-colors duration-200',
+	'inline-flex min-h-10 items-center gap-1 rounded-md px-3 py-2 text-sm font-semibold text-white transition-colors duration-200',
 	props.count > 0 ? 'bg-green-500' : 'bg-indigo-600 hover:bg-indigo-500',
 	props.isAnimating ? 'cart-pop' : '',
 ]);

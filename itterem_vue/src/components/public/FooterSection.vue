@@ -8,7 +8,7 @@ const { t } = useI18n();
 <template>
 	<footer class="mt-auto border-t border-gray-200 bg-gray-50">
 		<div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
-			<div class="grid gap-10 md:grid-cols-2 lg:grid-cols-3">
+			<div class="grid gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-3 lg:gap-10">
 
 				<!-- Brand & description -->
 				<div>
@@ -57,7 +57,7 @@ const { t } = useI18n();
 						<iframe
 							src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2695.5!2d19.0503!3d47.4984!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x4741dc6b7a0b0001%3A0x9e6a7f1e4b2c3d4e!2sV%C3%A1ci%20utca%2C%20Budapest!5e0!3m2!1shu!2shu!4v1700000000000!5m2!1shu!2shu"
 							width="100%"
-							height="220"
+							height="190"
 							style="border:0;"
 							allowfullscreen
 							loading="lazy"

@@ -112,7 +112,7 @@ defineExpose({ reset });
 				<!-- Panel -->
 				<div class="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
 					<!-- Header -->
-					<div class="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+					<div class="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
 						<h2 class="text-base font-semibold text-gray-900">{{ t('quickBuy.title') }}</h2>
 						<button
 							type="button"
@@ -127,7 +127,7 @@ defineExpose({ reset });
 					</div>
 
 					<!-- Success state -->
-					<div v-if="success" class="flex flex-col items-center gap-3 px-6 py-8 text-center">
+					<div v-if="success" class="flex flex-col items-center gap-3 px-4 py-8 text-center sm:px-6">
 						<div class="flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -145,9 +145,9 @@ defineExpose({ reset });
 					</div>
 
 					<!-- Order form -->
-					<div v-else class="px-6 py-5 space-y-5">
+					<div v-else class="space-y-5 px-4 py-5 sm:px-6">
 						<!-- Item info -->
-						<div class="flex items-center gap-4">
+						<div class="flex items-center gap-3 sm:gap-4">
 							<img
 								v-if="item.image"
 								:src="item.image"
@@ -155,9 +155,9 @@ defineExpose({ reset });
 								class="h-20 w-20 flex-shrink-0 rounded-xl object-cover"
 							/>
 							<div v-else class="h-20 w-20 flex-shrink-0 rounded-xl bg-gray-100" />
-							<div>
+							<div class="min-w-0">
 								<p class="text-sm text-gray-500">{{ item.typeLabel }}</p>
-								<p class="text-base font-semibold text-gray-900 leading-snug">{{ item.name }}</p>
+								<p class="text-base font-semibold leading-snug text-gray-900">{{ item.name }}</p>
 								<p v-if="item.price != null" class="mt-1 text-sm text-gray-500">
 									{{ t('common.unitPrice') }}: <span class="font-medium text-gray-800">{{ formatCurrency(item.price) }}</span>
 								</p>
@@ -170,7 +170,7 @@ defineExpose({ reset });
 							<div class="flex items-center gap-3">
 								<button
 									type="button"
-									class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+									class="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
 									:disabled="qty <= 1"
 									@click="qty > 1 && qty--"
 									:aria-label="t('quickBuy.decreaseQuantity')"
@@ -182,7 +182,7 @@ defineExpose({ reset });
 								<span class="w-8 text-center text-base font-bold text-gray-900">{{ qty }}</span>
 								<button
 									type="button"
-									class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
+									class="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
 									:disabled="qty >= MAX_ORDER_QUANTITY"
 									@click="qty < MAX_ORDER_QUANTITY && qty++"
 									:aria-label="t('quickBuy.increaseQuantity')"

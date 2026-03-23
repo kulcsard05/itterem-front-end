@@ -2,6 +2,12 @@
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { asArray, formatCurrency, getMealCategoryId, getOrderItemIdKey } from '../../utils.js';
+import {
+	getCategoryMeals,
+	getCategoryName,
+	buildMealListKey as getMealListKey,
+	buildSelectedListKey as getSelectedListKey,
+} from '../../menu-utils.js';
 
 import { resolveImagePointersForDatasets } from '../../composables/useMenuImageCache.js';
 import { useAuth } from '../../composables/useAuth.js';
@@ -52,8 +58,6 @@ const { mealSections } = useMealSections({
 	categories,
 	meals,
 	t,
-	getCategoryMeals,
-	getCategoryName,
 	getMealCategoryId,
 });
 
@@ -117,39 +121,6 @@ function getCartCount(type, id) {
 function isCartAnimating(type, id) {
 	return isCartAnimatingKeyActive(cartKey(type, id));
 }
-
-function getCategoryName(cat) {
-	return cat?.nev ?? '';
-}
-
-function getCategoryMeals(cat) {
-	return asArray(cat?.kesziteleks);
-}
-
-function toStableTextKey(value) {
-	return String(value ?? '').trim().toLowerCase();
-}
-
-function getMealListKey(sectionId, item, itemIndex) {
-	const id = toStableTextKey(item?.id);
-	if (id) return `meal-${sectionId}-${id}`;
-
-	const name = toStableTextKey(item?.nev);
-	if (name) return `meal-${sectionId}-name-${name}`;
-
-	return `meal-${sectionId}-fallback-${itemIndex}`;
-}
-
-function getSelectedListKey(type, item, itemIndex) {
-	const id = toStableTextKey(item?.id);
-	if (id) return `${type}-${id}`;
-
-	const name = toStableTextKey(item?.menuNev ?? item?.nev);
-	if (name) return `${type}-name-${name}`;
-
-	return `${type}-fallback-${itemIndex}`;
-}
-
 
 function getCartButtonLabel(type, id) {
 	const count = getCartCount(type, id);
@@ -240,12 +211,12 @@ const selectedIsEmpty = computed(() => selectedList.value.length === 0);
 <template>
 	<div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-			<div class="flex flex-wrap items-center gap-2">
+			<div class="grid w-full grid-cols-2 gap-2.5 sm:grid-cols-4">
 				<button
 					v-for="tab in menuTabs"
 					:key="tab.key"
 					type="button"
-					class="rounded-full px-3 py-1.5 text-sm font-semibold"
+					class="min-h-10 w-full rounded-full px-3.5 py-2 text-sm font-semibold"
 					:class="
 						activeType === tab.key
 							? 'bg-gray-900 text-white'
@@ -257,7 +228,7 @@ const selectedIsEmpty = computed(() => selectedList.value.length === 0);
 				</button>
 			</div>
 
-			<div class="flex items-center gap-2">
+			<div v-if="isDev" class="flex items-center gap-2">
 				<span
 					v-if="refreshing"
 					class="text-xs text-gray-400"

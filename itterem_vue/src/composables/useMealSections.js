@@ -1,12 +1,16 @@
 import { computed } from 'vue';
 import { asArray } from '../utils.js';
+import {
+	getCategoryMeals as getCategoryMealsDefault,
+	getCategoryName as getCategoryNameDefault,
+} from '../menu-utils.js';
 
 export function useMealSections({
 	categories,
 	meals,
 	t,
-	getCategoryMeals,
-	getCategoryName,
+	getCategoryMeals = getCategoryMealsDefault,
+	getCategoryName = getCategoryNameDefault,
 	getMealCategoryId,
 }) {
 	const mealSections = computed(() => {

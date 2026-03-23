@@ -174,10 +174,10 @@ async function submitOrder() {
 					</div>
 
 					<!-- Quantity controls -->
-					<div class="flex items-center gap-1">
+					<div class="flex items-center gap-2">
 						<button
 							type="button"
-							class="flex h-7 w-7 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
+							class="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
 							@click="decrementItem(item.type, item.id)"
 							:aria-label="t('cart.decreaseQuantity', { name: item.name })"
 						>
@@ -185,10 +185,10 @@ async function submitOrder() {
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
 							</svg>
 						</button>
-						<span class="w-6 text-center text-sm font-semibold">{{ item.quantity }}</span>
+						<span class="w-7 text-center text-sm font-semibold">{{ item.quantity }}</span>
 						<button
 							type="button"
-							class="flex h-7 w-7 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
+							class="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
 							@click="addItem(item)"
 							:aria-label="t('cart.increaseQuantity', { name: item.name })"
 						>
@@ -198,7 +198,7 @@ async function submitOrder() {
 						</button>
 						<button
 							type="button"
-							class="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500"
+							class="ml-1 flex h-10 w-10 items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500"
 							@click="removeItem(item.type, item.id)"
 							:aria-label="t('cart.removeItem', { name: item.name })"
 						>

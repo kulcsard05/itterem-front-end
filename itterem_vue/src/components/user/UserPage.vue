@@ -248,7 +248,7 @@ onUnmounted(() => {
 							<div class="text-sm text-gray-900">{{ currentPhone || '-' }}</div>
 							<button
 								type="button"
-								class="rounded-md px-2.5 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
+								class="min-h-10 rounded-md px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
 								@click="startPhoneEdit"
 							>
 								{{ t('account.editPhone') }}
@@ -266,7 +266,7 @@ onUnmounted(() => {
 							<button
 								type="button"
 								:disabled="phoneSaving"
-								class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+								class="min-h-10 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
 								@click="savePhone"
 							>
 								{{ phoneSaving ? t('common.loading') : t('account.savePhone') }}
@@ -274,7 +274,7 @@ onUnmounted(() => {
 							<button
 								type="button"
 								:disabled="phoneSaving"
-								class="rounded-md px-3 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+								class="min-h-10 rounded-md px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
 								@click="cancelPhoneEdit"
 							>
 								{{ t('account.cancelPhone') }}

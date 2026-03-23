@@ -1,15 +1,14 @@
 import { computed, ref } from 'vue';
-import { ORDER_STATUSES } from '../constants.js';
 import { asArray } from '../utils.js';
+import {
+	ORDER_STATUS_PENDING,
+	ORDER_STATUS_PROCESSING,
+	ORDER_STATUS_READY,
+	ORDER_STATUS_DONE,
+	toOrderId,
+} from '../order-utils.js';
 
-const STATUS_PENDING = ORDER_STATUSES[0];     // 'Függőben'
-const STATUS_PROCESSING = ORDER_STATUSES[1]; // 'Folyamatban'
-const STATUS_READY = ORDER_STATUSES[2];       // 'Átvehető'
-const STATUS_DONE = ORDER_STATUSES[3];        // 'Átvett'
-
-export function toOrderId(value) {
-	return String(value ?? '').trim();
-}
+export { toOrderId };
 
 export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normalizeOrderDto, readText }) {
 	const pendingOrders = ref([]);

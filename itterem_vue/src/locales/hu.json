@@ -30,7 +30,9 @@
     "admin": "Admin",
     "cart": "Kosar",
     "login": "Bejelentkezes",
-    "logout": "Kijelentkezes"
+    "logout": "Kijelentkezes",
+    "logoutConfirmTitle": "Kijelentkezes?",
+    "logoutConfirmMessage": "Biztosan ki szeretnel jelentkezni most?"
   },
   "itemTypes": {
     "meal": "Keszetel",

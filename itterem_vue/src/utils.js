@@ -133,7 +133,7 @@ export function isAuthPayload(value, options = {}) {
 
 	if (requireToken && !String(value.token ?? '').trim()) return false;
 
-	const normalizedRole = String(value.jogosultsag ?? value.role ?? '').trim();
+	const normalizedRole = String(value.jogosultsag ?? '').trim();
 	if (!normalizedRole) return !requireRole;
 
 	const roleNumber = Number(normalizedRole);
@@ -297,7 +297,7 @@ export function getEntityNameById(list, idValue, nameKey = 'nev') {
  */
 export function resolveUserId(auth) {
 	const decodedToken = parseJwt(auth?.token);
-	return auth?.id ?? auth?.sub ?? decodedToken?.sub ?? decodedToken?.id ?? null;
+	return decodedToken?.sub ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -478,14 +478,14 @@ export function formatOrderItems(order) {
 
 /**
  * Extract ingredient names from a meal object.
- * Works with both `hozzavaloNev` and `nev` field shapes.
+ * Backend shape uses `hozzavaloNev` on each ingredient.
  * @param {Object} meal
  * @returns {string[]}
  */
 export function getMealIngredientNames(meal) {
 	const list = asArray(meal?.hozzavalok);
 	return list
-		.map((h) => String(h?.hozzavaloNev ?? h?.nev ?? '').trim())
+		.map((h) => String(h?.hozzavaloNev ?? '').trim())
 		.filter(Boolean);
 }
 

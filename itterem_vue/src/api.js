@@ -7,6 +7,7 @@ import {
 	asArray,
 	toPositiveIntOrNull,
 } from './utils.js';
+import { readOrderCreateId, readOrderMessage } from './order-utils.js';
 import { i18n } from './i18n.js';
 import { deleteMenuEtag, readMenuEtags, writeMenuEtag } from './storage/menu-etags.js';
 
@@ -263,8 +264,8 @@ function normalizeOrderCreateResponse(payload) {
 		throw new Error('Érvénytelen rendelés-válasz a szervertől');
 	}
 
-	const orderId = toPositiveIntOrNull(payload.orderId ?? payload.rendelesId ?? payload.id);
-	const message = String(payload.message ?? payload.uzenet ?? '').trim();
+	const orderId = toPositiveIntOrNull(readOrderCreateId(payload));
+	const message = String(readOrderMessage(payload) ?? '').trim();
 
 	if (orderId == null && !message) {
 		throw new Error('Érvénytelen rendelés-válasz a szervertől');
@@ -356,33 +357,16 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 	}
 }
 
-function extractArray(value) {
-	if (Array.isArray(value)) return value;
-	if (value && typeof value === 'object') {
-		if (Array.isArray(value.$values)) return value.$values;
-		if (Array.isArray(value.value)) return value.value;
-		if (Array.isArray(value.items)) return value.items;
-		if (Array.isArray(value.results)) return value.results;
-	}
-	return null;
-}
-
 function extractListFromBody(body, extraArrayKeys = []) {
-	const direct = extractArray(body);
-	if (direct) return direct;
-
-	const dataArray = extractArray(body?.data);
-	if (dataArray) return dataArray;
+	if (Array.isArray(body)) return body;
+	if (!body || typeof body !== 'object') return [];
 
 	for (const key of extraArrayKeys) {
-		const byKey = extractArray(body?.[key]);
-		if (byKey) return byKey;
+		const value = body?.[key];
+		if (Array.isArray(value)) return value;
 	}
-
 	// Unrecognized object shape should not silently erase cached content.
-	if (body && typeof body === 'object') return null;
-
-	return [];
+	return null;
 }
 
 /**
@@ -451,31 +435,31 @@ const DATASET_CONFIG = Object.freeze({
 	categories: {
 		endpointPath: '/api/Kategoria',
 		fallbackErrorMessage: 'Kategóriák betöltése sikertelen',
-		extraArrayKeys: ['categories'],
+		extraArrayKeys: [],
 		etagKey: 'categories',
 	},
 	meals: {
 		endpointPath: '/api/Keszetelek',
 		fallbackErrorMessage: 'Készételek betöltése sikertelen',
-		extraArrayKeys: ['keszetelek', 'Keszetelek', 'meals'],
+		extraArrayKeys: [],
 		etagKey: 'meals',
 	},
 	sides: {
 		endpointPath: '/api/Koretek',
 		fallbackErrorMessage: 'Köretek betöltése sikertelen',
-		extraArrayKeys: ['koretek', 'Koretek', 'sides'],
+		extraArrayKeys: [],
 		etagKey: 'sides',
 	},
 	menus: {
 		endpointPath: '/api/Menuk',
 		fallbackErrorMessage: 'Menük betöltése sikertelen',
-		extraArrayKeys: ['menuk', 'Menuk', 'menus'],
+		extraArrayKeys: [],
 		etagKey: 'menus',
 	},
 	drinks: {
 		endpointPath: '/api/Uditok',
 		fallbackErrorMessage: 'Üdítők betöltése sikertelen',
-		extraArrayKeys: ['uditok', 'Uditok', 'drinks'],
+		extraArrayKeys: [],
 		etagKey: 'drinks',
 	},
 });
@@ -578,69 +562,11 @@ export function updateOrderStatus(id, status) {
 	const encodedId = encodeURIComponent(normalizedId);
 	const encodedStatus = encodeURIComponent(normalizedStatus);
 	const baseUrl = getApiBaseUrl();
-	const candidateRequests = [
-		{
-			url: `${baseUrl}/api/Rendelesek/${encodedId}?status=${encodedStatus}`,
-			method: 'PUT',
-			headers: authHeaders(),
-		},
-		{
-			url: `${baseUrl}/api/Rendelesek/${encodedId}?statusz=${encodedStatus}`,
-			method: 'PUT',
-			headers: authHeaders(),
-		},
-		{
-			url: `${baseUrl}/api/Rendelesek?id=${encodedId}&status=${encodedStatus}`,
-			method: 'PUT',
-			headers: authHeaders(),
-		},
-		{
-			url: `${baseUrl}/api/Rendelesek/ModifyStatus/${encodedId}?status=${encodedStatus}`,
-			method: 'PUT',
-			headers: authHeaders(),
-		},
-		{
-			url: `${baseUrl}/api/Rendelesek/ModifyStatus?id=${encodedId}&status=${encodedStatus}`,
-			method: 'PUT',
-			headers: authHeaders(),
-		},
-		{
-			url: `${baseUrl}/api/Rendelesek/${encodedId}`,
-			method: 'PUT',
-			headers: authHeaders({ 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ status: normalizedStatus }),
-		},
-		{
-			url: `${baseUrl}/api/Rendelesek/${encodedId}`,
-			method: 'PUT',
-			headers: authHeaders({ 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ statusz: normalizedStatus }),
-		},
-	];
 
-	const tryUpdate = async () => {
-		let lastError = null;
-
-		for (const request of candidateRequests) {
-			try {
-				const response = await abortableFetch(request.url, {
-					method: request.method,
-					headers: request.headers,
-					body: request.body,
-				});
-				return await requestJsonOrThrow(response, fallbackError);
-			} catch (err) {
-				if (err instanceof Error && err.message === AUTH_EXPIRED_MESSAGE) {
-					throw err;
-				}
-				lastError = err;
-			}
-		}
-
-		throwKnownOrFallback(lastError, fallbackError);
-	};
-
-	return tryUpdate();
+	return abortableFetch(`${baseUrl}/api/Rendelesek/${encodedId}?status=${encodedStatus}`, {
+		method: 'PUT',
+		headers: authHeaders(),
+	}).then((response) => requestJsonOrThrow(response, fallbackError));
 }
 
 /**
@@ -680,7 +606,7 @@ export function deleteOrder(id) {
 
 /** Hozzavalok = Hozzávalók */
 export function getIngredients() {
-	return getList('/api/Hozzavalok', 'Hozzávalók betöltése sikertelen', ['hozzavalok', 'ingredients']);
+	return getList('/api/Hozzavalok', 'Hozzávalók betöltése sikertelen');
 }
 
 // ---------------------------------------------------------------------------

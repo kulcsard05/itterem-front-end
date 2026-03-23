@@ -1,7 +1,6 @@
 import { ref } from 'vue';
 import { extractOrderUpdateEvent } from '../order-dto.js';
-
-const STATUS_DONE = 'Átvett';
+import { ORDER_STATUS_DONE, toOrderId as toOrderIdDefault } from '../order-utils.js';
 
 export function useEmployeeOrderRealtimeEvents({
 	loadOrders,
@@ -67,7 +66,7 @@ export function useEmployeeOrderRealtimeEvents({
 
 	function handleOrderUpdated(firstArg, secondArg, thirdArg) {
 		const { orderId, status } = extractOrderUpdateEvent([firstArg, secondArg, thirdArg]);
-		const idKey = toOrderId(orderId);
+		const idKey = (typeof toOrderId === 'function' ? toOrderId : toOrderIdDefault)(orderId);
 		if (!idKey) return;
 
 		const newStatus = readText(status);
@@ -82,7 +81,7 @@ export function useEmployeeOrderRealtimeEvents({
 			return;
 		}
 
-		if (newStatus !== STATUS_DONE) {
+		if (newStatus !== ORDER_STATUS_DONE) {
 			void loadOrders();
 		}
 	}

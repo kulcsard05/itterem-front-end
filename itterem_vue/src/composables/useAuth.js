@@ -20,25 +20,12 @@ let authExpiryTimer = null;
 function migrateAuthShape(value) {
 	if (!value || typeof value !== 'object') return { auth: value, changed: false };
 
-	const legacyPhone = String(value.telefonszam ?? value.telefonSzam ?? value.telefon_szam ?? value.phone ?? '').trim();
+	const normalizedPhone = String(value.telefonszam ?? '').trim();
 	const next = { ...value };
 	let changed = false;
 
-	if (!String(next.telefonszam ?? '').trim() && legacyPhone) {
-		next.telefonszam = legacyPhone;
-		changed = true;
-	}
-
-	if ('telefonSzam' in next) {
-		delete next.telefonSzam;
-		changed = true;
-	}
-	if ('telefon_szam' in next) {
-		delete next.telefon_szam;
-		changed = true;
-	}
-	if ('phone' in next) {
-		delete next.phone;
+	if (String(next.telefonszam ?? '') !== normalizedPhone) {
+		next.telefonszam = normalizedPhone;
 		changed = true;
 	}
 

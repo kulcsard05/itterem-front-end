@@ -95,7 +95,7 @@ function openBreakdownEntry(entry) {
 		</button>
 
 		<div class="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-			<img v-if="itemImage" :src="itemImage" :alt="itemTitle" class="h-72 w-full object-cover" />
+			<img v-if="itemImage" :src="itemImage" :alt="itemTitle" class="h-52 w-full object-cover sm:h-64 md:h-72" />
 
 			<div class="p-6">
 				<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">{{ itemTypeLabel }}</div>
@@ -132,11 +132,11 @@ function openBreakdownEntry(entry) {
 
 				<p v-if="showDescription" class="mt-4 text-gray-700">{{ itemDescription }}</p>
 
-				<div class="mt-6 flex items-center justify-between gap-4">
+				<div class="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
 					<p v-if="itemPrice != null" class="text-lg font-semibold text-gray-900">{{ formatCurrency(itemPrice) }}</p>
 					<button
 						type="button"
-						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+						class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 						@click="addToCart"
 					>
 						{{ t('menuItem.addToCart') }}

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import CartDrawer from './components/user/CartDrawer.vue';
 import FooterSection from './components/public/FooterSection.vue';
+import ConfirmModal from './components/admin/ConfirmModal.vue';
 import { useCart } from './composables/useCart.js';
 import { useAuth } from './composables/useAuth.js';
 import { useLocale } from './composables/useLocale.js';
@@ -36,6 +37,10 @@ const selectedMenuItem = ref(null);
 const cartOpen = ref(false);
 const serverDiscoveryOpen = ref(false);
 const serverReachable = ref(null);
+const logoutConfirmOpen = ref(false);
+const languageMenuOpen = ref(false);
+const mobileLanguageMenuRef = ref(null);
+const desktopLanguageMenuRef = ref(null);
 
 const { addItem, totalItems } = useCart();
 
@@ -61,11 +66,13 @@ try {
 onMounted(() => {
 	window.addEventListener('storage', onStorageChange);
 	window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+	window.addEventListener('click', onWindowClickForLanguageMenu);
 });
 
 onUnmounted(() => {
 	window.removeEventListener('storage', onStorageChange);
 	window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+	window.removeEventListener('click', onWindowClickForLanguageMenu);
 	clearAuthExpiryTimer();
 });
 
@@ -88,6 +95,20 @@ function handleLoginSuccess(user) {
 }
 
 function handleLogout() {
+	doLogout();
+	router.push({ name: 'menu' });
+}
+
+function requestLogout() {
+	logoutConfirmOpen.value = true;
+}
+
+function cancelLogout() {
+	logoutConfirmOpen.value = false;
+}
+
+function confirmLogout() {
+	logoutConfirmOpen.value = false;
 	doLogout();
 	router.push({ name: 'menu' });
 }
@@ -137,6 +158,7 @@ const isMenuRoute = computed(() => route.name === 'menu' || route.name === 'menu
 const isAdminRoute = computed(() => route.name === 'admin');
 const isAccountRoute = computed(() => route.name === 'account');
 const isAboutRoute = computed(() => route.name === 'about');
+const mobileNavColsClass = computed(() => (isLoggedIn.value && isAdmin.value ? 'grid-cols-3' : 'grid-cols-2'));
 
 const currentRouteProps = computed(() => {
 	if (route.name === 'account' || route.name === 'employee-orders') {
@@ -152,27 +174,110 @@ function goAbout() {
 	router.push({ name: 'about' });
 }
 
-function switchLocale(event) {
-	const nextLocale = setLocale(event.target.value);
+function toggleLanguageMenu(event) {
+	event.stopPropagation();
+	languageMenuOpen.value = !languageMenuOpen.value;
+}
+
+function closeLanguageMenu() {
+	languageMenuOpen.value = false;
+}
+
+function onWindowClickForLanguageMenu(event) {
+	const target = event?.target;
+	if (!target) {
+		languageMenuOpen.value = false;
+		return;
+	}
+
+	const inMobileMenu = mobileLanguageMenuRef.value?.contains?.(target);
+	const inDesktopMenu = desktopLanguageMenuRef.value?.contains?.(target);
+	if (inMobileMenu || inDesktopMenu) return;
+
+	languageMenuOpen.value = false;
+}
+
+function selectLocale(nextLocaleValue) {
+	const nextLocale = setLocale(nextLocaleValue);
 	router.replace({
 		query: {
 			...route.query,
 			[LOCALE_QUERY_KEY]: nextLocale,
 		},
 	});
+	closeLanguageMenu();
 }
 </script>
 
 <template>
 	<div class="flex min-h-screen flex-col">
 		<header v-if="!isEmployee" class="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur">
-			<div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-				<button type="button" class="text-lg font-bold text-gray-900" @click="goMenu">{{ t('common.appName') }}</button>
+			<div class="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+				<div class="flex items-center justify-between gap-2">
+					<button type="button" class="text-lg font-bold text-gray-900" @click="goMenu">{{ t('common.appName') }}</button>
 
-				<nav class="flex items-center gap-2">
+					<div class="flex items-center gap-2 sm:hidden">
+						<div ref="mobileLanguageMenuRef" class="relative">
+							<button
+								type="button"
+								class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2.5 text-gray-700 hover:bg-gray-100"
+								:aria-label="t('common.language')"
+								:title="t('common.language')"
+								@click="toggleLanguageMenu"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3a9 9 0 100 18 9 9 0 000-18zm0 0c2.1 2.3 3.3 5.7 3.3 9S14.1 18.7 12 21m0-18C9.9 5.3 8.7 8.7 8.7 12s1.2 6.7 3.3 9m-8.7-9h17.4" />
+								</svg>
+							</button>
+							<div
+								v-if="languageMenuOpen"
+								class="absolute right-0 top-12 z-20 w-40 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg"
+							>
+								<ul class="max-h-48 overflow-y-auto py-1">
+									<li v-for="option in localeOptions" :key="`mobile-locale-${option.value}`">
+										<button
+											type="button"
+											class="w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+											:class="option.value === currentLocale ? 'bg-gray-100 font-semibold text-gray-900' : 'text-gray-700'"
+											@click="selectLocale(option.value)"
+										>
+											{{ option.label }}
+										</button>
+									</li>
+								</ul>
+							</div>
+						</div>
+
+						<!-- Cart button (mobile) -->
+						<button
+							type="button"
+							class="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2.5 text-gray-700 hover:bg-gray-100"
+							:aria-label="t('nav.cart')"
+							@click="cartOpen = true"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
+							</svg>
+							<span
+								v-if="totalItems > 0"
+								class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white"
+							>{{ totalItems }}</span>
+						</button>
+
+						<button
+							type="button"
+							class="inline-flex min-h-10 items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+							@click="goAccount"
+						>
+							{{ isLoggedIn ? t('common.user') : t('nav.login') }}
+						</button>
+					</div>
+				</div>
+
+				<nav :class="['grid w-full gap-2', mobileNavColsClass, 'sm:flex sm:w-auto sm:items-center sm:gap-2']">
 					<button
 						type="button"
-						class="rounded-md px-3 py-2 text-sm font-semibold"
+						class="w-full rounded-md px-3 py-2 text-sm font-semibold sm:w-auto"
 						:class="isMenuRoute ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
 						@click="goMenu"
 					>
@@ -180,7 +285,7 @@ function switchLocale(event) {
 					</button>
 					<button
 						type="button"
-						class="rounded-md px-3 py-2 text-sm font-semibold"
+						class="w-full rounded-md px-3 py-2 text-sm font-semibold sm:w-auto"
 						:class="isAboutRoute ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
 						@click="goAbout"
 					>
@@ -189,7 +294,7 @@ function switchLocale(event) {
 					<button
 						v-if="isLoggedIn && isAdmin"
 						type="button"
-						class="rounded-md px-3 py-2 text-sm font-semibold"
+						class="w-full rounded-md px-3 py-2 text-sm font-semibold sm:w-auto"
 						:class="isAdminRoute ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
 						@click="goAdmin"
 					>
@@ -197,11 +302,21 @@ function switchLocale(event) {
 					</button>
 				</nav>
 
-				<div class="flex items-center gap-3">
+				<div v-if="isLoggedIn" class="w-full sm:hidden">
+					<button
+						type="button"
+						class="inline-flex min-h-10 w-full items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+						@click="requestLogout"
+					>
+						{{ t('nav.logout') }}
+					</button>
+				</div>
+
+				<div class="hidden items-center gap-3 sm:flex">
 					<button
 						v-if="isDevServerDiscoveryEnabled"
 						type="button"
-						class="relative inline-flex items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100"
+						class="relative hidden items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100 sm:inline-flex"
 						title="Developer server discovery"
 						aria-label="Developer server discovery"
 						@click="serverDiscoveryOpen = true"
@@ -216,25 +331,41 @@ function switchLocale(event) {
 						></span>
 					</button>
 
-					<label class="hidden text-xs font-medium uppercase tracking-wide text-gray-500 md:block" for="app-locale">
-						{{ t('common.language') }}
-					</label>
-					<select
-						id="app-locale"
-						class="rounded-md border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-						:aria-label="t('common.language')"
-						:value="currentLocale"
-						@change="switchLocale"
-					>
-						<option v-for="option in localeOptions" :key="option.value" :value="option.value">
-							{{ option.label }}
-						</option>
-					</select>
+					<div ref="desktopLanguageMenuRef" class="relative">
+						<button
+							type="button"
+							class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2.5 text-gray-700 hover:bg-gray-100"
+							:aria-label="t('common.language')"
+							:title="t('common.language')"
+							@click="toggleLanguageMenu"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3a9 9 0 100 18 9 9 0 000-18zm0 0c2.1 2.3 3.3 5.7 3.3 9S14.1 18.7 12 21m0-18C9.9 5.3 8.7 8.7 8.7 12s1.2 6.7 3.3 9m-8.7-9h17.4" />
+							</svg>
+						</button>
+						<div
+							v-if="languageMenuOpen"
+							class="absolute right-0 top-12 z-20 w-40 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg"
+						>
+							<ul class="max-h-48 overflow-y-auto py-1">
+								<li v-for="option in localeOptions" :key="`desktop-locale-${option.value}`">
+									<button
+										type="button"
+										class="w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+										:class="option.value === currentLocale ? 'bg-gray-100 font-semibold text-gray-900' : 'text-gray-700'"
+										@click="selectLocale(option.value)"
+									>
+										{{ option.label }}
+									</button>
+								</li>
+							</ul>
+						</div>
+					</div>
 
-					<!-- Cart button (always visible) -->
+					<!-- Cart button (desktop) -->
 					<button
 						type="button"
-						class="relative inline-flex items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100"
+						class="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2.5 text-gray-700 hover:bg-gray-100"
 						:aria-label="t('nav.cart')"
 						@click="cartOpen = true"
 					>
@@ -261,7 +392,7 @@ function switchLocale(event) {
 						v-if="isLoggedIn"
 						type="button"
 						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-						@click="handleLogout"
+						@click="requestLogout"
 					>
 						{{ t('nav.logout') }}
 					</button>
@@ -299,6 +430,17 @@ function switchLocale(event) {
 			v-if="isDevServerDiscoveryEnabled && serverDiscoveryOpen"
 			@close="serverDiscoveryOpen = false"
 			@server-changed="(url) => { serverReachable = url !== null; serverDiscoveryOpen = false; }"
+		/>
+
+		<ConfirmModal
+			:show="logoutConfirmOpen"
+			:title="t('nav.logoutConfirmTitle')"
+			:message="t('nav.logoutConfirmMessage')"
+			:confirm-label="t('nav.logout')"
+			:cancel-label="t('common.cancel')"
+			confirm-variant="danger"
+			@cancel="cancelLogout"
+			@confirm="confirmLogout"
 		/>
 	</div>
 </template>

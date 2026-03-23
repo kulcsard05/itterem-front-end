@@ -60,13 +60,13 @@ export function useOrderIngredientsLookup({ meals, menus, findById }) {
 	function getOrderEntryIngredients(entry) {
 		if (!entry || typeof entry !== 'object') return [];
 
-		const mealId = entry?.keszetelId ?? entry?.keszetel?.id ?? null;
+		const mealId = entry?.keszetelId ?? null;
 		if (mealId != null) {
 			const meal = resolveMealById(mealId);
 			return getMealIngredientNames(meal);
 		}
 
-		const menuId = entry?.menuId ?? entry?.menu?.id ?? null;
+		const menuId = entry?.menuId ?? null;
 		if (menuId != null) {
 			const menu = resolveMenuById(menuId);
 			const menuMealId = menu?.keszetelId ?? null;

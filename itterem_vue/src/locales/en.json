@@ -30,7 +30,9 @@
     "admin": "Admin",
     "cart": "Cart",
     "login": "Sign in",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "logoutConfirmTitle": "Sign out?",
+    "logoutConfirmMessage": "Are you sure you want to sign out now?"
   },
   "itemTypes": {
     "meal": "Main dish",

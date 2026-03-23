@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { readOrderId, readOrderStatus } from '../order-utils.js';
 
 const DRAG_COOLDOWN_MS = 4000;
 
@@ -11,10 +12,6 @@ export function useOrderStatusDnD({ persistStatus, reloadOrders, ensureOrderInCo
 
 	function isDragCooldown() {
 		return Date.now() - lastDragTime < DRAG_COOLDOWN_MS;
-	}
-
-	function readOrderId(order) {
-		return order?.id ?? order?.Id ?? order?.rendelesId ?? order?.RendelesId ?? null;
 	}
 
 	async function onDraggableChange(event, newStatus) {
@@ -32,8 +29,9 @@ export function useOrderStatusDnD({ persistStatus, reloadOrders, ensureOrderInCo
 			return;
 		}
 
-		if (added && added.statusz == null && added.Statusz != null) {
-			added.statusz = added.Statusz;
+		if (added && added.statusz == null) {
+			const resolvedStatus = readOrderStatus(added);
+			if (resolvedStatus != null) added.statusz = resolvedStatus;
 		}
 
 		// Safety net: ensure vuedraggable actually placed the item in the
