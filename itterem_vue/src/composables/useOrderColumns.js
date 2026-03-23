@@ -11,6 +11,11 @@ import {
 export { toOrderId };
 
 export function useOrderColumns({ selectedOrderId, selectedOrderSnapshot, normalizeOrderDto, readText }) {
+	const STATUS_PENDING = ORDER_STATUS_PENDING;
+	const STATUS_PROCESSING = ORDER_STATUS_PROCESSING;
+	const STATUS_READY = ORDER_STATUS_READY;
+	const STATUS_DONE = ORDER_STATUS_DONE;
+
 	const pendingOrders = ref([]);
 	const processingOrders = ref([]);
 	const readyOrders = ref([]);
