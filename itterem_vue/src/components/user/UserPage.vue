@@ -16,7 +16,7 @@ const props = defineProps({
 	auth: { type: Object, default: null },
 });
 
-const emit = defineEmits(['login-success', 'logout']);
+const emit = defineEmits(['login-success']);
 const { t } = useI18n();
 
 const currentForm = ref('login');
@@ -227,7 +227,7 @@ onUnmounted(() => {
 			v-if="props.auth && props.auth.token"
 			class="mt-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
 		>
-			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+			<div>
 				<div>
 					<div class="text-sm text-gray-600">{{ t('account.signedInAs') }}</div>
 					<div class="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-gray-900">
@@ -285,14 +285,6 @@ onUnmounted(() => {
 						<p v-else-if="phoneSuccess" class="mt-2 text-sm text-green-600">{{ phoneSuccess }}</p>
 					</div>
 				</div>
-
-				<button
-					type="button"
-					class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-					@click="emit('logout')"
-				>
-					{{ t('nav.logout') }}
-				</button>
 			</div>
 
 			<div class="mt-6 text-sm text-gray-600">

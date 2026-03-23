@@ -266,7 +266,7 @@ function selectLocale(nextLocaleValue) {
 
 						<button
 							type="button"
-							class="inline-flex min-h-10 max-w-[11rem] items-center justify-center truncate rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+							class="inline-flex min-h-10 max-w-[9rem] items-center justify-center truncate rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 							@click="goAccount"
 						>
 							{{ isLoggedIn ? (auth.teljesNev || auth.email || t('common.user')) : t('nav.login') }}
@@ -301,6 +301,16 @@ function selectLocale(nextLocaleValue) {
 						{{ t('nav.admin') }}
 					</button>
 				</nav>
+
+				<div v-if="isLoggedIn && isAccountRoute" class="w-full sm:hidden">
+					<button
+						type="button"
+						class="inline-flex min-h-10 w-full items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+						@click="requestLogout"
+					>
+						{{ t('nav.logout') }}
+					</button>
+				</div>
 
 				<div class="hidden items-center gap-3 sm:flex">
 					<button
@@ -379,7 +389,7 @@ function selectLocale(nextLocaleValue) {
 					</button>
 
 					<button
-						v-if="isLoggedIn"
+						v-if="isLoggedIn && isAccountRoute"
 						type="button"
 						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
 						@click="requestLogout"
