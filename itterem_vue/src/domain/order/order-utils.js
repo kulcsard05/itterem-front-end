@@ -1,4 +1,4 @@
-import { ORDER_STATUSES } from './constants.js';
+import { ORDER_STATUSES } from '../../config/constants.js';
 
 export const ORDER_STATUS_PENDING = ORDER_STATUSES[0] ?? 'Függőben';
 export const ORDER_STATUS_PROCESSING = ORDER_STATUSES[1] ?? 'Folyamatban';

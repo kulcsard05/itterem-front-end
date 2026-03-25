@@ -3,7 +3,7 @@
  * Reduces duplicated validation and payload-building logic across entities.
  */
 
-import { asArray } from './utils.js';
+import { asArray } from '../shared/utils.js';
 
 // ---------------------------------------------------------------------------
 // Validators — return an error string or null (valid).

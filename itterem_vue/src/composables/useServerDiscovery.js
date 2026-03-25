@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { SERVER_URL_STORAGE_KEY } from '../constants.js';
+import { SERVER_URL_STORAGE_KEY } from '../config/constants.js';
 
 // ---------------------------------------------------------------------------
 // Config

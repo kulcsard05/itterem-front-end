@@ -1,6 +1,6 @@
-import { ORDER_STATUSES, deleteOrder, updateOrderStatus } from '../../api.js';
-import { requiredSelect } from '../../admin-helpers.js';
-import { formatDateTime, formatOrderItems } from '../../utils.js';
+import { ORDER_STATUSES, deleteOrder, updateOrderStatus } from '../../services/api.js';
+import { requiredSelect } from '../../admin/admin-helpers.js';
+import { formatDateTime, formatOrderItems } from '../../shared/utils.js';
 
 export function createOrderConfig() {
 	return {

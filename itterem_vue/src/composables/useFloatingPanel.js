@@ -1,5 +1,5 @@
 import { reactive, ref, onScopeDispose } from 'vue';
-import { readStorageJson, writeStorageJson } from '../storage-utils.js';
+import { readStorageJson, writeStorageJson } from '../storage/storage-utils.js';
 
 export function useFloatingPanel({
 	prefsKey,

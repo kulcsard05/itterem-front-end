@@ -3,7 +3,7 @@ import {
 	DEFAULT_LOCALE,
 	FALLBACK_LOCALE,
 	SUPPORTED_LOCALES,
-} from './constants.js';
+} from './config/constants.js';
 import en from './locales/en.json';
 import hu from './locales/hu.json';
 

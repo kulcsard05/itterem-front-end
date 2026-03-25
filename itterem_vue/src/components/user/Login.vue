@@ -1,8 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { login } from '../../api.js';
-import { isValidEmail } from '../../utils.js';
+import { login } from '../../services/api.js';
+import { isValidEmail } from '../../shared/utils.js';
 
 const emit = defineEmits(['switch', 'login-success']);
 const { t } = useI18n();

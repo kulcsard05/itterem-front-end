@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { register } from '../../api.js';
-import { isValidEmail, isValidPhone } from '../../utils.js';
-import { PASSWORD_MIN_LENGTH } from '../../constants.js';
+import { register } from '../../services/api.js';
+import { isValidEmail, isValidPhone } from '../../shared/utils.js';
+import { PASSWORD_MIN_LENGTH } from '../../config/constants.js';
 
 const emit = defineEmits(['switch']);
 const { t } = useI18n();

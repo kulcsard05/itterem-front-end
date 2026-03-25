@@ -1,7 +1,7 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
-import { ORDER_STATUS_CLASSES } from '../../constants.js';
-import { normalizeId } from '../../utils.js';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import OrderStatusBadge from '../common/OrderStatusBadge.vue';
+import { normalizeId } from '../../shared/utils.js';
 
 const props = defineProps({
 	columns: { type: Array, required: true },
@@ -30,11 +30,15 @@ const dragSelectionValue = ref(false);
 const dragSelectionStartItem = ref(null);
 const dragSelectionMoved = ref(false);
 
-watchEffect(() => {
-	if (selectAllCheckbox.value) {
-		selectAllCheckbox.value.indeterminate = props.someSelected && !props.allSelected;
-	}
-});
+watch(
+	() => [selectAllCheckbox.value, props.someSelected, props.allSelected],
+	([checkbox, someSelected, allSelected]) => {
+		if (checkbox) {
+			checkbox.indeterminate = someSelected && !allSelected;
+		}
+	},
+	{ immediate: true },
+);
 
 function isItemSelected(item) {
 	return selectedIdSet.value.has(normalizeId(item?.id));
@@ -172,14 +176,11 @@ onBeforeUnmount(() => {
 
 							<!-- Order status badge -->
 							<template v-else-if="col.type === 'status'">
-								<span
-									:class="[
-										'inline-block px-3 py-1 rounded-full text-xs font-semibold',
-										ORDER_STATUS_CLASSES[item[col.key]] || 'bg-gray-100 text-gray-700',
-									]"
-								>
-									{{ item[col.key] ?? '-' }}
-								</span>
+								<OrderStatusBadge
+									:status="item[col.key]"
+									base-class="inline-block px-3 py-1 rounded-full text-xs font-semibold"
+									fallback-class="bg-gray-100 text-gray-700"
+								/>
 							</template>
 
 							<!-- Available badge -->

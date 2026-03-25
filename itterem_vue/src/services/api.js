@@ -6,10 +6,10 @@ import {
 	readStoredAuth,
 	asArray,
 	toPositiveIntOrNull,
-} from './utils.js';
-import { readOrderCreateId, readOrderMessage } from './order-utils.js';
-import { i18n } from './i18n.js';
-import { deleteMenuEtag, readMenuEtags, writeMenuEtag } from './storage/menu-etags.js';
+} from '../shared/utils.js';
+import { readOrderCreateId, readOrderMessage } from '../domain/order/order-utils.js';
+import { i18n } from '../i18n.js';
+import { deleteMenuEtag, readMenuEtags, writeMenuEtag } from '../storage/menu-etags.js';
 
 // ---------------------------------------------------------------------------
 // Fetch with timeout — prevents requests from hanging indefinitely.
@@ -536,8 +536,8 @@ export function getDrinksConditional() {
 // Orders  (Rendelések)
 // ---------------------------------------------------------------------------
 
-// Re-export from constants.js so existing callers keep working.
-import { ORDER_STATUSES } from './constants.js';
+// Re-export order statuses from config constants for API-level validation.
+import { ORDER_STATUSES } from '../config/constants.js';
 export { ORDER_STATUSES };
 
 export function getOrders() {

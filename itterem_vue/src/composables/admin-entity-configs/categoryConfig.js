@@ -1,5 +1,5 @@
-import { createCategory, deleteCategory, updateCategory } from '../../api.js';
-import { requiredName } from '../../admin-helpers.js';
+import { createCategory, deleteCategory, updateCategory } from '../../services/api.js';
+import { requiredName } from '../../admin/admin-helpers.js';
 
 export function createCategoryConfig() {
 	return {

@@ -1,5 +1,5 @@
-import { asArray } from '../utils.js';
-import { readStorageJson, writeStorageJson } from '../storage-utils.js';
+import { asArray } from '../shared/utils.js';
+import { readStorageJson, writeStorageJson } from '../storage/storage-utils.js';
 
 const ADMIN_CACHE_VERSION = 'v1';
 const ADMIN_CACHE_PREFIX = `admin-cache-${ADMIN_CACHE_VERSION}`;

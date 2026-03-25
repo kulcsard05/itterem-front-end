@@ -1,13 +1,14 @@
 <script setup>
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
-import { getMealById } from '../../api.js';
+import { getMealById } from '../../services/api.js';
+import ErrorAlert from '../common/ErrorAlert.vue';
 import { useAdminBulkActionEngine } from '../../composables/useAdminBulkActionEngine.js';
 import { useAdminBulkFailurePrompt } from '../../composables/useAdminBulkFailurePrompt.js';
 import { useAdminDataLoader } from '../../composables/useAdminDataLoader.js';
 import { useAdminEntityConfigs } from '../../composables/useAdminEntityConfigs.js';
 import { useAdminSelectionState } from '../../composables/useAdminSelectionState.js';
 import { useObjectUrlPreview } from '../../composables/useObjectUrlPreview.js';
-import { asArray, getEntityNameById, hasValidEntityId, sortOrdersByDateDesc } from '../../utils.js';
+import { asArray, getEntityNameById, hasValidEntityId, sortOrdersByDateDesc } from '../../shared/utils.js';
 
 const AdminTable = defineAsyncComponent(() => import('./AdminTable.vue'));
 const AdminEditModal = defineAsyncComponent(() => import('./AdminEditModal.vue'));
@@ -577,9 +578,7 @@ watch(activeTab, () => {
 			<div v-if="isLoading" class="mb-4 rounded-lg bg-white/90 p-3 text-sm font-medium text-gray-800">
 				Adatok betöltése...
 			</div>
-			<div v-else-if="loadError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">
-				{{ loadError }}
-			</div>
+			<ErrorAlert v-else-if="loadError" :message="loadError" wrapper-class="mb-4" />
 
 			<div
 				v-if="showingStorageSnapshot"
@@ -594,9 +593,7 @@ watch(activeTab, () => {
 				</div>
 			</div>
 
-			<div v-if="actionError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">
-				{{ actionError }}
-			</div>
+			<ErrorAlert v-if="actionError" :message="actionError" wrapper-class="mb-4" />
 			<div v-if="actionSuccess" class="mb-4 rounded-lg bg-green-50 p-3 text-sm font-medium text-green-800">
 				{{ actionSuccess }}
 			</div>

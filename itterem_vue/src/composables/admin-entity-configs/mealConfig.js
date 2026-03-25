@@ -3,7 +3,7 @@ import {
 	deleteMeal,
 	getMealById,
 	updateMeal,
-} from '../../api.js';
+} from '../../services/api.js';
 import {
 	buildBasePayload,
 	buildSelectOptions,
@@ -16,13 +16,13 @@ import {
 	requiredSelect,
 	validateAll,
 	formatPrice,
-} from '../../admin-helpers.js';
+} from '../../admin/admin-helpers.js';
 import {
 	asArray,
 	getImageSrcFromItem,
 	getMealCategoryId as getMealCatId,
 	getMealIngredientNames,
-} from '../../utils.js';
+} from '../../shared/utils.js';
 import { AVAILABLE_OPTIONS, toStringList } from './shared.js';
 
 export function createMealConfig({ kategoriak, hozzavalok }) {

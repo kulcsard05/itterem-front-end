@@ -1,12 +1,12 @@
 import { computed, ref } from 'vue';
-import { asArray } from '../utils.js';
+import { asArray } from '../shared/utils.js';
 import {
 	ORDER_STATUS_PENDING,
 	ORDER_STATUS_PROCESSING,
 	ORDER_STATUS_READY,
 	ORDER_STATUS_DONE,
 	toOrderId,
-} from '../order-utils.js';
+} from '../domain/order/order-utils.js';
 
 export { toOrderId };
 

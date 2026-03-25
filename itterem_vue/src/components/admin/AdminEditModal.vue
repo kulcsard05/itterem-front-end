@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue';
-import { asArray, asObject, buildFieldOptionsMap, getFieldOptions as readFieldOptions } from '../../utils.js';
+import AdminFormField from './AdminFormField.vue';
+import ErrorAlert from '../common/ErrorAlert.vue';
+import { asObject, buildFieldOptionsMap, getFieldOptions as readFieldOptions } from '../../shared/utils.js';
 
 const props = defineProps({
 	show: { type: Boolean, default: false },
@@ -20,21 +22,6 @@ function updateField(key, value) {
 	const currentForm = asObject(props.form);
 	if (currentForm?.[key] === value) return;
 	emit('update:form', { ...currentForm, [key]: value });
-}
-
-function toggleMultiSelect(key, optionValue, checked) {
-	const currentForm = asObject(props.form);
-	const current = asArray(currentForm?.[key]);
-	const normalizedValue = String(optionValue);
-	const set = new Set(current.map((v) => String(v)));
-	if (checked) set.add(normalizedValue);
-	else set.delete(normalizedValue);
-	updateField(key, Array.from(set));
-}
-
-function isMultiSelected(fieldKey, optionValue) {
-	const values = asArray(asObject(props.form)?.[fieldKey]).map((value) => String(value));
-	return values.includes(String(optionValue));
 }
 
 const resolvedFieldOptions = computed(() => {
@@ -74,66 +61,14 @@ const resolvedFieldOptions = computed(() => {
 				</div>
 
 				<!-- Dynamic form fields from entity config -->
-				<div v-for="field in fields" :key="field.key" class="space-y-2">
-					<label class="block text-sm font-semibold text-gray-700">{{ field.label }}</label>
-
-					<textarea
-						v-if="field.type === 'textarea'"
-						:value="form[field.key]"
-						rows="3"
-						class="w-full px-3.5 py-2.5 border-2 border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition"
-						@input="updateField(field.key, $event.target.value)"
-					/>
-
-					<div v-else-if="field.type === 'multiselect'" class="space-y-2">
-						<div class="max-h-44 overflow-auto rounded-lg border-2 border-gray-200 bg-white">
-							<label
-								v-for="opt in readFieldOptions(resolvedFieldOptions, field.key)"
-								:key="opt.value"
-								class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
-							>
-								<input
-									type="checkbox"
-									:checked="isMultiSelected(field.key, opt.value)"
-									@change="toggleMultiSelect(field.key, opt.value, $event.target.checked)"
-								/>
-								<span>{{ opt.label }}</span>
-							</label>
-						</div>
-					</div>
-
-					<select
-						v-else-if="field.type === 'select'"
-						:value="form[field.key]"
-						class="w-full px-3.5 py-2.5 border-2 border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition"
-						@change="updateField(field.key, $event.target.value)"
-					>
-						<option v-if="field.placeholder" value="">{{ field.placeholder }}</option>
-						<option v-for="opt in readFieldOptions(resolvedFieldOptions, field.key)" :key="opt.value" :value="opt.value">
-							{{ opt.label }}
-						</option>
-					</select>
-
-					<input
-						v-else-if="field.type === 'number'"
-						:value="form[field.key]"
-						type="number"
-						:min="field.min"
-						:step="field.step"
-						class="w-full px-3.5 py-2.5 border-2 border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition"
-						@input="updateField(field.key, $event.target.value)"
-					/>
-
-					<input
-						v-else
-						:value="form[field.key]"
-						type="text"
-						class="w-full px-3.5 py-2.5 border-2 border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition"
-						@input="updateField(field.key, $event.target.value)"
-					/>
-
-					<div v-if="field.helpText" class="text-xs text-gray-500">{{ field.helpText }}</div>
-				</div>
+				<AdminFormField
+					v-for="field in fields"
+					:key="field.key"
+					:field="field"
+					:model-value="form[field.key]"
+					:options="readFieldOptions(resolvedFieldOptions, field.key)"
+					@update:model-value="updateField(field.key, $event)"
+				/>
 
 				<!-- Image section -->
 				<template v-if="showImageUpload">
@@ -171,9 +106,7 @@ const resolvedFieldOptions = computed(() => {
 
 			<!-- Footer -->
 			<div class="p-5 border-t-2 border-gray-200">
-				<div v-if="error" class="mb-3 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700" role="alert">
-					{{ error }}
-				</div>
+				<ErrorAlert :message="error" wrapper-class="mb-3" />
 				<div class="flex gap-3 justify-end">
 					<button
 						class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-gray-100 text-gray-500 hover:bg-gray-200 transition cursor-pointer"

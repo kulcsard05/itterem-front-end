@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { asArray, formatCurrency, getItemTypeLabel, readFirstText } from '../../utils.js';
+import { asArray, formatCurrency, getItemTypeLabel, readFirstText } from '../../shared/utils.js';
 
 const props = defineProps({
 	itemData: {

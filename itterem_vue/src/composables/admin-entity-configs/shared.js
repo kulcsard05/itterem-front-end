@@ -1,4 +1,4 @@
-import { asArray } from '../../utils.js';
+import { asArray } from '../../shared/utils.js';
 
 export const AVAILABLE_OPTIONS = Object.freeze([
 	{ value: 1, label: 'Igen' },

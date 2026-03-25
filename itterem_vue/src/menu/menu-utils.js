@@ -1,4 +1,4 @@
-import { asArray, findById } from './utils.js';
+import { asArray, findById } from '../shared/utils.js';
 
 export function toStableTextKey(value) {
 	return String(value ?? '').trim().toLowerCase();

@@ -1,11 +1,11 @@
 import { computed } from 'vue';
-import { asArray, findById, getItemTypeLabel, getMealIngredientNames } from '../utils.js';
+import { asArray, findById, getItemTypeLabel, getMealIngredientNames } from '../shared/utils.js';
 import { getImageSrc } from './useMenuImageCache.js';
 import {
 	toStableTextKey,
 	resolveMenuParts as resolveMenuPartsFromDatasets,
 	buildMenuMetaFromParts,
-} from '../menu-utils.js';
+} from '../menu/menu-utils.js';
 
 export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 	function getItemName(type, item) {

@@ -1,4 +1,4 @@
-import { createSide, deleteSide, updateSide } from '../../api.js';
+import { createSide, deleteSide, updateSide } from '../../services/api.js';
 import {
 	buildBasePayload,
 	normalizeAvailable,
@@ -8,8 +8,8 @@ import {
 	requiredPrice,
 	validateAll,
 	formatPrice,
-} from '../../admin-helpers.js';
-import { getImageSrcFromItem } from '../../utils.js';
+} from '../../admin/admin-helpers.js';
+import { getImageSrcFromItem } from '../../shared/utils.js';
 import { AVAILABLE_OPTIONS } from './shared.js';
 
 export function createSideConfig() {

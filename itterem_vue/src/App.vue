@@ -8,7 +8,7 @@ import ConfirmModal from './components/admin/ConfirmModal.vue';
 import { useCart } from './composables/useCart.js';
 import { useAuth } from './composables/useAuth.js';
 import { useLocale } from './composables/useLocale.js';
-import { AUTH_EXPIRED_EVENT, LOCALE_QUERY_KEY } from './constants.js';
+import { AUTH_EXPIRED_EVENT, LOCALE_QUERY_KEY } from './config/constants.js';
 
 const isDevServerDiscoveryEnabled = import.meta.env.DEV;
 const ServerDiscovery = isDevServerDiscoveryEnabled

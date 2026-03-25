@@ -1,9 +1,9 @@
-import { ORDER_STATUSES } from '../constants.js';
+import { ORDER_STATUSES } from '../config/constants.js';
 import {
 	applyBulkPriceAdjustment,
 	parseBulkAdjustmentValue,
-} from '../admin-helpers.js';
-import { hasValidEntityId } from '../utils.js';
+} from '../admin/admin-helpers.js';
+import { hasValidEntityId } from '../shared/utils.js';
 
 export function useAdminBulkActionEngine({ entityConfigs, bulkForm, promptBulkFailure }) {
 	function createDefaultBulkForm(entityType) {

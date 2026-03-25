@@ -1,16 +1,20 @@
 import { ref } from 'vue';
 import {
-	MENU_CACHE_STORAGE_KEY,
 	MENU_IMAGES_STORAGE_KEY,
-} from '../constants.js';
-import { asArray, findById, getItemTypeLabel } from '../utils.js';
-import { readStorageJson, writeStorageJson } from '../storage-utils.js';
+	MENU_DATASET_STORAGE_KEYS,
+} from '../config/constants.js';
+import { asArray, findById, getItemTypeLabel } from '../shared/utils.js';
+import { readStorageJson, writeStorageJson } from '../storage/storage-utils.js';
 import { persistInlineImagesForDatasets, toPersistentImageRef } from './useMenuImageCache.js';
 import { dropMenuEtags } from '../storage/menu-etags.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton – every component shares the same menu data.
 // ---------------------------------------------------------------------------
+// Contract:
+// - Dataset refs are global shared state used by multiple screens/composables.
+// - Cache hydration and ETag coherence are coordinated here as one boundary.
+// - Avoid introducing per-component state wrappers around these refs.
 
 const categories = ref([]);
 const meals = ref([]);
@@ -28,32 +32,6 @@ const menuFingerprints = ref({
 
 const MENU_DATASET_KEYS = ['categories', 'meals', 'sides', 'menus', 'drinks'];
 
-const MENU_DATASET_STORAGE_KEYS = {
-	categories: 'menu-cache-categories-v4',
-	meals: 'menu-cache-meals-v4',
-	sides: 'menu-cache-sides-v4',
-	menus: 'menu-cache-menus-v4',
-	drinks: 'menu-cache-drinks-v4',
-};
-
-const LEGACY_MENU_DATASET_STORAGE_KEYS = [
-	'menu-cache-categories-v1',
-	'menu-cache-meals-v1',
-	'menu-cache-sides-v1',
-	'menu-cache-menus-v1',
-	'menu-cache-drinks-v1',
-	'menu-cache-categories-v2',
-	'menu-cache-meals-v2',
-	'menu-cache-sides-v2',
-	'menu-cache-menus-v2',
-	'menu-cache-drinks-v2',
-	'menu-cache-categories-v3',
-	'menu-cache-meals-v3',
-	'menu-cache-sides-v3',
-	'menu-cache-menus-v3',
-	'menu-cache-drinks-v3',
-];
-
 const MENU_FIELD_MAP = {
 	categories: ['categories', 'kategoriak', 'Kategoria', 'Kategoriak'],
 	meals: ['meals', 'keszetelek', 'Keszetelek', 'keszitelek'],
@@ -69,8 +47,6 @@ const MENU_DATASET_REFS = {
 	menus,
 	drinks,
 };
-
-let didCleanupLegacyCaches = false;
 
 // ---------------------------------------------------------------------------
 // Fingerprinting – avoid unnecessary updates when data hasn't changed.
@@ -177,29 +153,7 @@ function writeDatasetCache(datasetKey, value, context) {
 	});
 }
 
-function removeLegacyMenuCache() {
-	try {
-		localStorage.removeItem(MENU_CACHE_STORAGE_KEY);
-	} catch {
-		// ignore storage failures
-	}
-}
-
-function cleanupLegacyDatasetCachesOnce() {
-	if (didCleanupLegacyCaches) return;
-	didCleanupLegacyCaches = true;
-	for (const key of LEGACY_MENU_DATASET_STORAGE_KEYS) {
-		try {
-			localStorage.removeItem(key);
-		} catch {
-			// ignore storage failures
-		}
-	}
-}
-
 async function saveMenuCache() {
-	cleanupLegacyDatasetCachesOnce();
-
 	// Persist inline image payloads to Cache API before serializing pointers.
 	try {
 		await persistInlineImagesForDatasets(
@@ -245,9 +199,6 @@ async function saveMenuCache() {
 	// Keep ETag + cache coherent for failed datasets only.
 	dropMenuEtags(failed);
 
-	// Free space: the old monolithic key is no longer needed.
-	removeLegacyMenuCache();
-
 	return failed.length === 0;
 }
 
@@ -257,13 +208,6 @@ function readFirstArray(payload, keys) {
 		if (Array.isArray(value)) return value;
 	}
 	return [];
-}
-
-function hasArrayForAnyKey(payload, keys) {
-	for (const key of keys) {
-		if (Array.isArray(payload?.[key])) return true;
-	}
-	return false;
 }
 
 function readDatasetFromStorage(datasetKey) {
@@ -292,13 +236,6 @@ function readDatasetFromStorage(datasetKey) {
 }
 
 function hydrateMenuCache() {
-	cleanupLegacyDatasetCachesOnce();
-
-	const legacyPayload = readStorageJson(MENU_CACHE_STORAGE_KEY, {
-		storage: localStorage,
-		fallback: null,
-	});
-
 	const missingInCache = [];
 
 	for (const key of MENU_DATASET_KEYS) {
@@ -306,13 +243,6 @@ function hydrateMenuCache() {
 		const fromDataset = readDatasetFromStorage(key);
 		if (fromDataset.found) {
 			setDatasetIfChanged(key, targetRef, fromDataset.data);
-			continue;
-		}
-
-		const legacyKeys = MENU_FIELD_MAP[key] || [];
-		const hasLegacy = hasArrayForAnyKey(legacyPayload, legacyKeys);
-		if (hasLegacy) {
-			setDatasetIfChanged(key, targetRef, readFirstArray(legacyPayload, legacyKeys));
 			continue;
 		}
 

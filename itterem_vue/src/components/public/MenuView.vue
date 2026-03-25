@@ -1,13 +1,13 @@
 <script setup>
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { asArray, formatCurrency, getMealCategoryId, getOrderItemIdKey } from '../../utils.js';
+import { asArray, formatCurrency, getMealCategoryId, getOrderItemIdKey } from '../../shared/utils.js';
 import {
 	getCategoryMeals,
 	getCategoryName,
 	buildMealListKey as getMealListKey,
 	buildSelectedListKey as getSelectedListKey,
-} from '../../menu-utils.js';
+} from '../../menu/menu-utils.js';
 
 import { resolveImagePointersForDatasets } from '../../composables/useMenuImageCache.js';
 import { useAuth } from '../../composables/useAuth.js';

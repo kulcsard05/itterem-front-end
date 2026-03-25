@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue';
-import { formatDateTime, getOrderStatusClasses } from '../../utils.js';
+import OrderStatusBadge from '../common/OrderStatusBadge.vue';
+import { formatDateTime } from '../../shared/utils.js';
 
 const props = defineProps({
 	visibleOrder: {
@@ -118,14 +119,10 @@ defineExpose({
 		<div class="flex-1 overflow-auto p-4" :style="{ fontSize: detailFontSize + 'px' }">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-base font-bold text-gray-900">Tételek</div>
-				<span
-					:class="[
-						'inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold',
-						getOrderStatusClasses(visibleOrder?.statusz),
-					]"
-				>
-					{{ visibleOrder?.statusz || '-' }}
-				</span>
+				<OrderStatusBadge
+					:status="visibleOrder?.statusz"
+					base-class="inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold"
+				/>
 			</div>
 
 			<div class="mt-3">

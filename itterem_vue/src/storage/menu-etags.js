@@ -1,4 +1,4 @@
-import { MENU_ETAG_STORAGE_KEY } from '../constants.js';
+import { MENU_ETAG_STORAGE_KEY } from '../config/constants.js';
 
 export function readMenuEtags() {
 	try {

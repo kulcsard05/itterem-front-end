@@ -3,14 +3,15 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Login from './Login.vue';
 import Register from './Register.vue';
-import { getOwnOrders, updatePhone } from '../../api.js';
+import OrderStatusBadge from '../common/OrderStatusBadge.vue';
+import { getOwnOrders, updatePhone } from '../../services/api.js';
 import { useSignalR } from '../../composables/useSignalR.js';
-import { extractOrderUpdateEvent } from '../../order-dto.js';
-import { asArray, formatDateTime, formatOrderItems, getOrderStatusClasses, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../utils.js';
+import { extractOrderUpdateEvent } from '../../domain/order/order-dto.js';
+import { asArray, formatDateTime, formatOrderItems, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../shared/utils.js';
 import {
 	DONE_NOTICE_TIMEOUT_MS,
 	ROLE_ADMIN,
-} from '../../constants.js';
+} from '../../config/constants.js';
 
 const props = defineProps({
 	auth: { type: Object, default: null },
@@ -169,8 +170,6 @@ async function savePhone() {
 function toggleForm() {
 	currentForm.value = currentForm.value === 'login' ? 'register' : 'login';
 }
-
-// formatDateTime / formatOrderItems moved to utils.js
 
 const displayedOrders = computed(() =>
 	[...asArray(ownOrders.value)].sort(sortOrdersByDateDesc),
@@ -340,12 +339,11 @@ onUnmounted(() => {
 						</div>
 							<div class="mt-1 flex items-center gap-2 text-sm text-gray-700">
 								{{ t('account.status') }}
-								<span
-									:class="[
-										'inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold',
-										getOrderStatusClasses(order.statusz),
-									]"
-								>{{ getOrderStatusLabel(order.statusz) }}</span>
+								<OrderStatusBadge
+									:status="order.statusz"
+									:label="getOrderStatusLabel(order.statusz)"
+									base-class="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold"
+								/>
 							</div>
 						<div class="mt-1 text-sm text-gray-700">{{ t('account.items', { items: formatOrderItems(order) }) }}</div>
 					</div>

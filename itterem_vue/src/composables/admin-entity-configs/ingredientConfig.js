@@ -1,5 +1,5 @@
-import { createIngredient, deleteIngredient, updateIngredient } from '../../api.js';
-import { requiredName } from '../../admin-helpers.js';
+import { createIngredient, deleteIngredient, updateIngredient } from '../../services/api.js';
+import { requiredName } from '../../admin/admin-helpers.js';
 
 export function createIngredientConfig() {
 	return {

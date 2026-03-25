@@ -1,4 +1,4 @@
-import { createDrink, deleteDrink, updateDrink } from '../../api.js';
+import { createDrink, deleteDrink, updateDrink } from '../../services/api.js';
 import {
 	buildBasePayload,
 	normalizeAvailable,
@@ -8,8 +8,8 @@ import {
 	requiredPrice,
 	validateAll,
 	formatPrice,
-} from '../../admin-helpers.js';
-import { getImageSrcFromItem } from '../../utils.js';
+} from '../../admin/admin-helpers.js';
+import { getImageSrcFromItem } from '../../shared/utils.js';
 import { AVAILABLE_OPTIONS } from './shared.js';
 
 export function createDrinkConfig() {

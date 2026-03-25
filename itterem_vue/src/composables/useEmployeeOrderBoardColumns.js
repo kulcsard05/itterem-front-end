@@ -1,5 +1,5 @@
 import { reactive } from 'vue';
-import { ORDER_STATUSES } from '../constants.js';
+import { ORDER_STATUSES } from '../config/constants.js';
 
 export function useEmployeeOrderBoardColumns() {
 	const columnOpen = reactive({

@@ -1,11 +1,11 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { placeOrder } from '../../api.js';
+import { placeOrder } from '../../services/api.js';
 import { useCart } from '../../composables/useCart.js';
 import { usePromiseTimeout } from '../../composables/usePromiseTimeout.js';
-import { formatCurrency, getItemTypeLabel, resolveUserId } from '../../utils.js';
-import { ORDER_TIMEOUT_MS } from '../../constants.js';
+import { formatCurrency, getItemTypeLabel, resolveUserId } from '../../shared/utils.js';
+import { ORDER_TIMEOUT_MS } from '../../config/constants.js';
 
 const props = defineProps({
 	open: {

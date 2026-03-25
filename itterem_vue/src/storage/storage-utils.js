@@ -6,7 +6,7 @@ import {
 	DEFAULT_LOCALE,
 	LOCALE_STORAGE_KEY,
 	SUPPORTED_LOCALES,
-} from './constants.js';
+} from '../config/constants.js';
 
 /**
  * Log a warning in DEV when a localStorage write fails due to quota.

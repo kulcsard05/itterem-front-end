@@ -1,12 +1,16 @@
 import { ref, watch } from 'vue';
 import { HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import { useAuth } from './useAuth.js';
-import { getApiBaseUrl } from '../utils.js';
-import { SIGNALR_HUB_PATH } from '../constants.js';
+import { getApiBaseUrl } from '../shared/utils.js';
+import { SIGNALR_HUB_PATH } from '../config/constants.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton — one WebSocket connection shared app-wide.
 // ---------------------------------------------------------------------------
+// Contract:
+// - Exactly one connection instance is shared across all consumers.
+// - Listener registration is reference-counted per event name.
+// - Auth-token watcher controls start/stop; consumers should not duplicate it.
 
 export const SIGNALR_CONNECTION_STATE = Object.freeze({
 	DISCONNECTED: 'disconnected',

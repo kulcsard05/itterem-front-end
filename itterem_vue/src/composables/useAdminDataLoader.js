@@ -6,9 +6,9 @@ import {
 	getMenus,
 	getOrders,
 	getSides,
-} from '../api.js';
+} from '../services/api.js';
 import { readAdminDatasetCache, writeAdminDatasetCache } from '../storage/admin-cache.js';
-import { asArray } from '../utils.js';
+import { asArray } from '../shared/utils.js';
 import { ref } from 'vue';
 
 const ENTITY_LOAD_LABELS = Object.freeze({

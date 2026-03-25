@@ -1,3 +1,8 @@
+<!-- 
+THIS IS A DEV FEATURE, not in production build!
+meant to search backend server on lan with python helper
+-->
+
 <script setup>
 import { computed, ref } from 'vue';
 import { useServerDiscovery } from '../composables/useServerDiscovery.js';

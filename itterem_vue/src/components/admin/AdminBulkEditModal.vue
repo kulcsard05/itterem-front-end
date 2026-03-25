@@ -1,7 +1,8 @@
 <script setup>
 import { computed } from 'vue';
-import { ORDER_STATUSES } from '../../constants.js';
-import { asObject } from '../../utils.js';
+import ErrorAlert from '../common/ErrorAlert.vue';
+import { ORDER_STATUSES } from '../../config/constants.js';
+import { asObject } from '../../shared/utils.js';
 
 const props = defineProps({
 	show: { type: Boolean, default: false },
@@ -128,9 +129,7 @@ const selectedActionType = computed(() => {
 			</div>
 
 			<div class="border-t-2 border-gray-200 p-5">
-				<div v-if="error" class="mb-3 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700" role="alert">
-					{{ error }}
-				</div>
+				<ErrorAlert :message="error" wrapper-class="mb-3" />
 				<div class="flex justify-end gap-3">
 					<button
 						class="cursor-pointer rounded-lg bg-gray-100 px-5 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-200"

@@ -1,5 +1,5 @@
 import { computed } from 'vue';
-import { asArray } from '../utils.js';
+import { asArray } from '../shared/utils.js';
 
 function formatElapsed(value) {
 	const date = new Date(value);

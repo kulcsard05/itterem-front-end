@@ -2,8 +2,8 @@ import { computed, ref } from 'vue';
 import {
 	DEFAULT_LOCALE,
 	SUPPORTED_LOCALES,
-} from '../constants.js';
-import { getStoredLocale, setStoredLocale } from '../storage-utils.js';
+} from '../config/constants.js';
+import { getStoredLocale, setStoredLocale } from '../storage/storage-utils.js';
 import { i18n, normalizeLocale } from '../i18n.js';
 
 const locale = ref(normalizeLocale(getStoredLocale()) ?? DEFAULT_LOCALE);

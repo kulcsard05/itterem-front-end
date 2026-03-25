@@ -1,10 +1,10 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { placeOrder } from '../../api.js';
+import { placeOrder } from '../../services/api.js';
 import { usePromiseTimeout } from '../../composables/usePromiseTimeout.js';
-import { formatCurrency, resolveUserId, getOrderItemIdKey } from '../../utils.js';
-import { MAX_ORDER_QUANTITY, ORDER_TIMEOUT_MS } from '../../constants.js';
+import { formatCurrency, resolveUserId, getOrderItemIdKey } from '../../shared/utils.js';
+import { MAX_ORDER_QUANTITY, ORDER_TIMEOUT_MS } from '../../config/constants.js';
 
 const props = defineProps({
 	item: { type: Object, default: null },

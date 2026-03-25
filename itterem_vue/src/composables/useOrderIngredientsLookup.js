@@ -1,5 +1,5 @@
 import { computed } from 'vue';
-import { asArray, getMealIngredientNames } from '../utils.js';
+import { asArray, getMealIngredientNames } from '../shared/utils.js';
 
 export function useOrderIngredientsLookup({ meals, menus, findById }) {
 	const mealsById = computed(() => {

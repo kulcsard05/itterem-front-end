@@ -1,6 +1,6 @@
 import { shallowRef } from 'vue';
-import { MENU_IMAGES_STORAGE_KEY } from '../constants.js';
-import { toImageSrc } from '../utils.js';
+import { MENU_IMAGES_STORAGE_KEY } from '../config/constants.js';
+import { toImageSrc } from '../shared/utils.js';
 
 // ---------------------------------------------------------------------------
 // Cache API-based image cache (replaces the old localStorage approach).

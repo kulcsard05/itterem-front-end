@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import ErrorAlert from '../common/ErrorAlert.vue';
 
 const props = defineProps({
 	show: { type: Boolean, default: false },
@@ -37,9 +38,7 @@ const confirmButtonClass = computed(() => {
 				<p class="text-gray-600 text-sm">{{ message }}</p>
 			</div>
 
-			<div v-if="error" class="mx-6 mb-4 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700" role="alert">
-				{{ error }}
-			</div>
+			<ErrorAlert :message="error" wrapper-class="mx-6 mb-4" />
 			<div class="flex gap-3 px-6 pb-6 justify-end">
 				<button
 					class="px-5 py-2.5 rounded-lg font-semibold text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition cursor-pointer"

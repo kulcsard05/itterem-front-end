@@ -1,13 +1,17 @@
 import { computed, ref } from 'vue';
-import { asArray, getItemTypeLabel, getOrderItemIdKey, toBoundedPositiveInt, toImageSrc } from '../utils.js';
-import { readStorageText, writeStorageText } from '../storage-utils.js';
+import { asArray, getItemTypeLabel, getOrderItemIdKey, toBoundedPositiveInt, toImageSrc } from '../shared/utils.js';
+import { readStorageText, writeStorageText } from '../storage/storage-utils.js';
 import { useMenuData } from './useMenuData.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton so every component shares the same cart.
 // ---------------------------------------------------------------------------
+// Contract:
+// - Shared mutable cart state is intentionally process-wide for the SPA.
+// - Menu-data access is lazy to avoid initialization-order coupling.
+// - Call sites must treat menu hydration failures as valid fallback paths.
 
-import { CART_STORAGE_KEY, MAX_ORDER_QUANTITY } from '../constants.js';
+import { CART_STORAGE_KEY, MAX_ORDER_QUANTITY } from '../config/constants.js';
 
 const STORAGE_KEY = CART_STORAGE_KEY;
 const SESSION_FALLBACK_KEY = `${STORAGE_KEY}:session`;

@@ -3,7 +3,7 @@ import './style.css';
 import App from './App.vue';
 import { i18n } from './i18n.js';
 import router from './router.js';
-import { logStorageUsage } from './storage-utils.js';
+import { logStorageUsage } from './storage/storage-utils.js';
 
 const app = createApp(App);
 

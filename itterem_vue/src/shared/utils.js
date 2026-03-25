@@ -6,8 +6,8 @@ import {
 	ROLE_USER,
 	ROLE_EMPLOYEE,
 	ROLE_ADMIN,
-} from './constants.js';
-import { i18n, getIntlLocale } from './i18n.js';
+} from '../config/constants.js';
+import { i18n, getIntlLocale } from '../i18n.js';
 
 // Re-export constants so existing imports from utils.js keep working.
 export { AUTH_STORAGE_KEY, AUTH_EXPIRED_EVENT, AUTH_EXPIRED_MESSAGE };

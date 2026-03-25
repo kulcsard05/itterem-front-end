@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { readOrderId, readOrderStatus } from '../order-utils.js';
+import { readOrderId, readOrderStatus } from '../domain/order/order-utils.js';
 
 const DRAG_COOLDOWN_MS = 4000;
 

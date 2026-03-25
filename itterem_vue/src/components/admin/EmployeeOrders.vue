@@ -1,8 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
-import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../api.js';
+import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../services/api.js';
 import FloatingOrderDetailsPanel from './FloatingOrderDetailsPanel.vue';
+import OrderStatusBadge from '../common/OrderStatusBadge.vue';
 import { useEmployeeOrderDisplay } from '../../composables/useEmployeeOrderDisplay.js';
 import { useSignalR } from '../../composables/useSignalR.js';
 import { useEmployeeOrdersBoot } from '../../composables/useEmployeeOrdersBoot.js';
@@ -15,14 +16,13 @@ import { useOrderStatusDnD } from '../../composables/useOrderStatusDnD.js';
 import {
 	normalizeOrderDto,
 	readText,
-} from '../../order-dto.js';
+} from '../../domain/order/order-dto.js';
 import {
 	asArray,
 	findById,
 	formatDateTime,
 	getOrderItemName,
-	getOrderStatusClasses,
-} from '../../utils.js';
+} from '../../shared/utils.js';
 import {
 	AUTH_EXPIRED_EVENT,
 	POLL_INTERVAL_MS,
@@ -34,7 +34,7 @@ import {
 	PANEL_DEFAULT_HEIGHT,
 	PANEL_FONT_MIN,
 	PANEL_FONT_MAX,
-} from '../../constants.js';
+} from '../../config/constants.js';
 
 const emit = defineEmits(['logout']);
 
@@ -389,15 +389,10 @@ onBeforeUnmount(() => {
 								<div class="flex items-start justify-between gap-2">
 									<div class="text-base font-bold text-gray-900">#{{ element?.id }}</div>
 									<div class="flex items-center gap-2">
-										<span
-
-											:class="[
-												'inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold',
-												getOrderStatusClasses(element?.statusz),
-											]"
-										>
-											{{ element?.statusz || '-' }}
-										</span>
+										<OrderStatusBadge
+											:status="element?.statusz"
+											base-class="inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold"
+										/>
 									</div>
 								</div>
 								<div class="mt-2 flex items-center justify-between gap-3 text-sm text-gray-700">

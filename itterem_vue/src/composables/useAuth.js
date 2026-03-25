@@ -6,12 +6,16 @@ import {
 	isAuthPayload,
 	isJwtExpired,
 	readStoredAuth,
-} from '../utils.js';
-import { AUTH_STORAGE_KEY, ROLE_EMPLOYEE, ROLE_ADMIN } from '../constants.js';
+} from '../shared/utils.js';
+import { AUTH_STORAGE_KEY, ROLE_EMPLOYEE, ROLE_ADMIN } from '../config/constants.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton — every component shares the same auth state.
 // ---------------------------------------------------------------------------
+// Contract:
+// - This composable is app-global state, not per-component state.
+// - Timers are owned at module scope intentionally; do not tie cleanup to an
+//   arbitrary component lifecycle.
 
 const auth = ref(null);
 let authExpiryTimer = null;

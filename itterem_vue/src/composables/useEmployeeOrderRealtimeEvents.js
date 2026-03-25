@@ -1,6 +1,6 @@
 import { ref } from 'vue';
-import { extractOrderUpdateEvent } from '../order-dto.js';
-import { ORDER_STATUS_DONE, toOrderId as toOrderIdDefault } from '../order-utils.js';
+import { extractOrderUpdateEvent } from '../domain/order/order-dto.js';
+import { ORDER_STATUS_DONE, toOrderId as toOrderIdDefault } from '../domain/order/order-utils.js';
 
 export function useEmployeeOrderRealtimeEvents({
 	loadOrders,

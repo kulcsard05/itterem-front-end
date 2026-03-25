@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { readStoredAuth } from './utils.js';
+import { readStoredAuth } from './shared/utils.js';
 import {
 	LOCALE_QUERY_KEY,
 	ROLE_EMPLOYEE,
 	ROLE_ADMIN,
-} from './constants.js';
+} from './config/constants.js';
 import { normalizeLocale } from './i18n.js';
 import { resolveLocalePreference, setLocale } from './composables/useLocale.js';
 

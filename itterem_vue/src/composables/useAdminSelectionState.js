@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue';
-import { normalizeId } from '../utils.js';
+import { normalizeId } from '../shared/utils.js';
 
 const EMPTY_BULK_CAPABILITIES = Object.freeze({
 	canDelete: false,

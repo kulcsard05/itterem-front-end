@@ -1,4 +1,4 @@
-import { createMenu, deleteMenu, updateMenu } from '../../api.js';
+import { createMenu, deleteMenu, updateMenu } from '../../services/api.js';
 import {
 	buildElerheto,
 	buildSelectOptions,
@@ -12,8 +12,8 @@ import {
 	requiredPrice,
 	validateAll,
 	formatPrice,
-} from '../../admin-helpers.js';
-import { getImageSrcFromItem } from '../../utils.js';
+} from '../../admin/admin-helpers.js';
+import { getImageSrcFromItem } from '../../shared/utils.js';
 import {
 	AVAILABLE_OPTIONS,
 	getMenuDrinkId,

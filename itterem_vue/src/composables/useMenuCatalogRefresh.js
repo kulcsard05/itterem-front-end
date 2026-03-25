@@ -5,7 +5,7 @@ import {
 	getMealsConditional,
 	getMenusConditional,
 	getSidesConditional,
-} from '../api.js';
+} from '../services/api.js';
 import { cacheImagesForDatasets } from './useMenuImageCache.js';
 
 const DEFAULT_LOADING_STATE = Object.freeze({
