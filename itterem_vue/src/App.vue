@@ -8,7 +8,7 @@ import ConfirmModal from './components/admin/ConfirmModal.vue';
 import { useCart } from './composables/useCart.js';
 import { useAuth } from './composables/useAuth.js';
 import { useLocale } from './composables/useLocale.js';
-import { AUTH_EXPIRED_EVENT, LOCALE_QUERY_KEY } from './config/constants.js';
+import { AUTH_EXPIRED_EVENT, LOCALE_QUERY_KEY, PERMISSION_DENIED_EVENT } from './config/constants.js';
 
 const isDevServerDiscoveryEnabled = import.meta.env.DEV;
 const ServerDiscovery = isDevServerDiscoveryEnabled
@@ -41,6 +41,10 @@ const logoutConfirmOpen = ref(false);
 const languageMenuOpen = ref(false);
 const mobileLanguageMenuRef = ref(null);
 const desktopLanguageMenuRef = ref(null);
+const permissionDeniedMessage = ref('');
+
+const PERMISSION_BANNER_TIMEOUT_MS = 5000;
+let permissionBannerTimer = null;
 
 const { addItem, totalItems } = useCart();
 
@@ -66,15 +70,37 @@ try {
 onMounted(() => {
 	window.addEventListener('storage', onStorageChange);
 	window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+	window.addEventListener(PERMISSION_DENIED_EVENT, onPermissionDenied);
 	window.addEventListener('click', onWindowClickForLanguageMenu);
 });
 
 onUnmounted(() => {
 	window.removeEventListener('storage', onStorageChange);
 	window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+	window.removeEventListener(PERMISSION_DENIED_EVENT, onPermissionDenied);
 	window.removeEventListener('click', onWindowClickForLanguageMenu);
+	clearPermissionBanner();
 	clearAuthExpiryTimer();
 });
+
+function clearPermissionBanner() {
+	permissionDeniedMessage.value = '';
+	if (permissionBannerTimer != null) {
+		window.clearTimeout(permissionBannerTimer);
+		permissionBannerTimer = null;
+	}
+}
+
+function onPermissionDenied(event) {
+	const message = String(event?.detail?.message ?? '').trim() || t('errors.permissionDeniedAction');
+	permissionDeniedMessage.value = message;
+
+	if (permissionBannerTimer != null) window.clearTimeout(permissionBannerTimer);
+	permissionBannerTimer = window.setTimeout(() => {
+		permissionDeniedMessage.value = '';
+		permissionBannerTimer = null;
+	}, PERMISSION_BANNER_TIMEOUT_MS);
+}
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -211,6 +237,22 @@ function selectLocale(nextLocaleValue) {
 
 <template>
 	<div class="flex min-h-screen flex-col">
+		<div v-if="permissionDeniedMessage" class="fixed inset-x-0 top-3 z-50 px-4 sm:px-6 lg:px-8" role="status" aria-live="polite">
+			<div class="mx-auto flex w-full max-w-3xl items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 shadow-md">
+				<p>{{ permissionDeniedMessage }}</p>
+				<button
+					type="button"
+					class="rounded p-1 text-amber-900/80 hover:bg-amber-100 hover:text-amber-900"
+					:aria-label="t('common.close')"
+					@click="clearPermissionBanner"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+						<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+					</svg>
+				</button>
+			</div>
+		</div>
+
 		<header v-if="!isEmployee" class="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur">
 			<div class="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
 				<div class="flex items-center justify-between gap-2">

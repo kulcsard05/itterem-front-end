@@ -237,7 +237,10 @@
     "backToMenu": "Vissza az etlaphoz"
   },
   "errors": {
-    "authExpired": "A bejelentkezes lejart. Kerjuk, jelentkezz be ujra."
+    "authExpired": "A bejelentkezes lejart. Kerjuk, jelentkezz be ujra.",
+    "permissionDeniedAction": "Nincs jogosultsagod ehhez a muvelethez.",
+    "permissionDeniedRoute": "Nincs jogosultsagod ennek az oldalnak az eleresehez.",
+    "signInRequiredRoute": "Az oldal eleresehez be kell jelentkezned."
   },
   "api": {
     "errors": {

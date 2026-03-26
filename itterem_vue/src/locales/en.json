@@ -237,7 +237,10 @@
     "backToMenu": "Back to menu"
   },
   "errors": {
-    "authExpired": "Your session has expired. Please sign in again."
+    "authExpired": "Your session has expired. Please sign in again.",
+    "permissionDeniedAction": "You do not have permission to perform this action.",
+    "permissionDeniedRoute": "You do not have permission to access this page.",
+    "signInRequiredRoute": "Please sign in to access this page."
   },
   "api": {
     "errors": {

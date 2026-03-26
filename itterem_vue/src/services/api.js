@@ -3,6 +3,7 @@ import {
 	clearStoredAuth,
 	getApiBaseUrl,
 	isAuthPayload,
+	notifyPermissionDenied,
 	readStoredAuth,
 	asArray,
 	toPositiveIntOrNull,
@@ -164,6 +165,30 @@ function handleAuthFailure() {
 	throw new Error(AUTH_EXPIRED_MESSAGE);
 }
 
+function createHttpError(message, options = {}) {
+	const { status = null, code = '' } = options;
+	const resolvedMessage = String(message ?? '').trim() || 'Request failed';
+	const error = new Error(resolvedMessage);
+	if (Number.isFinite(Number(status))) error.status = Number(status);
+	if (code) error.code = code;
+	if (Number(status) === 403) error.isPermissionDenied = true;
+	return error;
+}
+
+function handlePermissionDenied(body, fallbackErrorMessage, context = {}) {
+	const fallbackMessage = String(fallbackErrorMessage ?? '').trim()
+		|| String(i18n.global.t('errors.permissionDeniedAction')).trim();
+	const message = extractErrorMessage(body, fallbackMessage);
+	const resolvedMessage = notifyPermissionDenied({
+		message,
+		messageKey: 'errors.permissionDeniedAction',
+		source: 'api',
+		status: 403,
+		...context,
+	});
+	throw createHttpError(resolvedMessage, { status: 403, code: 'forbidden' });
+}
+
 // ---------------------------------------------------------------------------
 // Auth helpers
 // ---------------------------------------------------------------------------
@@ -233,11 +258,14 @@ function extractErrorMessage(body, fallbackErrorMessage) {
 	return fallbackErrorMessage;
 }
 
-async function requestJsonOrThrow(response, fallbackErrorMessage) {
+async function requestJsonOrThrow(response, fallbackErrorMessage, context = {}) {
 	const body = await readJsonOrText(response);
 	if (response.ok) return body;
 
 	if (response.status === 401) handleAuthFailure();
+	if (response.status === 403) {
+		handlePermissionDenied(body, fallbackErrorMessage, context);
+	}
 
 	const message = extractErrorMessage(body, fallbackErrorMessage);
 	throw new Error(message || fallbackErrorMessage);
@@ -299,14 +327,14 @@ async function mutate({ method, endpoint, params = {}, kepFile, fallbackError })
 		body,
 	});
 
-	return requestJsonOrThrow(response, fallbackError);
+	return requestJsonOrThrow(response, fallbackError, { endpoint, method });
 }
 
 async function getById(endpoint, id, fallbackError) {
 	const baseUrl = getApiBaseUrl();
 	const url = `${baseUrl}${endpoint}/${encodeURIComponent(String(id ?? ''))}`;
 	const response = await abortableFetch(url, { method: 'GET', headers: authHeaders() });
-	return requestJsonOrThrow(response, fallbackError);
+	return requestJsonOrThrow(response, fallbackError, { endpoint, method: 'GET' });
 }
 
 /**
@@ -319,7 +347,7 @@ async function deletePath(endpoint, id, fallbackError) {
 		method: 'DELETE',
 		headers: authHeaders(),
 	});
-	return requestJsonOrThrow(response, fallbackError);
+	return requestJsonOrThrow(response, fallbackError, { endpoint, method: 'DELETE' });
 }
 
 // ---------------------------------------------------------------------------
@@ -452,13 +480,10 @@ async function getList(endpointPath, fallbackErrorMessage, extraArrayKeys = []) 
 			headers: authHeaders(),
 		});
 
-		const body = await readJsonOrText(response);
-
-		if (!response.ok) {
-			if (response.status === 401) handleAuthFailure();
-
-			throw new Error(extractErrorMessage(body, fallbackErrorMessage));
-		}
+		const body = await requestJsonOrThrow(response, fallbackErrorMessage, {
+			endpoint: endpointPath,
+			method: 'GET',
+		});
 
 		const list = extractListFromBody(body, extraArrayKeys);
 		if (list === null) {
@@ -519,12 +544,10 @@ async function getListWithEtag(endpointPath, fallbackErrorMessage, extraArrayKey
 			};
 		}
 
-		const body = await readJsonOrText(response);
-
-		if (!response.ok) {
-			if (response.status === 401) handleAuthFailure();
-			throw new Error(extractErrorMessage(body, fallbackErrorMessage));
-		}
+		const body = await requestJsonOrThrow(response, fallbackErrorMessage, {
+			endpoint: endpointPath,
+			method: 'GET',
+		});
 
 		const nextEtag = response.headers.get('etag');
 		if (nextEtag) writeMenuEtag(etagKey, nextEtag);
@@ -685,7 +708,10 @@ export function updateOrderStatus(id, status) {
 	return abortableFetch(`${baseUrl}/api/Rendelesek/${encodedId}?status=${encodedStatus}`, {
 		method: 'PUT',
 		headers: authHeaders(),
-	}).then((response) => requestJsonOrThrow(response, fallbackError));
+	}).then((response) => requestJsonOrThrow(response, fallbackError, {
+		endpoint: '/api/Rendelesek/{id}',
+		method: 'PUT',
+	}));
 }
 
 /**
@@ -710,7 +736,10 @@ export async function placeOrder(felhasznaloId, orderItems) {
 		headers: authHeaders({ 'Content-Type': 'application/json' }),
 		body: JSON.stringify({ felhasznaloId: normalizedUserId, items: normalizedOrderItems }),
 	});
-	const body = await requestJsonOrThrow(response, 'Rendelés leadása sikertelen');
+	const body = await requestJsonOrThrow(response, 'Rendelés leadása sikertelen', {
+		endpoint: '/api/Rendelesek',
+		method: 'POST',
+	});
 	return normalizeOrderCreateResponse(body);
 }
 

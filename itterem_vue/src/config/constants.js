@@ -43,6 +43,7 @@ export const LOCALE_QUERY_KEY = 'lang';
 // ── Auth events ─────────────────────────────────────────────────
 export const AUTH_EXPIRED_EVENT = 'itterem:auth-expired';
 export const AUTH_EXPIRED_MESSAGE = 'A bejelentkezés lejárt. Kérjük, jelentkezz be újra.';
+export const PERMISSION_DENIED_EVENT = 'itterem:permission-denied';
 
 // ── SignalR configuration ────────────────────────────────────────
 export const SIGNALR_HUB_PATH = '/orderHub';

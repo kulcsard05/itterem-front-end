@@ -2,6 +2,7 @@ import {
 	AUTH_STORAGE_KEY,
 	AUTH_EXPIRED_EVENT,
 	AUTH_EXPIRED_MESSAGE,
+	PERMISSION_DENIED_EVENT,
 	ORDER_STATUS_CLASSES as _ORDER_STATUS_CLASSES,
 	ROLE_USER,
 	ROLE_EMPLOYEE,
@@ -11,7 +12,12 @@ import {
 import { i18n, getIntlLocale } from '../i18n.js';
 
 // Re-export constants so existing imports from utils.js keep working.
-export { AUTH_STORAGE_KEY, AUTH_EXPIRED_EVENT, AUTH_EXPIRED_MESSAGE };
+export {
+	AUTH_STORAGE_KEY,
+	AUTH_EXPIRED_EVENT,
+	AUTH_EXPIRED_MESSAGE,
+	PERMISSION_DENIED_EVENT,
+};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -270,6 +276,46 @@ export function clearStoredAuth(options = {}) {
 	} catch {
 		// ignore
 	}
+}
+
+/**
+ * Dispatch a permission-denied browser event with normalized metadata.
+ * @param {Object} detail
+ */
+export function emitPermissionDeniedEvent(detail = {}) {
+	const payload = detail && typeof detail === 'object' ? detail : {};
+	try {
+		window.dispatchEvent(new CustomEvent(PERMISSION_DENIED_EVENT, { detail: payload }));
+	} catch {
+		// ignore
+	}
+}
+
+/**
+ * Resolve and emit a permission-denied message.
+ * @param {{message?: string, messageKey?: string, source?: string}} options
+ * @returns {string}
+ */
+export function notifyPermissionDenied(options = {}) {
+	const {
+		message,
+		messageKey = 'errors.permissionDeniedAction',
+		source = 'ui',
+		...detail
+	} = options;
+
+	const translated = String(i18n.global.t(messageKey)).trim();
+	const resolvedMessage = String(message ?? '').trim()
+		|| translated
+		|| 'You do not have permission to perform this action.';
+
+	emitPermissionDeniedEvent({
+		...detail,
+		source,
+		message: resolvedMessage,
+	});
+
+	return resolvedMessage;
 }
 
 /**

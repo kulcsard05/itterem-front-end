@@ -8,7 +8,8 @@ import { useAdminDataLoader } from '../../composables/useAdminDataLoader.js';
 import { useAdminEntityConfigs } from '../../composables/useAdminEntityConfigs.js';
 import { useAdminSelectionState } from '../../composables/useAdminSelectionState.js';
 import { useObjectUrlPreview } from '../../composables/useObjectUrlPreview.js';
-import { asArray, getEntityNameById, hasValidEntityId, sortOrdersByDateDesc } from '../../shared/utils.js';
+import { useAuth } from '../../composables/useAuth.js';
+import { asArray, getEntityNameById, hasValidEntityId, notifyPermissionDenied, sortOrdersByDateDesc } from '../../shared/utils.js';
 
 const AdminTable = defineAsyncComponent(() => import('./AdminTable.vue'));
 const AdminEditModal = defineAsyncComponent(() => import('./AdminEditModal.vue'));
@@ -20,6 +21,7 @@ const emit = defineEmits(['back', 'logout']);
 
 // ── Reactive State ──────────────────────────────────────────────
 const activeTab = ref('menuk');
+const { isAdmin } = useAuth();
 
 const menukRaw = ref([]);
 const kategoriak = ref([]);
@@ -56,6 +58,19 @@ const bulkDeleteLoading = ref(false);
 function clearFeedback() {
 	actionError.value = '';
 	actionSuccess.value = '';
+}
+
+function ensureAdminAccess(errorTarget = 'action') {
+	if (isAdmin.value) return true;
+	const message = notifyPermissionDenied({
+		messageKey: 'errors.permissionDeniedAction',
+		source: 'admin-dashboard',
+		scope: 'action',
+		tab: activeTab.value,
+	});
+	if (errorTarget === 'bulk') bulkError.value = message;
+	else actionError.value = message;
+	return false;
 }
 
 function formatEntityItemLabel(item) {
@@ -285,6 +300,7 @@ function closeBulkEditModal() {
 }
 
 function openBulkEditModal() {
+	if (!ensureAdminAccess('bulk')) return;
 	if (!canBulkEdit.value || selectedCount.value === 0) return;
 	clearFeedback();
 	bulkError.value = '';
@@ -293,6 +309,7 @@ function openBulkEditModal() {
 }
 
 function openBulkDeleteConfirm() {
+	if (!ensureAdminAccess('action')) return;
 	if (!canBulkDelete.value || selectedCount.value === 0) return;
 	clearFeedback();
 	showBulkDeleteConfirm.value = true;
@@ -305,6 +322,7 @@ function closeBulkDeleteConfirm() {
 async function saveBulkEdit() {
 	clearFeedback();
 	bulkError.value = '';
+	if (!ensureAdminAccess('bulk')) return;
 
 	const config = activeEntityConfig.value;
 	const entityType = activeEntityType.value;
@@ -349,6 +367,7 @@ async function saveBulkEdit() {
 // ── Save ────────────────────────────────────────────────────────
 async function saveEdit() {
 	clearFeedback();
+	if (!ensureAdminAccess('action')) return;
 	saving.value = true;
 
 	try {
@@ -383,6 +402,7 @@ async function saveEdit() {
 
 // ── Delete ──────────────────────────────────────────────────────
 function requestDelete(type, item) {
+	if (!ensureAdminAccess('action')) return;
 	clearFeedback();
 	deleteTarget.value = { type, item };
 	showConfirmModal.value = true;
@@ -401,6 +421,7 @@ const deleteHandlersByEntity = Object.fromEntries(
 );
 
 async function confirmDelete() {
+	if (!ensureAdminAccess('action')) return;
 	if (!deleteTarget.value) return;
 	const { type, item } = deleteTarget.value;
 	const config = entityConfigs[type];
@@ -435,6 +456,7 @@ function cancelDelete() {
 }
 
 async function confirmBulkDelete() {
+	if (!ensureAdminAccess('action')) return;
 	const config = activeEntityConfig.value;
 	if (!config) return;
 

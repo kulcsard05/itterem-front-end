@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { readStoredAuth } from './shared/utils.js';
+import { notifyPermissionDenied, readStoredAuth } from './shared/utils.js';
 import {
 	LOCALE_QUERY_KEY,
 	ROLE_EMPLOYEE,
@@ -65,8 +65,20 @@ const router = createRouter({
 	},
 });
 
+function notifyRouteDenied({ messageKey, to, requiredRole = null, currentRole = null, hasToken = false }) {
+	notifyPermissionDenied({
+		messageKey,
+		source: 'router',
+		scope: 'route',
+		hasToken,
+		requiredRole,
+		currentRole,
+		attemptedRoute: String(to?.name ?? to?.path ?? ''),
+	});
+}
+
 // Employees (jogosultsag=2) should only see the order management page.
-router.beforeEach((to) => {
+router.beforeEach((to, from) => {
 	const rawLang = Array.isArray(to.query?.[LOCALE_QUERY_KEY]) ? to.query?.[LOCALE_QUERY_KEY]?.[0] : to.query?.[LOCALE_QUERY_KEY];
 	const normalizedLang = normalizeLocale(rawLang);
 	if (rawLang != null && !normalizedLang) {
@@ -91,8 +103,24 @@ router.beforeEach((to) => {
 
 	const requiredRole = Number(to.meta?.requiredRole ?? NaN);
 	if (Number.isFinite(requiredRole)) {
-		if (!hasToken) return { name: 'menu' };
+		if (!hasToken) {
+			notifyRouteDenied({
+				messageKey: 'errors.signInRequiredRoute',
+				to,
+				requiredRole,
+				currentRole: role,
+				hasToken,
+			});
+			return { name: 'menu' };
+		}
 		if (role !== requiredRole) {
+			notifyRouteDenied({
+				messageKey: 'errors.permissionDeniedRoute',
+				to,
+				requiredRole,
+				currentRole: role,
+				hasToken,
+			});
 			if (isEmployee) return { name: 'employee-orders' };
 			return { name: 'menu' };
 		}
@@ -100,6 +128,15 @@ router.beforeEach((to) => {
 
 	if (!isEmployee) return true;
 	if (to.name === 'employee-orders') return true;
+	if (from?.name) {
+		notifyRouteDenied({
+			messageKey: 'errors.permissionDeniedRoute',
+			to,
+			requiredRole: ROLE_EMPLOYEE,
+			currentRole: role,
+			hasToken,
+		});
+	}
 	return { name: 'employee-orders' };
 });
 

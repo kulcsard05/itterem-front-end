@@ -14,6 +14,7 @@ import { useFloatingPanel } from '../../composables/useFloatingPanel.js';
 import { useOrderIngredientsLookup } from '../../composables/useOrderIngredientsLookup.js';
 import { toOrderId, useOrderColumns } from '../../composables/useOrderColumns.js';
 import { useOrderStatusDnD } from '../../composables/useOrderStatusDnD.js';
+import { useAuth } from '../../composables/useAuth.js';
 import {
 	normalizeOrderDto,
 	readText,
@@ -23,6 +24,7 @@ import {
 	findById,
 	formatDateTime,
 	getOrderItemName,
+	notifyPermissionDenied,
 } from '../../shared/utils.js';
 import { readStorageJson, writeStorageJson } from '../../storage/storage-utils.js';
 import {
@@ -41,6 +43,7 @@ import {
 
 const emit = defineEmits(['logout']);
 const { t } = useI18n();
+const { isEmployee } = useAuth();
 
 const loading = ref(false);
 const error = ref('');
@@ -316,7 +319,19 @@ function closePanel() {
 	selectedOrderSnapshot.value = null;
 }
 
+function ensureEmployeeAccess() {
+	if (isEmployee.value) return true;
+	const message = notifyPermissionDenied({
+		messageKey: 'errors.permissionDeniedAction',
+		source: 'employee-orders',
+		scope: 'action',
+	});
+	error.value = message;
+	return false;
+}
+
 async function advanceOrderToNextStatus(order) {
+	if (!ensureEmployeeAccess()) return;
 	if (advancingOrder.value || savingStatus.value) return;
 
 	const orderId = toOrderId(order?.id);
@@ -364,7 +379,12 @@ function onOrderCardActivate(order) {
 }
 
 const { savingStatus, onDraggableChange, isDragCooldown } = useOrderStatusDnD({
-	persistStatus: updateOrderStatus,
+	persistStatus: async (id, status) => {
+		if (!ensureEmployeeAccess()) {
+			throw new Error(error.value || 'Státusz módosítása nem engedélyezett.');
+		}
+		return updateOrderStatus(id, status);
+	},
 	reloadOrders: loadOrders,
 	ensureOrderInColumn,
 	onError: (msg) => { error.value = msg; },
