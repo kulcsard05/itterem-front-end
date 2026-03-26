@@ -8,6 +8,9 @@ const props = defineProps({
 	items: { type: Array, required: true },
 	loading: { type: Boolean, required: false, default: false },
 	title: { type: String, required: true },
+	searchEnabled: { type: Boolean, required: false, default: false },
+	searchQuery: { type: String, required: false, default: '' },
+	searchPlaceholder: { type: String, required: false, default: 'Keresés' },
 	addLabel: { type: String, required: false, default: '' },
 	showCreate: { type: Boolean, required: false, default: true },
 	showEdit: { type: Boolean, required: false, default: true },
@@ -19,7 +22,7 @@ const props = defineProps({
 	selectionDisabled: { type: Boolean, required: false, default: false },
 });
 
-const emit = defineEmits(['create', 'edit', 'delete', 'toggle-select-all', 'toggle-select-item']);
+const emit = defineEmits(['create', 'edit', 'delete', 'toggle-select-all', 'toggle-select-item', 'update:searchQuery']);
 
 const hasActions = computed(() => props.showEdit || props.showDelete);
 const selectedIdSet = computed(() => new Set((props.selectedIds ?? []).map((id) => String(id))));
@@ -100,8 +103,28 @@ onBeforeUnmount(() => {
 
 <template>
 	<div>
-		<div class="flex justify-between items-center mb-6 pb-4 border-b-2 border-gray-200">
+		<div class="mb-6 flex flex-col gap-4 border-b-2 border-gray-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
 			<h2 class="text-3xl font-bold text-gray-800">{{ title }}</h2>
+
+			<label v-if="searchEnabled" class="relative block w-full sm:max-w-sm">
+				<span class="sr-only">{{ searchPlaceholder }}</span>
+				<input
+					:type="'search'"
+					:value="searchQuery"
+					:placeholder="searchPlaceholder"
+					class="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+					@input="emit('update:searchQuery', $event.target.value)"
+				/>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke="currentColor"
+				>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+				</svg>
+			</label>
 		</div>
 
 		<div class="overflow-x-auto rounded-lg border border-gray-200">

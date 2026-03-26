@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue';
 import { getMealById } from '../../services/api.js';
 import ErrorAlert from '../common/ErrorAlert.vue';
 import { useAdminBulkActionEngine } from '../../composables/useAdminBulkActionEngine.js';
@@ -97,6 +97,38 @@ function formatDeleteItemForConfirmation(type, item) {
 	return `${entityLabel}: ${itemLabel} (ID: ${idLabel})`;
 }
 
+function normalizeSearchText(value) {
+	return String(value ?? '')
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLocaleLowerCase('hu-HU')
+		.trim();
+}
+
+function stringifySearchValue(value) {
+	if (Array.isArray(value)) return value.join(' ');
+	return String(value ?? '').trim();
+}
+
+function getSearchableTableValue(item, column) {
+	if (!column || typeof column !== 'object') return '';
+	if (typeof column.format === 'function') return stringifySearchValue(column.format(item));
+	if (column.type === 'available') {
+		return item?.[column.key] ? 'igen true elerheto elérhető' : 'nem false nem elerheto nem elérhető';
+	}
+	return stringifySearchValue(item?.[column.key]);
+}
+
+function buildItemSearchText(entityType, item) {
+	const columns = asArray(entityConfigs[entityType]?.columns);
+	const values = [
+		formatEntityItemLabel(item),
+		item?.id,
+		...columns.map((column) => getSearchableTableValue(item, column)),
+	];
+	return normalizeSearchText(values.filter(Boolean).join(' '));
+}
+
 const {
 	showBulkFailureModal,
 	bulkFailureError,
@@ -145,6 +177,10 @@ const tabs = [
 	{ key: 'uditok', label: 'Üdítők', entityType: 'drink' },
 ];
 
+const searchQueries = reactive(
+	Object.fromEntries(tabs.map((tab) => [tab.key, ''])),
+);
+
 const rendelesek = computed(() =>
 	[...asArray(rendelesekRaw.value)].sort(sortOrdersByDateDesc),
 );
@@ -170,10 +206,31 @@ const tabItemsMap = computed(() => ({
 	uditok: uditok.value,
 }));
 
+const displayedTabItemsMap = computed(() =>
+	Object.fromEntries(
+		tabs.map((tab) => {
+			const items = tabItemsMap.value[tab.key] ?? [];
+			const query = normalizeSearchText(searchQueries[tab.key]);
+			if (!query) return [tab.key, items];
+
+			return [
+				tab.key,
+				items.filter((item) => buildItemSearchText(tab.entityType, item).includes(query)),
+			];
+		}),
+	),
+);
+
+const searchPlaceholdersByTab = computed(() =>
+	Object.fromEntries(
+		tabs.map((tab) => [tab.key, `${tab.label} keresése`]),
+	),
+);
+
 const activeTabDefinition = computed(() => tabs.find((tab) => tab.key === activeTab.value) ?? tabs[0]);
 const activeEntityType = computed(() => activeTabDefinition.value?.entityType ?? '');
 const activeEntityConfig = computed(() => entityConfigs[activeEntityType.value] ?? null);
-const currentTabItems = computed(() => tabItemsMap.value[activeTab.value] ?? []);
+const currentTabItems = computed(() => displayedTabItemsMap.value[activeTab.value] ?? []);
 const {
 	selectedIds,
 	selectedItems,
@@ -519,6 +576,13 @@ const bulkDeleteDetailsTitle = computed(() =>
 	selectedCount.value === 1 ? 'Törlendő elem' : 'Törlendő elemek',
 );
 
+watch(
+	() => searchQueries[activeTab.value],
+	() => {
+		reconcileSelection();
+	},
+);
+
 watch(activeTab, () => {
 	clearSelection();
 	closeBulkEditModal();
@@ -650,9 +714,12 @@ watch(activeTab, () => {
 				<AdminTable
 					v-if="activeTab === tab.key"
 					:columns="entityConfigs[tab.entityType].columns"
-					:items="tabItemsMap[tab.key] ?? []"
+					:items="displayedTabItemsMap[tab.key] ?? []"
 					:loading="isLoading"
 					:title="entityConfigs[tab.entityType].tableTitle"
+					search-enabled
+					:search-query="searchQueries[tab.key]"
+					:search-placeholder="searchPlaceholdersByTab[tab.key]"
 					:add-label="entityConfigs[tab.entityType].addLabel"
 					:show-create="entityConfigs[tab.entityType].showCreate ?? true"
 					:show-edit="entityConfigs[tab.entityType].showEdit ?? true"
@@ -665,6 +732,7 @@ watch(activeTab, () => {
 					@create="createHandlersByEntity[tab.entityType]"
 					@edit="editHandlersByEntity[tab.entityType]"
 					@delete="deleteHandlersByEntity[tab.entityType]"
+					@update:search-query="searchQueries[tab.key] = $event"
 					@toggle-select-all="toggleSelectAll"
 					@toggle-select-item="toggleSelectItem"
 				/>
