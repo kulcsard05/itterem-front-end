@@ -6,6 +6,8 @@ const props = defineProps({
 	show: { type: Boolean, default: false },
 	title: { type: String, default: 'Megerősítés' },
 	message: { type: String, default: 'Biztosan törlöd?' },
+	details: { type: Array, default: () => [] },
+	detailsTitle: { type: String, default: 'Törlendő elemek' },
 	loading: { type: Boolean, default: false },
 	error: { type: String, default: '' },
 	confirmLabel: { type: String, default: 'Törlés' },
@@ -24,6 +26,10 @@ const confirmButtonClass = computed(() => {
 	}
 	return 'bg-red-600 text-white hover:bg-red-700';
 });
+
+const normalizedDetails = computed(() =>
+	props.details.map((detail) => String(detail ?? '').trim()).filter(Boolean),
+);
 </script>
 
 <template>
@@ -32,10 +38,25 @@ const confirmButtonClass = computed(() => {
 		class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1100] p-5"
 		@click.self="emit('cancel')"
 	>
-		<div class="bg-white rounded-2xl shadow-xl max-w-md w-full animate-fade-in">
+		<div class="bg-white rounded-2xl shadow-xl max-w-xl w-full animate-fade-in">
 			<div class="p-6">
 				<h3 class="text-lg font-bold text-gray-800 mb-2">{{ title }}</h3>
 				<p class="text-gray-600 text-sm">{{ message }}</p>
+
+				<div v-if="normalizedDetails.length > 0" class="mt-4 rounded-lg border border-red-100 bg-red-50/50">
+					<div class="px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-red-700">
+						{{ detailsTitle }}
+					</div>
+					<ul class="max-h-56 overflow-y-auto border-t border-red-100 divide-y divide-red-100">
+						<li
+							v-for="(detail, index) in normalizedDetails"
+							:key="`${index}-${detail}`"
+							class="px-3 py-2 text-sm text-gray-700 break-words"
+						>
+							{{ detail }}
+						</li>
+					</ul>
+				</div>
 			</div>
 
 			<ErrorAlert :message="error" wrapper-class="mx-6 mb-4" />

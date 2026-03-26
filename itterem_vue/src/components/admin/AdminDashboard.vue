@@ -87,6 +87,16 @@ function formatEntityItemLabel(item) {
 	);
 }
 
+function formatDeleteItemForConfirmation(type, item) {
+	const entityLabel = String(entityConfigs[type]?.label ?? 'Elem');
+	const idLabel = hasValidEntityId(item?.id) ? String(item.id) : '?';
+	const itemLabel = formatEntityItemLabel(item);
+	if (!itemLabel || itemLabel === '?' || itemLabel === idLabel) {
+		return `${entityLabel} (ID: ${idLabel})`;
+	}
+	return `${entityLabel}: ${itemLabel} (ID: ${idLabel})`;
+}
+
 const {
 	showBulkFailureModal,
 	bulkFailureError,
@@ -484,14 +494,30 @@ async function confirmBulkDelete() {
 }
 
 const confirmMessage = computed(() => {
-	if (deleteTarget.value?.type === 'order') return 'Biztosan törlöd ezt a rendelést?';
-	return 'Biztosan törlöd ezt az elemet?';
+	if (deleteTarget.value?.type === 'order') return 'A törlés végleges. Ellenőrizd az alábbi rendelést.';
+	return 'A törlés végleges. Ellenőrizd az alábbi elemet.';
 });
 
 const bulkDeleteMessage = computed(() => {
-	if (!activeEntityConfig.value) return 'Biztosan törlöd a kijelölt elemeket?';
-	return `Biztosan törlöd a kijelölt ${selectedCount.value} ${activeEntityConfig.value.label.toLowerCase()} elemet?`;
+	if (!activeEntityConfig.value) return 'A törlés végleges. Ellenőrizd az alábbi kijelölt elemeket.';
+	return `A törlés végleges. Ellenőrizd az alábbi ${selectedCount.value} ${activeEntityConfig.value.label.toLowerCase()} elemet.`;
 });
+
+const confirmDeleteItems = computed(() => {
+	if (!deleteTarget.value?.item) return [];
+	return [
+		formatDeleteItemForConfirmation(deleteTarget.value.type, deleteTarget.value.item),
+	];
+});
+
+const bulkDeleteItems = computed(() => {
+	const type = activeEntityType.value;
+	return selectedItems.value.map((item) => formatDeleteItemForConfirmation(type, item));
+});
+
+const bulkDeleteDetailsTitle = computed(() =>
+	selectedCount.value === 1 ? 'Törlendő elem' : 'Törlendő elemek',
+);
 
 watch(activeTab, () => {
 	clearSelection();
@@ -681,6 +707,8 @@ watch(activeTab, () => {
 			:loading="deleting"
 			title="Törlés megerősítése"
 			:message="confirmMessage"
+			details-title="Törlendő elem"
+			:details="confirmDeleteItems"
 			:error="actionError"
 			@confirm="confirmDelete"
 			@cancel="cancelDelete"
@@ -691,6 +719,8 @@ watch(activeTab, () => {
 			:loading="bulkDeleteLoading"
 			title="Tömeges törlés megerősítése"
 			:message="bulkDeleteMessage"
+			:details-title="bulkDeleteDetailsTitle"
+			:details="bulkDeleteItems"
 			:error="actionError"
 			confirm-label="Kijelöltek törlése"
 			@confirm="confirmBulkDelete"
