@@ -1,6 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { onBeforeRouteLeave } from 'vue-router';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import draggable from 'vuedraggable';
 import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../services/api.js';
@@ -485,30 +484,8 @@ watch(
 	},
 );
 
-function onWindowBeforeUnload(event) {
-	const leaveConfirmMessage = t('nav.leaveEmployeePageConfirmMessage');
-	event.preventDefault();
-	event.returnValue = leaveConfirmMessage;
-	return leaveConfirmMessage;
-}
-
-onMounted(() => {
-	window.addEventListener('beforeunload', onWindowBeforeUnload);
-});
-
-onBeforeRouteLeave((to, from, next) => {
-	if (to?.name === from?.name) {
-		next();
-		return;
-	}
-
-	const confirmed = window.confirm(t('nav.leaveEmployeePageConfirmMessage'));
-	next(confirmed);
-});
-
 onBeforeUnmount(() => {
 	clearPendingRefreshTimer();
-	window.removeEventListener('beforeunload', onWindowBeforeUnload);
 	if (saveBoardPrefsTimer != null) {
 		clearTimeout(saveBoardPrefsTimer);
 		saveBoardPrefsTimer = null;

@@ -11,6 +11,7 @@ import { asArray, formatDateTime, formatOrderItems, getOrderStatusLabel, isValid
 import {
 	DONE_NOTICE_TIMEOUT_MS,
 	ROLE_ADMIN,
+	ROLE_EMPLOYEE,
 } from '../../config/constants.js';
 
 const props = defineProps({
@@ -107,6 +108,7 @@ function getPhoneFromAuth(auth) {
 
 const currentPhone = computed(() => getPhoneFromAuth(props.auth));
 const isAdminAccount = computed(() => Number(props.auth?.jogosultsag) === ROLE_ADMIN);
+const isEmployeeAccount = computed(() => Number(props.auth?.jogosultsag) === ROLE_EMPLOYEE);
 
 watch(
 	() => props.auth,
@@ -178,7 +180,7 @@ const displayedOrders = computed(() =>
 async function loadOwnOrders() {
 	ordersError.value = '';
 
-	if (!props.auth?.token || isAdminAccount.value) {
+	if (!props.auth?.token || isAdminAccount.value || isEmployeeAccount.value) {
 		ownOrders.value = [];
 		ordersLoading.value = false;
 		return;
@@ -204,7 +206,7 @@ watch(
 			unsubOrderUpdated = null;
 		}
 		void loadOwnOrders();
-		if (newToken && !isAdminAccount.value) {
+		if (newToken && !isAdminAccount.value && !isEmployeeAccount.value) {
 			unsubOrderUpdated = on('OrderUpdated', handleOrderUpdated);
 			void start();
 		}
@@ -300,7 +302,7 @@ onUnmounted(() => {
 				</button>
 			</div>
 
-			<div v-if="!isAdminAccount" class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+			<div v-if="!isAdminAccount && !isEmployeeAccount" class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
 				<div class="flex flex-wrap items-center justify-between gap-2">
 					<h2 class="text-base font-semibold text-gray-900">{{ t('account.ordersTitle') }}</h2>
 					<!-- DEV: SignalR indicator (moved next to orders) -->

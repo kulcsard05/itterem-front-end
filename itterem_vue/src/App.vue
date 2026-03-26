@@ -192,7 +192,7 @@ const isAboutRoute = computed(() => route.name === 'about');
 const mobileNavColsClass = computed(() => (isLoggedIn.value && isAdmin.value ? 'grid-cols-3' : 'grid-cols-2'));
 
 const currentRouteProps = computed(() => {
-	if (route.name === 'account' || route.name === 'employee-orders') {
+	if (route.name === 'account') {
 		return { auth: auth.value };
 	}
 	if (route.name === 'menu-item') {

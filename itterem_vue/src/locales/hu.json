@@ -33,8 +33,7 @@
     "login": "Bejelentkezes",
     "logout": "Kijelentkezes",
     "logoutConfirmTitle": "Kijelentkezes?",
-    "logoutConfirmMessage": "Biztosan ki szeretnel jelentkezni most?",
-    "leaveEmployeePageConfirmMessage": "Biztosan elhagyod a dolgozoi oldalt?"
+    "logoutConfirmMessage": "Biztosan ki szeretnel jelentkezni most?"
   },
   "itemTypes": {
     "meal": "Keszetel",
