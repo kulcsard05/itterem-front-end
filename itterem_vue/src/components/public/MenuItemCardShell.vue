@@ -1,4 +1,6 @@
 <script setup>
+import ImageWithFallback from '../common/ImageWithFallback.vue';
+
 const props = defineProps({
 	imageSrc: { type: String, default: '' },
 	imageAlt: { type: String, default: '' },
@@ -20,12 +22,14 @@ function onOpen() {
 			<div class="flex flex-col justify-between">
 				<slot />
 			</div>
-			<img
-				v-if="imageSrc"
+			<ImageWithFallback
 				:src="imageSrc"
 				:alt="imageAlt"
-				class="order-first h-40 w-full flex-shrink-0 rounded-lg object-cover sm:h-44"
-				loading="lazy"
+				:fallback-label="imageAlt"
+				wrapper-class="order-first h-40 w-full flex-shrink-0 rounded-lg sm:h-44"
+				img-class="h-full w-full rounded-lg object-cover transition-opacity duration-150"
+				skeleton-class="rounded-lg"
+				fallback-class="rounded-lg"
 			/>
 		</div>
 	</div>

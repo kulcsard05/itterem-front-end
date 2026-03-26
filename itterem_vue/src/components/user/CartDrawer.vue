@@ -6,6 +6,7 @@ import { useCart } from '../../composables/useCart.js';
 import { usePromiseTimeout } from '../../composables/usePromiseTimeout.js';
 import { formatCurrency, getItemTypeLabel, resolveUserId } from '../../shared/utils.js';
 import { ORDER_TIMEOUT_MS } from '../../config/constants.js';
+import ImageWithFallback from '../common/ImageWithFallback.vue';
 
 const props = defineProps({
 	open: {
@@ -157,13 +158,15 @@ async function submitOrder() {
 			<!-- Items list -->
 			<ul v-else class="flex-1 divide-y divide-gray-200 overflow-y-auto">
 				<li v-for="item in items" :key="`${item.type}-${item.id}`" class="flex items-center gap-3 px-4 py-3">
-					<img
-						v-if="resolveImage(item)"
+					<ImageWithFallback
 						:src="resolveImage(item)"
 						:alt="item.name"
-						class="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
+						:fallback-label="t('common.imageUnavailable')"
+						wrapper-class="h-14 w-14 flex-shrink-0 rounded-lg"
+						img-class="h-full w-full rounded-lg object-cover transition-opacity duration-150"
+						skeleton-class="rounded-lg"
+						fallback-class="rounded-lg"
 					/>
-					<div v-else class="h-14 w-14 flex-shrink-0 rounded-lg bg-gray-100" />
 
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-medium text-gray-900">{{ item.name }}</p>

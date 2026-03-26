@@ -19,7 +19,7 @@ export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 	}
 
 	function getItemImage(item) {
-		return getImageSrc(item?.kep);
+		return getImageSrc(item?.kep, { original: item?.kepOriginal });
 	}
 
 	function getMealIngredientsLabel(meal) {
@@ -76,6 +76,8 @@ export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 				description: mealDescription,
 				price: meal?.ar ?? null,
 				image: getItemImage(meal),
+				kep: meal?.kep ?? '',
+				kepOriginal: meal?.kepOriginal ?? '',
 				meta: '',
 				menuBreakdown: [],
 				ingredients: getMealIngredientNames(meal),
@@ -92,6 +94,8 @@ export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 				description: sideDescription,
 				price: side?.ar ?? null,
 				image: getItemImage(side),
+				kep: side?.kep ?? '',
+				kepOriginal: side?.kepOriginal ?? '',
 				meta: '',
 				menuBreakdown: [],
 				ingredients: [],
@@ -108,6 +112,8 @@ export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 				description: '',
 				price: drink?.ar ?? null,
 				image: getItemImage(drink),
+				kep: drink?.kep ?? '',
+				kepOriginal: drink?.kepOriginal ?? '',
 				meta: '',
 				menuBreakdown: [],
 				ingredients: [],
@@ -171,6 +177,7 @@ export function useMenuItemPresentation({ t, meals, sides, drinks }) {
 			price: getItemPrice(item),
 			image: getItemImage(item),
 			kep: item?.kep ?? '',
+			kepOriginal: item?.kepOriginal ?? '',
 			description: getItemDescription(type, item, categoryName),
 			meta: type === 'menus' ? getMenuMeta(item) : categoryName,
 			menuBreakdown: type === 'menus' ? buildMenuBreakdown(item) : [],

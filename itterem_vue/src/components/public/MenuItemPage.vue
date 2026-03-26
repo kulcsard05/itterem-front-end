@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { asArray, formatCurrency, getItemTypeLabel, readFirstText } from '../../shared/utils.js';
+import ImageWithFallback from '../common/ImageWithFallback.vue';
 
 const props = defineProps({
 	itemData: {
@@ -111,7 +112,13 @@ function openBreakdownEntry(entry) {
 		</button>
 
 		<div class="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-			<img v-if="itemImage" :src="itemImage" :alt="itemTitle" class="h-52 w-full object-cover sm:h-64 md:h-72" />
+			<ImageWithFallback
+				:src="itemImage"
+				:alt="itemTitle"
+				:fallback-label="t('common.imageUnavailable')"
+				wrapper-class="h-52 w-full sm:h-64 md:h-72"
+				img-class="h-full w-full object-cover transition-opacity duration-150"
+			/>
 
 			<div class="p-6">
 				<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">{{ itemTypeLabel }}</div>

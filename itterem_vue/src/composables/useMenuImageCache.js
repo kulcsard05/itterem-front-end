@@ -1,6 +1,7 @@
 import { shallowRef } from 'vue';
 import { MENU_IMAGES_STORAGE_KEY } from '../config/constants.js';
 import { toImageSrc } from '../shared/utils.js';
+import { shouldPersistHeavyImageCache } from './useDeviceClass.js';
 
 // ---------------------------------------------------------------------------
 // Cache API-based image cache (replaces the old localStorage approach).
@@ -69,6 +70,33 @@ function isInlineDataImage(value) {
 
 function isInlineImagePointer(value) {
 	return String(value ?? '').startsWith(INLINE_POINTER_PREFIX);
+}
+
+function isLikelyNetworkImageRef(value) {
+	const s = String(value ?? '').trim();
+	if (!s) return false;
+	if (s.startsWith('data:') || s.startsWith('blob:')) return false;
+	if (isInlineImagePointer(s)) return false;
+	if (looksLikeInlineImage(s)) return false;
+	return true;
+}
+
+function sanitizeStoredImageRef(value, maxLength = 1024) {
+	const s = String(value ?? '').trim();
+	if (!s) return '';
+	if (s.length > maxLength) return '';
+	return s;
+}
+
+function toNormalizedCacheUrl(value) {
+	const s = String(value ?? '').trim();
+	if (!s) return '';
+	if (typeof window === 'undefined' || !window.location?.origin) return s;
+	try {
+		return new URL(s, window.location.origin).href;
+	} catch {
+		return s;
+	}
 }
 
 function pointerToCacheUrl(pointer) {
@@ -170,21 +198,56 @@ async function resolveInlinePointer(pointer) {
  * @param {string|null|undefined} kep  Raw kep value from a menu item.
  * @returns {string}
  */
-export function getImageSrc(kep) {
+export function getImageSrc(kep, options = {}) {
 	// Touch a reactive ref so views re-render when pointer URLs become available.
 	void _inlineResolutionVersion.value;
+	const original = sanitizeStoredImageRef(options?.original ?? '', 1024);
 
 	const k = String(kep ?? '').trim();
-	if (!k) return '';
+	if (!k) return original ? toImageSrc(original) : '';
 
 	if (isInlineImagePointer(k)) {
 		const resolved = _inlineBlobUrlByPointer.get(k);
 		if (resolved) return resolved;
 		void resolveInlinePointer(k);
-		return '';
+		return original ? toImageSrc(original) : '';
 	}
 
 	return toImageSrc(k);
+}
+
+/**
+ * Convert image refs into cache-safe persisted fields.
+ *
+ * - `kep` stays the primary source, possibly pointerized (`cache-img:*`).
+ * - `kepOriginal` is only kept when it is a short URL/path-style ref.
+ *
+ * @param {string|null|undefined} value
+ * @param {{ fallbackOriginal?: string|null|undefined }} [options]
+ * @returns {{ kep: string, kepOriginal: string }}
+ */
+export function toPersistentImageRefs(value, options = {}) {
+	const raw = String(value ?? '').trim();
+	const canPersistHeavyCache = shouldPersistHeavyImageCache();
+	let persistedPrimary = sanitizeStoredImageRef(toPersistentImageRef(raw), 1024);
+
+	const candidates = [raw, String(options.fallbackOriginal ?? '').trim()];
+	let kepOriginal = '';
+	for (const candidate of candidates) {
+		if (!candidate) continue;
+		if (!isLikelyNetworkImageRef(candidate)) continue;
+		kepOriginal = sanitizeStoredImageRef(candidate, 1024);
+		if (kepOriginal) break;
+	}
+
+	if (!canPersistHeavyCache && isInlineImagePointer(persistedPrimary)) {
+		persistedPrimary = kepOriginal || '';
+	}
+
+	return {
+		kep: persistedPrimary,
+		kepOriginal,
+	};
 }
 
 /**
@@ -200,6 +263,8 @@ export function getImageSrc(kep) {
  * @returns {Promise<void>}
  */
 export async function cacheImagesForDatasets(...datasets) {
+	if (!shouldPersistHeavyImageCache()) return;
+
 	// Ensure we know what's already cached.
 	await initKnownKeys();
 
@@ -207,20 +272,32 @@ export async function cacheImagesForDatasets(...datasets) {
 
 	// Collect image URLs that need fetching.
 	const toFetch = new Map(); // url → kep
+	const pointerFallbacks = new Map(); // pointer -> fallback URL
 	const inlineToPersist = collectInlinePointersFromDatasets(datasets);
 	for (const dataset of datasets) {
 		if (!Array.isArray(dataset)) continue;
 		for (const item of dataset) {
 			const kep = String(item?.kep ?? '').trim();
+			const kepOriginal = String(item?.kepOriginal ?? '').trim();
 			if (!kep) continue;
 
 			if (isInlineDataImage(kep)) continue;
 
-			if (isInlineImagePointer(kep)) continue;
+			if (isInlineImagePointer(kep)) {
+				const pointerCacheUrl = pointerToCacheUrl(kep);
+				if (!pointerCacheUrl || known.has(pointerCacheUrl)) continue;
+
+				const fallback = isLikelyNetworkImageRef(kepOriginal)
+					? toImageSrc(kepOriginal)
+					: '';
+				if (fallback) pointerFallbacks.set(kep, fallback);
+				continue;
+			}
 			if (looksLikeInlineImage(kep)) continue;
 
 			const url = toImageSrc(kep);
-			if (!url || known.has(url)) continue;
+			const knownKey = toNormalizedCacheUrl(url);
+			if (!url || (knownKey && known.has(knownKey))) continue;
 			toFetch.set(url, kep);
 		}
 	}
@@ -241,7 +318,7 @@ export async function cacheImagesForDatasets(...datasets) {
 		);
 	}
 
-	if (toFetch.size === 0) return;
+	if (toFetch.size === 0 && pointerFallbacks.size === 0) return;
 
 	const newKnown = new Set(known);
 
@@ -257,9 +334,34 @@ export async function cacheImagesForDatasets(...datasets) {
 					const resp = await fetch(url);
 					if (!resp.ok) return;
 					await cache.put(url, resp);
-					newKnown.add(url);
+					const knownKey = toNormalizedCacheUrl(url);
+					if (knownKey) newKnown.add(knownKey);
 				} catch {
 					// Network error or CORS block – image skipped.
+				}
+			}),
+		);
+	}
+
+	const pointerEntries = [...pointerFallbacks.entries()];
+	for (let i = 0; i < pointerEntries.length; i += MAX_CONCURRENT) {
+		const batch = pointerEntries.slice(i, i + MAX_CONCURRENT);
+		await Promise.allSettled(
+			batch.map(async ([pointer, fallbackUrl]) => {
+				const cacheUrl = pointerToCacheUrl(pointer);
+				if (!cacheUrl) return;
+				const fallbackKnownKey = toNormalizedCacheUrl(fallbackUrl);
+				try {
+					const response = await fetch(fallbackUrl);
+					if (!response.ok) return;
+
+					// Keep both keys warm: stable pointer key and direct URL key.
+					await cache.put(cacheUrl, response.clone());
+					await cache.put(fallbackUrl, response);
+					newKnown.add(cacheUrl);
+					if (fallbackKnownKey) newKnown.add(fallbackKnownKey);
+				} catch {
+					// Network error or CORS block – pointer cache fill skipped.
 				}
 			}),
 		);
@@ -279,6 +381,8 @@ export async function cacheImagesForDatasets(...datasets) {
  * @returns {Promise<void>}
  */
 export async function persistInlineImagesForDatasets(...datasets) {
+	if (!shouldPersistHeavyImageCache()) return;
+
 	await initKnownKeys();
 	const inlineToPersist = collectInlinePointersFromDatasets(datasets);
 	if (inlineToPersist.size === 0) return;
@@ -324,14 +428,61 @@ export async function resolveImagePointersForDatasets(...datasets) {
 	await initKnownKeys();
 
 	const pointers = new Set();
+	const unresolvedDatasetIndexes = new Set();
+	const pointersByDatasetIndex = new Map();
 	for (const dataset of datasets) {
-		if (!Array.isArray(dataset)) continue;
+		const datasetIndex = pointersByDatasetIndex.size;
+		if (!Array.isArray(dataset)) {
+			pointersByDatasetIndex.set(datasetIndex, new Set());
+			continue;
+		}
+
+		const datasetPointers = new Set();
 		for (const item of dataset) {
 			const kep = String(item?.kep ?? '').trim();
-			if (isInlineImagePointer(kep)) pointers.add(kep);
+			if (!isInlineImagePointer(kep)) continue;
+			pointers.add(kep);
+			datasetPointers.add(kep);
+		}
+		pointersByDatasetIndex.set(datasetIndex, datasetPointers);
+	}
+
+	if (pointers.size === 0) {
+		return {
+			totalPointers: 0,
+			resolvedPointers: 0,
+			unresolvedPointers: [],
+			unresolvedDatasetIndexes: [],
+		};
+	}
+
+	await Promise.allSettled([...pointers].map((pointer) => resolveInlinePointer(pointer)));
+
+	let unresolvedPointers = [...pointers].filter((pointer) => !_inlineBlobUrlByPointer.get(pointer));
+
+	if (unresolvedPointers.length > 0) {
+		// Recovery attempt: refill cache entries (desktop only) and retry pointer resolves.
+		await cacheImagesForDatasets(...datasets);
+		await Promise.allSettled(unresolvedPointers.map((pointer) => resolveInlinePointer(pointer)));
+		unresolvedPointers = unresolvedPointers.filter((pointer) => !_inlineBlobUrlByPointer.get(pointer));
+	}
+
+	if (unresolvedPointers.length > 0) {
+		const unresolvedSet = new Set(unresolvedPointers);
+		for (const [index, datasetPointers] of pointersByDatasetIndex.entries()) {
+			for (const pointer of datasetPointers) {
+				if (unresolvedSet.has(pointer)) {
+					unresolvedDatasetIndexes.add(index);
+					break;
+				}
+			}
 		}
 	}
 
-	if (pointers.size === 0) return;
-	await Promise.allSettled([...pointers].map((pointer) => resolveInlinePointer(pointer)));
+	return {
+		totalPointers: pointers.size,
+		resolvedPointers: pointers.size - unresolvedPointers.length,
+		unresolvedPointers,
+		unresolvedDatasetIndexes: [...unresolvedDatasetIndexes],
+	};
 }

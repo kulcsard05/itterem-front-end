@@ -5,6 +5,7 @@ import { placeOrder } from '../../services/api.js';
 import { usePromiseTimeout } from '../../composables/usePromiseTimeout.js';
 import { formatCurrency, resolveUserId, getOrderItemIdKey } from '../../shared/utils.js';
 import { MAX_ORDER_QUANTITY, ORDER_TIMEOUT_MS } from '../../config/constants.js';
+import ImageWithFallback from '../common/ImageWithFallback.vue';
 
 const props = defineProps({
 	item: { type: Object, default: null },
@@ -148,13 +149,15 @@ defineExpose({ reset });
 					<div v-else class="space-y-5 px-4 py-5 sm:px-6">
 						<!-- Item info -->
 						<div class="flex items-center gap-3 sm:gap-4">
-							<img
-								v-if="item.image"
+							<ImageWithFallback
 								:src="item.image"
 								:alt="item.name"
-								class="h-20 w-20 flex-shrink-0 rounded-xl object-cover"
+								:fallback-label="t('common.imageUnavailable')"
+								wrapper-class="h-20 w-20 flex-shrink-0 rounded-xl"
+								img-class="h-full w-full rounded-xl object-cover transition-opacity duration-150"
+								skeleton-class="rounded-xl"
+								fallback-class="rounded-xl"
 							/>
-							<div v-else class="h-20 w-20 flex-shrink-0 rounded-xl bg-gray-100" />
 							<div class="min-w-0">
 								<p class="text-sm text-gray-500">{{ item.typeLabel }}</p>
 								<p class="text-base font-semibold leading-snug text-gray-900">{{ item.name }}</p>

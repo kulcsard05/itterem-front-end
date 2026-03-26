@@ -27,11 +27,11 @@ export const MENU_IMAGES_STORAGE_KEY = 'menu-images-v1';
 export const SERVER_URL_STORAGE_KEY = 'itterem-server-url';
 
 export const MENU_DATASET_STORAGE_KEYS = {
-	categories: 'menu-cache-categories-v4',
-	meals: 'menu-cache-meals-v4',
-	sides: 'menu-cache-sides-v4',
-	menus: 'menu-cache-menus-v4',
-	drinks: 'menu-cache-drinks-v4',
+	categories: 'menu-cache-categories-v5',
+	meals: 'menu-cache-meals-v5',
+	sides: 'menu-cache-sides-v5',
+	menus: 'menu-cache-menus-v5',
+	drinks: 'menu-cache-drinks-v5',
 };
 
 // ── locale configuration ────────────────────────────────────────

@@ -18,6 +18,7 @@
     "total": "Total",
     "uncategorized": "Other",
     "notAvailable": "-",
+    "imageUnavailable": "Image unavailable",
     "language": "Language",
     "orderIdLabel": "Order ID",
     "currency": {

@@ -1,7 +1,8 @@
 import { computed, ref } from 'vue';
-import { asArray, getItemTypeLabel, getOrderItemIdKey, toBoundedPositiveInt, toImageSrc } from '../shared/utils.js';
+import { asArray, getItemTypeLabel, getOrderItemIdKey, toBoundedPositiveInt } from '../shared/utils.js';
 import { readStorageText, writeStorageText } from '../storage/storage-utils.js';
 import { useMenuData } from './useMenuData.js';
+import { getImageSrc } from './useMenuImageCache.js';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton so every component shares the same cart.
@@ -72,6 +73,7 @@ function hydrateItem(slim) {
 			name: slim.name || '',
 			price: slim.price ?? null,
 			kep: slim.kep || '',
+			kepOriginal: slim.kepOriginal || '',
 			typeLabel: slim.typeLabel || getItemTypeLabel(slim.type),
 		};
 	}
@@ -91,6 +93,7 @@ function parseStoredItems(raw) {
 					name: item?.name,
 					price: item?.price,
 					kep: item?.kep,
+					kepOriginal: item?.kepOriginal,
 					typeLabel: item?.typeLabel,
 				}))
 				.filter((item) => item.type && item.id != null && item.quantity > 0)
@@ -178,7 +181,7 @@ export function useCart() {
 
 	/** Resolve the raw kep key to a displayable image src at render time. */
 	function resolveImage(item) {
-		return toImageSrc(item?.kep);
+		return getImageSrc(item?.kep, { original: item?.kepOriginal });
 	}
 
 	// -------------------------------------------------------------------------
@@ -198,6 +201,7 @@ export function useCart() {
 		// Extract the raw kep key – prefer the original item's .kep so we never
 		// store a resolved data-URL / base64 blob in localStorage.
 		const rawKep = String(itemData?.item?.kep ?? itemData?.kep ?? '');
+		const rawKepOriginal = String(itemData?.item?.kepOriginal ?? itemData?.kepOriginal ?? '');
 
 		const typeLabel = String(itemData?.typeLabel ?? '').trim() || getItemTypeLabel(type);
 		const list = items.value;
@@ -208,6 +212,9 @@ export function useCart() {
 			if (!String(existing.typeLabel ?? '').trim()) {
 				existing.typeLabel = typeLabel;
 			}
+			if (!String(existing.kepOriginal ?? '').trim() && rawKepOriginal) {
+				existing.kepOriginal = rawKepOriginal;
+			}
 		} else {
 			list.push({
 				type,
@@ -216,6 +223,7 @@ export function useCart() {
 				name: String(itemData?.name ?? ''),
 				price: itemData?.price ?? null,
 				kep: rawKep,
+				kepOriginal: rawKepOriginal,
 				quantity: sanitizeQuantity(1),
 			});
 		}
@@ -290,6 +298,7 @@ export function useCart() {
 			if (hydrated.name) item.name = hydrated.name;
 			if (hydrated.price != null) item.price = hydrated.price;
 			if (hydrated.kep) item.kep = hydrated.kep;
+			if (hydrated.kepOriginal) item.kepOriginal = hydrated.kepOriginal;
 			if (hydrated.typeLabel) item.typeLabel = hydrated.typeLabel;
 		}
 	}

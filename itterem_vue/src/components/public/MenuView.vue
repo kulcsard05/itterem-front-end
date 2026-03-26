@@ -8,8 +8,10 @@ import {
 	buildMealListKey as getMealListKey,
 	buildSelectedListKey as getSelectedListKey,
 } from '../../menu/menu-utils.js';
+import { dropMenuEtags } from '../../storage/menu-etags.js';
 
 import { resolveImagePointersForDatasets } from '../../composables/useMenuImageCache.js';
+import { shouldPersistHeavyImageCache } from '../../composables/useDeviceClass.js';
 import { useAuth } from '../../composables/useAuth.js';
 import { useCart } from '../../composables/useCart.js';
 import { useMenuCatalogRefresh } from '../../composables/useMenuCatalogRefresh.js';
@@ -170,17 +172,30 @@ function closeQuickBuy() {
 
 onMounted(() => {
 	hydrateMenuCache();
-	void resolveImagePointersForDatasets(
-		categories.value,
-		meals.value,
-		sides.value,
-		menus.value,
-		drinks.value,
-	).catch(() => {
-		// Keep UI usable even if pointer hydration fails.
-	});
 	rehydrateItems();
-	void refreshAll();
+	void (async () => {
+		try {
+			if (!shouldPersistHeavyImageCache()) {
+				dropMenuEtags(['categories', 'meals', 'sides', 'menus', 'drinks']);
+			}
+
+			const imageResolution = await resolveImagePointersForDatasets(
+				categories.value,
+				meals.value,
+				sides.value,
+				menus.value,
+				drinks.value,
+			);
+
+			if (Array.isArray(imageResolution?.unresolvedPointers) && imageResolution.unresolvedPointers.length > 0) {
+				dropMenuEtags(['categories', 'meals', 'sides', 'menus', 'drinks']);
+			}
+		} catch {
+			// Keep UI usable even if pointer hydration fails.
+		}
+
+		await refreshAll();
+	})();
 });
 
 const selectedList = computed(() => {

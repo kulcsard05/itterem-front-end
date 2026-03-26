@@ -5,7 +5,7 @@ import {
 } from '../config/constants.js';
 import { asArray, findById, getItemTypeLabel } from '../shared/utils.js';
 import { readStorageJson, writeStorageJson } from '../storage/storage-utils.js';
-import { persistInlineImagesForDatasets, toPersistentImageRef } from './useMenuImageCache.js';
+import { persistInlineImagesForDatasets, toPersistentImageRefs } from './useMenuImageCache.js';
 import { dropMenuEtags } from '../storage/menu-etags.js';
 
 // ---------------------------------------------------------------------------
@@ -55,10 +55,22 @@ const MENU_DATASET_REFS = {
 function toDatasetFingerprint(value) {
 	const list = asArray(value);
 	if (list.length === 0) return '0';
-	// Lightweight fingerprint: item count + first/last item IDs.
-	const first = list[0]?.id ?? '';
-	const last = list[list.length - 1]?.id ?? '';
-	return `${list.length}:${first}:${last}`;
+	const summary = list.map((item) => {
+		if (!item || typeof item !== 'object') return String(item ?? '');
+		return [
+			item.id ?? '',
+			item.menuNev ?? item.nev ?? '',
+			item.ar ?? '',
+			item.elerheto ?? '',
+			item.kategoriaId ?? '',
+			item.keszetelId ?? '',
+			item.koretId ?? '',
+			item.uditoId ?? '',
+			String(item.kep ?? '').slice(0, 64),
+			String(item.kepOriginal ?? '').slice(0, 64),
+		].join('~');
+	});
+	return `${list.length}:${summary.join('|')}`;
 }
 
 function setDatasetIfChanged(key, targetRef, value) {
@@ -80,7 +92,13 @@ function minimiseItem(item, fields) {
 	const res = {};
 	for (const f of fields) {
 		if (item[f] === undefined) continue;
-		res[f] = f === 'kep' ? minimiseImageRef(item[f]) : item[f];
+		if (f === 'kep') {
+			const imageRefs = minimiseImageRefs(item);
+			res.kep = imageRefs.kep;
+			if (imageRefs.kepOriginal) res.kepOriginal = imageRefs.kepOriginal;
+			continue;
+		}
+		res[f] = item[f];
 	}
 	return res;
 }
@@ -88,14 +106,15 @@ function minimiseItem(item, fields) {
 const MEAL_FIELDS = ['id', 'nev', 'ar', 'kep', 'elerheto', 'kategoriaId'];
 const SIDE_DRINK_FIELDS = ['id', 'nev', 'ar', 'kep', 'elerheto'];
 
-function minimiseImageRef(value) {
-	const persistent = toPersistentImageRef(value);
-	if (typeof persistent !== 'string') return persistent;
-	const trimmed = persistent.trim();
-	if (!trimmed) return '';
-	// Guard against unusually large textual payloads accidentally stored as image refs.
-	if (trimmed.length > 1024) return '';
-	return trimmed;
+function minimiseImageRefs(item) {
+	const refs = toPersistentImageRefs(item?.kep, {
+		fallbackOriginal: item?.kepOriginal,
+	});
+
+	return {
+		kep: refs.kep,
+		kepOriginal: refs.kepOriginal,
+	};
 }
 
 function minimiseIngredient(ingredient) {
@@ -125,6 +144,7 @@ function minimiseDrink(d) {
 
 function minimiseMenu(m) {
 	if (!m || typeof m !== 'object') return m;
+	const imageRefs = minimiseImageRefs(m);
 	return {
 		id: m.id,
 		menuNev: m.menuNev,
@@ -132,7 +152,8 @@ function minimiseMenu(m) {
 		koretId: m.koretId,
 		uditoId: m.uditoId,
 		ar: m.ar,
-		kep: minimiseImageRef(m.kep),
+		kep: imageRefs.kep,
+		...(imageRefs.kepOriginal ? { kepOriginal: imageRefs.kepOriginal } : {}),
 		elerheto: m.elerheto,
 	};
 }
@@ -235,6 +256,32 @@ function readDatasetFromStorage(datasetKey) {
 	return { found: false, data: [] };
 }
 
+function normalizeStoredDatasetItems(dataset) {
+	if (!Array.isArray(dataset)) return [];
+
+	return dataset.map((entry) => {
+		if (!entry || typeof entry !== 'object') return entry;
+		if (!('kep' in entry) && !('kepOriginal' in entry)) return entry;
+
+		const refs = toPersistentImageRefs(entry?.kep, {
+			fallbackOriginal: entry?.kepOriginal,
+		});
+
+		const normalized = {
+			...entry,
+			kep: refs.kep,
+		};
+
+		if (refs.kepOriginal) {
+			normalized.kepOriginal = refs.kepOriginal;
+		} else {
+			delete normalized.kepOriginal;
+		}
+
+		return normalized;
+	});
+}
+
 function hydrateMenuCache() {
 	const missingInCache = [];
 
@@ -242,7 +289,7 @@ function hydrateMenuCache() {
 		const targetRef = MENU_DATASET_REFS[key];
 		const fromDataset = readDatasetFromStorage(key);
 		if (fromDataset.found) {
-			setDatasetIfChanged(key, targetRef, fromDataset.data);
+			setDatasetIfChanged(key, targetRef, normalizeStoredDatasetItems(fromDataset.data));
 			continue;
 		}
 
@@ -295,6 +342,7 @@ function hydrateCartItem(entry) {
 		name: (item ? getItemName(entry.type, item) : '') || entry.name || '',
 		price: (item ? (item.ar ?? null) : null) ?? entry.price ?? null,
 		kep: (item ? (item.kep ?? '') : '') || entry.kep || '',
+		kepOriginal: (item ? (item.kepOriginal ?? '') : '') || entry.kepOriginal || '',
 		typeLabel: entry.typeLabel || getItemTypeLabel(entry.type),
 	};
 }
