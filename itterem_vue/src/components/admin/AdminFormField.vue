@@ -1,4 +1,5 @@
 <script setup>
+import { computed, ref } from 'vue';
 import { asArray } from '../../shared/utils.js';
 
 const props = defineProps({
@@ -8,6 +9,28 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:modelValue']);
+
+const multiSelectSearchQuery = ref('');
+
+function normalizeSearchText(value) {
+	return String(value ?? '')
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLocaleLowerCase('hu-HU')
+		.trim();
+}
+
+const filteredMultiSelectOptions = computed(() => {
+	if (props.field?.type !== 'multiselect') return props.options;
+	const query = normalizeSearchText(multiSelectSearchQuery.value);
+	if (!query) return props.options;
+
+	return props.options.filter((option) => {
+		const label = normalizeSearchText(option?.label);
+		const value = normalizeSearchText(option?.value);
+		return label.includes(query) || value.includes(query);
+	});
+});
 
 function updateValue(value) {
 	emit('update:modelValue', value);
@@ -41,9 +64,27 @@ function isMultiSelected(optionValue) {
 		/>
 
 		<div v-else-if="field.type === 'multiselect'" class="space-y-2">
+			<div class="relative">
+				<input
+					v-model="multiSelectSearchQuery"
+					type="search"
+					:placeholder="field.searchPlaceholder || `${field.label} keresése`"
+					class="w-full rounded-lg border-2 border-gray-200 py-2.5 pl-10 pr-4 text-sm text-gray-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition"
+				/>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke="currentColor"
+				>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+				</svg>
+			</div>
+
 			<div class="max-h-44 overflow-auto rounded-lg border-2 border-gray-200 bg-white">
 				<label
-					v-for="opt in options"
+					v-for="opt in filteredMultiSelectOptions"
 					:key="opt.value"
 					class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
 				>
@@ -54,6 +95,9 @@ function isMultiSelected(optionValue) {
 					/>
 					<span>{{ opt.label }}</span>
 				</label>
+				<div v-if="filteredMultiSelectOptions.length === 0" class="px-3 py-4 text-sm text-gray-500">
+					Nincs találat.
+				</div>
 			</div>
 		</div>
 
