@@ -114,6 +114,11 @@ function handleLoginSuccess(user) {
 		return;
 	}
 
+	if (isAdmin.value) {
+		router.push({ name: 'admin' });
+		return;
+	}
+
 	// If the logged-in user isn't admin, redirect away from admin.
 	if (!isAdmin.value && route.name === 'admin') {
 		router.push({ name: 'menu' });
@@ -344,16 +349,6 @@ function selectLocale(nextLocaleValue) {
 					</button>
 				</nav>
 
-				<div v-if="isLoggedIn && isAccountRoute" class="w-full sm:hidden">
-					<button
-						type="button"
-						class="inline-flex min-h-10 w-full items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-						@click="requestLogout"
-					>
-						{{ t('nav.logout') }}
-					</button>
-				</div>
-
 				<div class="hidden items-center gap-3 sm:flex">
 					<button
 						v-if="isDevServerDiscoveryEnabled"
@@ -421,30 +416,12 @@ function selectLocale(nextLocaleValue) {
 					</button>
 
 					<button
-						v-if="isLoggedIn"
 						type="button"
 						class="hidden rounded-md px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 sm:inline-flex"
 						:class="isAccountRoute ? 'bg-gray-900 text-white hover:bg-gray-900' : ''"
 						@click="goAccount"
 					>
-						{{ auth.teljesNev || auth.email || t('common.user') }}
-					</button>
-
-					<button
-						v-if="isLoggedIn && isAccountRoute"
-						type="button"
-						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-						@click="requestLogout"
-					>
-						{{ t('nav.logout') }}
-					</button>
-					<button
-						v-else
-						type="button"
-						class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-						@click="goAccount"
-					>
-						{{ t('nav.login') }}
+						{{ isLoggedIn ? (auth.teljesNev || auth.email || t('common.user')) : t('nav.login') }}
 					</button>
 				</div>
 			</div>
@@ -458,7 +435,7 @@ function selectLocale(nextLocaleValue) {
 					@open-item="openMenuItem"
 					@back="goMenu"
 					@login-success="handleLoginSuccess"
-					@logout="handleLogout"
+					@logout="requestLogout"
 					@add-to-cart="handleAddToCart"
 				/>
 			</router-view>

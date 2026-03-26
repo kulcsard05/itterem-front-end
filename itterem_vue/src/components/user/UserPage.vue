@@ -17,7 +17,7 @@ const props = defineProps({
 	auth: { type: Object, default: null },
 });
 
-const emit = defineEmits(['login-success']);
+const emit = defineEmits(['login-success', 'logout']);
 const { t } = useI18n();
 
 const currentForm = ref('login');
@@ -288,6 +288,16 @@ onUnmounted(() => {
 
 			<div class="mt-6 text-sm text-gray-600">
 				{{ t('account.profileHint') }}
+			</div>
+
+			<div class="mt-6 flex justify-start sm:justify-end">
+				<button
+					type="button"
+					class="inline-flex min-h-10 items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+					@click="emit('logout')"
+				>
+					{{ t('nav.logout') }}
+				</button>
 			</div>
 
 			<div v-if="!isAdminAccount" class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
