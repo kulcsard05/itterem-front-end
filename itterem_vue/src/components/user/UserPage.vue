@@ -4,10 +4,12 @@ import { useI18n } from 'vue-i18n';
 import Login from './Login.vue';
 import Register from './Register.vue';
 import OrderStatusBadge from '../common/OrderStatusBadge.vue';
-import { getOwnOrders, updatePhone } from '../../services/api.js';
+import { getDrinks, getMeals, getMenus, getOwnOrders, getSides, updatePhone } from '../../services/api.js';
+import { useMenuItemPresentation } from '../../composables/useMenuItemPresentation.js';
 import { useSignalR } from '../../composables/useSignalR.js';
+import { normalizeOrderDto } from '../../domain/order/order-dto.js';
 import { extractOrderUpdateEvent } from '../../domain/order/order-dto.js';
-import { asArray, formatDateTime, formatOrderItems, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../shared/utils.js';
+import { asArray, findById, formatDateTime, getItemTypeLabel, getOrderItemName, getOrderStatusLabel, isValidPhone, resolveUserId, sortOrdersByDateDesc } from '../../shared/utils.js';
 import {
 	DONE_NOTICE_TIMEOUT_MS,
 	ROLE_ADMIN,
@@ -18,7 +20,7 @@ const props = defineProps({
 	auth: { type: Object, default: null },
 });
 
-const emit = defineEmits(['login-success', 'logout']);
+const emit = defineEmits(['login-success', 'logout', 'open-item']);
 const { t } = useI18n();
 
 const currentForm = ref('login');
@@ -30,11 +32,16 @@ const phoneSaving = ref(false);
 const ownOrders = ref([]);
 const ordersLoading = ref(false);
 const ordersError = ref('');
+const meals = ref([]);
+const sides = ref([]);
+const menus = ref([]);
+const drinks = ref([]);
 
 // DEV helper: make it obvious that status changes arrived via SignalR.
 const showRealtimeDebug = import.meta.env.DEV;
 
 const { connectionState, SIGNALR_CONNECTION_STATE, start, on } = useSignalR();
+const { createItemPayload } = useMenuItemPresentation({ t, meals, sides, drinks });
 
 const realtimeIndicatorClass = computed(() => {
 	if (connectionState.value === SIGNALR_CONNECTION_STATE.CONNECTED) return 'bg-green-500';
@@ -177,6 +184,113 @@ const displayedOrders = computed(() =>
 	[...asArray(ownOrders.value)].sort(sortOrdersByDateDesc),
 );
 
+function getOrderEntryType(entry) {
+	if (entry?.menuId != null) return 'menus';
+	if (entry?.keszetelId != null) return 'meals';
+	if (entry?.koretId != null) return 'sides';
+	if (entry?.uditoId != null) return 'drinks';
+	if (String(entry?.menuNev ?? '').trim()) return 'menus';
+	if (String(entry?.keszetelNev ?? '').trim()) return 'meals';
+	if (String(entry?.koretNev ?? '').trim()) return 'sides';
+	if (String(entry?.uditoNev ?? '').trim()) return 'drinks';
+	return '';
+}
+
+function findCatalogItemByName(list, name, nameKey = 'nev') {
+	const normalizedName = String(name ?? '').trim().toLocaleLowerCase('hu-HU');
+	if (!normalizedName) return null;
+	return asArray(list).find(
+		(item) => String(item?.[nameKey] ?? '').trim().toLocaleLowerCase('hu-HU') === normalizedName,
+	) ?? null;
+}
+
+function getOrderEntryCatalogItem(entry, type) {
+	if (type === 'menus') {
+		return findById(menus.value, entry?.menuId)
+			?? findCatalogItemByName(menus.value, entry?.menuNev, 'menuNev');
+	}
+	if (type === 'meals') {
+		return findById(meals.value, entry?.keszetelId)
+			?? findCatalogItemByName(meals.value, entry?.keszetelNev);
+	}
+	if (type === 'sides') {
+		return findById(sides.value, entry?.koretId)
+			?? findCatalogItemByName(sides.value, entry?.koretNev);
+	}
+	if (type === 'drinks') {
+		return findById(drinks.value, entry?.uditoId)
+			?? findCatalogItemByName(drinks.value, entry?.uditoNev);
+	}
+	return null;
+}
+
+function getOrderEntryQuantity(entry) {
+	const quantity = Number(entry?.mennyiseg);
+	return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function getOrderEntryDisplayName(entry) {
+	return String(getOrderItemName(entry) ?? '').trim() || t('common.notAvailable');
+}
+
+function createFallbackOrderEntryPayload(entry, type) {
+	const id = entry?.menuId ?? entry?.keszetelId ?? entry?.koretId ?? entry?.uditoId ?? null;
+	const name = getOrderEntryDisplayName(entry);
+	const item = type === 'menus'
+		? { id, menuNev: name }
+		: { id, nev: name };
+
+	return {
+		type,
+		typeLabel: getItemTypeLabel(type),
+		item,
+		id,
+		name,
+		price: null,
+		image: '',
+		kep: '',
+		kepOriginal: '',
+		description: t('menu.noDescription'),
+		meta: '',
+		menuBreakdown: [],
+		ingredients: [],
+	};
+}
+
+function openOrderEntryItem(entry) {
+	const type = getOrderEntryType(entry);
+	if (!type) return;
+
+	const catalogItem = getOrderEntryCatalogItem(entry, type);
+	const payload = catalogItem
+		? createItemPayload(type, catalogItem)
+		: createFallbackOrderEntryPayload(entry, type);
+
+	emit('open-item', payload);
+}
+
+async function loadItemCatalog() {
+	if (!props.auth?.token || isAdminAccount.value || isEmployeeAccount.value) {
+		meals.value = [];
+		sides.value = [];
+		menus.value = [];
+		drinks.value = [];
+		return;
+	}
+
+	const [mealsResult, sidesResult, menusResult, drinksResult] = await Promise.allSettled([
+		getMeals(),
+		getSides(),
+		getMenus(),
+		getDrinks(),
+	]);
+
+	meals.value = mealsResult.status === 'fulfilled' ? asArray(mealsResult.value) : [];
+		sides.value = sidesResult.status === 'fulfilled' ? asArray(sidesResult.value) : [];
+	menus.value = menusResult.status === 'fulfilled' ? asArray(menusResult.value) : [];
+	drinks.value = drinksResult.status === 'fulfilled' ? asArray(drinksResult.value) : [];
+}
+
 async function loadOwnOrders() {
 	ordersError.value = '';
 
@@ -189,7 +303,9 @@ async function loadOwnOrders() {
 	ordersLoading.value = true;
 	try {
 		const orders = await getOwnOrders();
-		ownOrders.value = asArray(orders);
+		ownOrders.value = asArray(orders)
+			.map((order) => normalizeOrderDto(order))
+			.filter(Boolean);
 	} catch (err) {
 		ownOrders.value = [];
 		ordersError.value = err?.message || t('account.ordersFailed');
@@ -205,6 +321,7 @@ watch(
 			unsubOrderUpdated();
 			unsubOrderUpdated = null;
 		}
+		void loadItemCatalog();
 		void loadOwnOrders();
 		if (newToken && !isAdminAccount.value && !isEmployeeAccount.value) {
 			unsubOrderUpdated = on('OrderUpdated', handleOrderUpdated);
@@ -357,7 +474,24 @@ onUnmounted(() => {
 									base-class="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold"
 								/>
 							</div>
-						<div class="mt-1 text-sm text-gray-700">{{ t('account.items', { items: formatOrderItems(order) }) }}</div>
+							<div class="mt-3">
+								<div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('account.items', { items: '' }).replace(/:\s*$/, '') }}</div>
+								<ul class="mt-2 space-y-2">
+									<li
+										v-for="entry in asArray(order.rendelesElemeks)"
+										:key="`${order.id}-${entry.id ?? `${getOrderEntryType(entry)}-${entry.menuId ?? entry.keszetelId ?? entry.koretId ?? entry.uditoId ?? getOrderEntryDisplayName(entry)}`}`"
+									>
+										<button
+											type="button"
+											class="flex w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-left text-sm text-gray-800 transition hover:border-indigo-300 hover:bg-indigo-50"
+											@click="openOrderEntryItem(entry)"
+										>
+											<span class="min-w-0 flex-1 truncate font-medium text-indigo-700">{{ getOrderEntryDisplayName(entry) }}</span>
+											<span class="shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500">x{{ getOrderEntryQuantity(entry) }}</span>
+										</button>
+									</li>
+								</ul>
+							</div>
 					</div>
 				</div>
 			</div>
