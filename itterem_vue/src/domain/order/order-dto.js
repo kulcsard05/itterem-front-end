@@ -18,6 +18,8 @@ import {
 	readOrderMessage,
 	readOrderStatusFromPayload,
 	readOrderTotal,
+	readOrderUserName,
+	readOrderUserPhone,
 	readOrderUserId,
 	ORDER_STATUS_PENDING,
 } from './order-utils.js';
@@ -56,6 +58,8 @@ export function normalizeOrderDto(dto) {
 	return {
 		id,
 		felhasznaloId: readOrderUserId(dto),
+		teljesNev: readText(readOrderUserName(dto)),
+		telefonszam: readText(readOrderUserPhone(dto)),
 		osszesAr: readOrderTotal(dto),
 		datum: readOrderDate(dto),
 		statusz: status || ORDER_STATUS_PENDING,

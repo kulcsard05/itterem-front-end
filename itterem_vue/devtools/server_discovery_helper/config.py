@@ -29,7 +29,7 @@ class Settings:
 	scan_timeout_seconds: float = 30.0
 	max_concurrency: int = 128
 	max_hosts_per_network: int = 512
-	verify_paths: tuple[str, ...] = ('/api/health', '/api/meta', '/api/Kategoria', '/api/Keszetelek')
+	verify_paths: tuple[str, ...] = ('/api/Kategoria', '/api/Keszetelek')
 	cache_path: Path = _default_cache_path()
 
 	@classmethod
@@ -37,7 +37,7 @@ class Settings:
 		verify_paths = _split_paths(
 			os.environ.get(
 				'ITTEREM_DISCOVERY_VERIFY_PATHS',
-				'/api/health,/api/meta,/api/Kategoria,/api/Keszetelek',
+				'/api/Kategoria,/api/Keszetelek',
 			),
 		)
 		return cls(

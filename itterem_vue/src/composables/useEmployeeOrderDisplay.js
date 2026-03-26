@@ -1,18 +1,23 @@
-import { computed } from 'vue';
+import { computed, onScopeDispose, ref } from 'vue';
 import { asArray } from '../shared/utils.js';
 
-function formatElapsed(value) {
+function formatElapsed(value, nowMs = Date.now()) {
 	const date = new Date(value);
 	const timestamp = date instanceof Date ? date.getTime() : NaN;
 	if (!Number.isFinite(timestamp)) return '-';
 
-	const diffMs = Math.max(0, Date.now() - timestamp);
-	const totalMinutes = Math.floor(diffMs / 60000);
+	const diffMs = Math.max(0, nowMs - timestamp);
+	const totalSeconds = Math.floor(diffMs / 1000);
+	if (totalSeconds < 60) return `${totalSeconds} másodperce`;
+
+	const totalMinutes = Math.floor(totalSeconds / 60);
+	if (totalMinutes < 60) return `${totalMinutes} perce`;
+
 	const hours = Math.floor(totalMinutes / 60);
 	const minutes = totalMinutes % 60;
+	if (minutes === 0) return `${hours} órája`;
 
-	if (hours <= 0) return `${minutes}p`;
-	return `${hours}ó ${minutes}p`;
+	return `${hours} órája ${minutes} perce`;
 }
 
 export function useEmployeeOrderDisplay({
@@ -22,6 +27,15 @@ export function useEmployeeOrderDisplay({
 	toOrderId,
 	getListRef,
 }) {
+	const nowMs = ref(Date.now());
+	const clock = setInterval(() => {
+		nowMs.value = Date.now();
+	}, 1000);
+
+	onScopeDispose(() => {
+		clearInterval(clock);
+	});
+
 	function isOrderSelected(orderId) {
 		return toOrderId(selectedOrderId.value) === toOrderId(orderId);
 	}
@@ -31,7 +45,14 @@ export function useEmployeeOrderDisplay({
 	}
 
 	function getOrderElapsedLabel(order) {
-		return formatElapsed(order?.datum);
+		return formatElapsed(order?.datum, nowMs.value);
+	}
+
+	function getOrderElapsedMinutes(order) {
+		const date = new Date(order?.datum);
+		const timestamp = date instanceof Date ? date.getTime() : NaN;
+		if (!Number.isFinite(timestamp)) return 0;
+		return Math.max(0, Math.floor((nowMs.value - timestamp) / 60000));
 	}
 
 	function getColumnCount(columnKey) {
@@ -54,6 +75,7 @@ export function useEmployeeOrderDisplay({
 		isOrderSelected,
 		getOrderCardItemCount,
 		getOrderElapsedLabel,
+		getOrderElapsedMinutes,
 		getColumnCount,
 		realtimeIndicatorClass,
 	};

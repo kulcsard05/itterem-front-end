@@ -105,6 +105,25 @@ async def _discover_from_hosts(
 	return None
 
 
+async def _discover_from_localhost(settings: Settings, on_progress: ProgressCallback | None) -> DiscoveryResult | None:
+	localhost_candidates = ['localhost', '127.0.0.1']
+	for host in localhost_candidates:
+		if on_progress is not None:
+			on_progress({'phase': 'verifying-localhost', 'host': host})
+		base_url = f'http://{host}:{settings.backend_port}'
+		verified = await asyncio.to_thread(verify_backend_url, base_url, settings)
+		if verified is None:
+			continue
+		return DiscoveryResult(
+			baseUrl=str(verified['baseUrl']),
+			verifiedPath=str(verified['verifiedPath']),
+			statusCode=int(verified['statusCode']),
+			source='localhost',
+			discoveredAt=_now_iso(),
+		)
+	return None
+
+
 async def discover_backend(
 	settings: Settings,
 	on_progress: ProgressCallback | None = None,
@@ -141,6 +160,11 @@ async def discover_backend(
 			)
 			save_cache(settings.cache_path, {'lastResult': result.to_dict()})
 			return result
+
+	localhost_result = await _discover_from_localhost(settings, on_progress)
+	if localhost_result is not None:
+		save_cache(settings.cache_path, {'lastResult': localhost_result.to_dict()})
+		return localhost_result
 
 	if on_progress is not None:
 		on_progress({'phase': 'enumerating-networks'})

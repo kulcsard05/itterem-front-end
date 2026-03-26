@@ -28,6 +28,16 @@ scan port `7200` from browser JavaScript.
 - `src/utils.js` reads `VITE_API_BASE_URL` for non-dev builds.
 - Production builds do not depend on local discovery state.
 
+### Preview / static runtime
+
+- Non-dev runtime resolves API base URL in this order:
+  1. `VITE_API_BASE_URL` (if baked into the build)
+  2. last discovered server persisted in browser storage
+- If an API request fails due to connectivity, the frontend triggers helper
+  discovery (`/discover` + `/result` polling), persists the discovered server,
+  and retries the request once with the new base URL.
+- This recovery path requires the local discovery helper API to be reachable.
+
 ### Development
 
 - `src/utils.js` always returns `''` from `getApiBaseUrl()` in dev.

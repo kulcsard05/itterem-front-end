@@ -10,8 +10,6 @@ from config import Settings
 
 
 def _looks_like_backend_payload(path: str, payload: object) -> bool:
-	if path in {'/api/health', '/api/meta'}:
-		return isinstance(payload, dict)
 	if path in {'/api/Kategoria', '/api/Keszetelek'}:
 		return isinstance(payload, list)
 	return isinstance(payload, (list, dict))

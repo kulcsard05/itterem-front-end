@@ -11,6 +11,9 @@ const ORDER_ENTRIES_KEYS = Object.freeze(['rendelesElemeks', 'RendelesElemeks', 
 const ORDER_MESSAGE_KEYS = Object.freeze(['message', 'Message']);
 const ORDER_CREATE_ID_KEYS = Object.freeze(['orderId', 'OrderId']);
 const ORDER_USER_ID_KEYS = Object.freeze(['felhasznaloId', 'FelhasznaloId']);
+const ORDER_USER_NAME_KEYS = Object.freeze(['teljesNev', 'TeljesNev', 'teljes_nev', 'Teljes_Nev', 'felhasznaloNev', 'FelhasznaloNev']);
+const ORDER_USER_PHONE_KEYS = Object.freeze(['telefonszam', 'Telefonszam', 'telefonSzam', 'TelefonSzam', 'telefon', 'Telefon', 'phone', 'Phone']);
+const ORDER_USER_OBJECT_KEYS = Object.freeze(['felhasznalo', 'Felhasznalo', 'user', 'User']);
 const ORDER_TOTAL_KEYS = Object.freeze(['osszesAr', 'OsszesAr']);
 const ORDER_DATE_KEYS = Object.freeze(['datum', 'Datum']);
 
@@ -31,6 +34,19 @@ function readFirstDefined(source, keys) {
 	for (const key of keys) {
 		if (Object.hasOwn(source, key) && source[key] != null) return source[key];
 	}
+	return null;
+}
+
+function readOrderUserField(order, keys) {
+	const direct = readFirstDefined(order, keys);
+	if (direct != null) return direct;
+
+	for (const userKey of ORDER_USER_OBJECT_KEYS) {
+		const userObject = order?.[userKey];
+		const nested = readFirstDefined(userObject, keys);
+		if (nested != null) return nested;
+	}
+
 	return null;
 }
 
@@ -68,6 +84,14 @@ export function readOrderMessage(payload) {
 
 export function readOrderUserId(order) {
 	return readFirstDefined(order, ORDER_USER_ID_KEYS);
+}
+
+export function readOrderUserName(order) {
+	return readOrderUserField(order, ORDER_USER_NAME_KEYS);
+}
+
+export function readOrderUserPhone(order) {
+	return readOrderUserField(order, ORDER_USER_PHONE_KEYS);
 }
 
 export function readOrderTotal(order) {

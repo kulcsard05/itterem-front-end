@@ -6,6 +6,7 @@ import {
 	ROLE_USER,
 	ROLE_EMPLOYEE,
 	ROLE_ADMIN,
+	SERVER_URL_STORAGE_KEY,
 } from '../config/constants.js';
 import { i18n, getIntlLocale } from '../i18n.js';
 
@@ -24,19 +25,25 @@ function stripTrailingSlashes(value) {
  * Return the API base URL.
  * In development, the browser always uses same-origin requests so Vite's
  * proxy remains the single integration point for the backend.
- * In non-dev builds, VITE_API_BASE_URL must be set explicitly.
+ * In non-dev builds, VITE_API_BASE_URL has priority, then the persisted
+ * discovered server URL is used as a runtime fallback.
  * @returns {string}
  */
 export function getApiBaseUrl() {
 	if (import.meta.env.DEV) return '';
 
-	const envBaseUrl = import.meta.env.VITE_API_BASE_URL;
-	if (envBaseUrl === undefined) {
-		console.warn('[Itterem] VITE_API_BASE_URL is not set – configure it in .env');
-		return '';
+	const envBaseUrl = stripTrailingSlashes(import.meta.env.VITE_API_BASE_URL || '');
+	if (envBaseUrl) return envBaseUrl;
+
+	try {
+		const persisted = stripTrailingSlashes(localStorage.getItem(SERVER_URL_STORAGE_KEY) || '');
+		if (persisted) return persisted;
+	} catch {
+		// ignore storage failures
 	}
 
-	return stripTrailingSlashes(envBaseUrl);
+	console.warn('[Itterem] No API base URL configured (VITE_API_BASE_URL or persisted discovery URL).');
+	return '';
 }
 
 // ---------------------------------------------------------------------------

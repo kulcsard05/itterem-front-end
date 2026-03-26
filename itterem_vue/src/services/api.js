@@ -17,8 +17,118 @@ import { deleteMenuEtag, readMenuEtags, writeMenuEtag } from '../storage/menu-et
 
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 const NETWORK_ERROR_MESSAGE = 'Hálózati hiba – ellenőrizd az internetkapcsolatot';
+const HELPER_HOST = import.meta.env.VITE_DISCOVERY_HELPER_HOST || '127.0.0.1';
+const HELPER_PORT = Number(import.meta.env.VITE_DISCOVERY_HELPER_PORT || 41721);
+const HELPER_BASE_URL = `http://${HELPER_HOST}:${HELPER_PORT}`;
+const DISCOVERY_RESULT_POLL_MS = 500;
+const DISCOVERY_TIMEOUT_MS = 10_000;
+const DISCOVERY_TRIGGER = 'preview-api-recovery';
 
-async function abortableFetch(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+let discoveryRecoveryPromise = null;
+
+function normalizeBaseUrl(url) {
+	return String(url ?? '').trim().replace(/\/+$/, '');
+}
+
+function isRuntimeDiscoveryEnabled() {
+	// Preview (and other non-dev static builds) can recover via helper.
+	return !import.meta.env.DEV;
+}
+
+function persistDiscoveredServerUrl(url) {
+	const cleaned = normalizeBaseUrl(url);
+	if (!cleaned) return '';
+	try {
+		localStorage.setItem(SERVER_URL_STORAGE_KEY, cleaned);
+	} catch {
+		// ignore storage failures
+	}
+	return cleaned;
+}
+
+function helperUrl(path) {
+	return `${HELPER_BASE_URL}${path}`;
+}
+
+async function helperFetchJson(path, options = {}) {
+	const response = await fetch(helperUrl(path), options);
+	const text = await response.text();
+	let body = null;
+	if (text) {
+		try {
+			body = JSON.parse(text);
+		} catch {
+			body = { raw: text };
+		}
+	}
+
+	if (!response.ok) {
+		const message = body?.error || body?.message || `HTTP ${response.status}`;
+		throw new Error(message);
+	}
+
+	return body;
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function discoverBackendForRecovery() {
+	if (!isRuntimeDiscoveryEnabled()) return '';
+	if (discoveryRecoveryPromise) return discoveryRecoveryPromise;
+
+	discoveryRecoveryPromise = (async () => {
+		try {
+			await helperFetchJson('/discover', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ trigger: DISCOVERY_TRIGGER }),
+			});
+
+			const deadline = Date.now() + DISCOVERY_TIMEOUT_MS;
+			while (Date.now() < deadline) {
+				const snapshot = await helperFetchJson('/result');
+				if (snapshot?.status === 'found' && snapshot?.result?.baseUrl) {
+					return persistDiscoveredServerUrl(snapshot.result.baseUrl);
+				}
+				if (snapshot?.status === 'error') {
+					return '';
+				}
+				await sleep(DISCOVERY_RESULT_POLL_MS);
+			}
+		} catch {
+			// Helper unavailable or discovery failed; fall back to original error path.
+		}
+
+		return '';
+	})().finally(() => {
+		discoveryRecoveryPromise = null;
+	});
+
+	return discoveryRecoveryPromise;
+}
+
+function rewriteUrlWithBase(url, nextBase) {
+	const base = normalizeBaseUrl(nextBase);
+	if (!base) return null;
+
+	const rawUrl = String(url ?? '');
+	if (!rawUrl) return null;
+
+	if (rawUrl.startsWith('/')) {
+		return `${base}${rawUrl}`;
+	}
+
+	try {
+		const parsed = new URL(rawUrl);
+		return `${base}${parsed.pathname}${parsed.search}${parsed.hash}`;
+	} catch {
+		return null;
+	}
+}
+
+async function abortableFetch(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, allowRecoveryRetry = true) {
 	if (!timeoutMs || timeoutMs <= 0) return fetch(url, options);
 
 	const controller = new AbortController();
@@ -30,6 +140,15 @@ async function abortableFetch(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEO
 		if (err.name === 'AbortError') {
 			throw new Error(i18n.global.t('api.errors.timeout'));
 		}
+
+		if (allowRecoveryRetry && isRuntimeDiscoveryEnabled()) {
+			const discoveredBase = await discoverBackendForRecovery();
+			const retryUrl = rewriteUrlWithBase(url, discoveredBase);
+			if (retryUrl && retryUrl !== String(url ?? '')) {
+				return abortableFetch(retryUrl, options, timeoutMs, false);
+			}
+		}
+
 		throw err;
 	} finally {
 		clearTimeout(timer);
@@ -537,7 +656,7 @@ export function getDrinksConditional() {
 // ---------------------------------------------------------------------------
 
 // Re-export order statuses from config constants for API-level validation.
-import { ORDER_STATUSES } from '../config/constants.js';
+import { ORDER_STATUSES, SERVER_URL_STORAGE_KEY } from '../config/constants.js';
 export { ORDER_STATUSES };
 
 export function getOrders() {

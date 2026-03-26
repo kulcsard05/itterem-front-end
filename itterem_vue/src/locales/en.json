@@ -32,7 +32,8 @@
     "login": "Sign in",
     "logout": "Sign out",
     "logoutConfirmTitle": "Sign out?",
-    "logoutConfirmMessage": "Are you sure you want to sign out now?"
+    "logoutConfirmMessage": "Are you sure you want to sign out now?",
+    "leaveEmployeePageConfirmMessage": "Are you sure you want to leave the employee page?"
   },
   "itemTypes": {
     "meal": "Main dish",

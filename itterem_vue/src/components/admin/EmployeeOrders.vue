@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import draggable from 'vuedraggable';
 import { getMeals, getMenus, getOrders, updateOrderStatus } from '../../services/api.js';
 import FloatingOrderDetailsPanel from './FloatingOrderDetailsPanel.vue';
-import OrderStatusBadge from '../common/OrderStatusBadge.vue';
 import { useEmployeeOrderDisplay } from '../../composables/useEmployeeOrderDisplay.js';
 import { useSignalR } from '../../composables/useSignalR.js';
 import { useEmployeeOrdersBoot } from '../../composables/useEmployeeOrdersBoot.js';
@@ -23,6 +24,7 @@ import {
 	formatDateTime,
 	getOrderItemName,
 } from '../../shared/utils.js';
+import { readStorageJson, writeStorageJson } from '../../storage/storage-utils.js';
 import {
 	AUTH_EXPIRED_EVENT,
 	POLL_INTERVAL_MS,
@@ -34,12 +36,27 @@ import {
 	PANEL_DEFAULT_HEIGHT,
 	PANEL_FONT_MIN,
 	PANEL_FONT_MAX,
+	ORDER_STATUSES,
 } from '../../config/constants.js';
 
 const emit = defineEmits(['logout']);
+const { t } = useI18n();
 
 const loading = ref(false);
 const error = ref('');
+const showOrderCardConfig = ref(false);
+const orderCardDisplayMode = ref('count');
+const timerWarningMinutes = ref(5);
+const timerDangerMinutes = ref(10);
+const lastTappedOrderId = ref('');
+const lastTappedAt = ref(0);
+const advancingOrder = ref(false);
+
+const DOUBLE_ACTIVATE_WINDOW_MS = 350;
+const FINAL_ORDER_STATUS = ORDER_STATUSES[ORDER_STATUSES.length - 1] ?? '';
+const BOARD_PREFS_KEY = `${PANEL_PREFS_KEY}:boardPrefs`;
+
+let saveBoardPrefsTimer = null;
 
 const meals = ref([]);
 const menus = ref([]);
@@ -57,6 +74,10 @@ const {
 	onPanelPointerDown,
 	onPanelPointerMove,
 	onPanelPointerUp,
+	onPanelLostPointerCapture,
+	onPanelResizePointerDown,
+	onPanelResizePointerMove,
+	onPanelResizePointerUp,
 	decFont,
 	incFont,
 	initializePanel,
@@ -96,6 +117,67 @@ const showRealtimeDebug = import.meta.env.DEV;
 
 const queuedOrdersReload = ref(false);
 const { columnOpen, columns, toggleColumn } = useEmployeeOrderBoardColumns();
+
+function readBoardPrefs() {
+	const parsed = readStorageJson(BOARD_PREFS_KEY, {
+		storage: localStorage,
+		fallback: null,
+	});
+	return parsed && typeof parsed === 'object' ? parsed : null;
+}
+
+function writeBoardPrefs() {
+	const payload = {
+		columnOpen: {
+			pending: !!columnOpen.pending,
+			processing: !!columnOpen.processing,
+			ready: !!columnOpen.ready,
+		},
+		orderCardDisplayMode: orderCardDisplayMode.value,
+		timerWarningMinutes: timerWarningMinutes.value,
+		timerDangerMinutes: timerDangerMinutes.value,
+	};
+	writeStorageJson(BOARD_PREFS_KEY, payload, {
+		storage: localStorage,
+		warnOnError: false,
+	});
+}
+
+function saveBoardPrefs() {
+	if (saveBoardPrefsTimer != null) clearTimeout(saveBoardPrefsTimer);
+	saveBoardPrefsTimer = setTimeout(() => {
+		saveBoardPrefsTimer = null;
+		writeBoardPrefs();
+	}, 200);
+}
+
+function initializeBoardPrefs() {
+	const prefs = readBoardPrefs();
+	if (!prefs) return;
+
+	const persistedColumnOpen = prefs.columnOpen;
+	if (persistedColumnOpen && typeof persistedColumnOpen === 'object') {
+		if (typeof persistedColumnOpen.pending === 'boolean') columnOpen.pending = persistedColumnOpen.pending;
+		if (typeof persistedColumnOpen.processing === 'boolean') columnOpen.processing = persistedColumnOpen.processing;
+		if (typeof persistedColumnOpen.ready === 'boolean') columnOpen.ready = persistedColumnOpen.ready;
+	}
+
+	if (prefs.orderCardDisplayMode === 'count' || prefs.orderCardDisplayMode === 'items') {
+		orderCardDisplayMode.value = prefs.orderCardDisplayMode;
+	}
+
+	const warning = Number(prefs.timerWarningMinutes);
+	if (Number.isFinite(warning) && warning >= 0) {
+		timerWarningMinutes.value = Math.floor(warning);
+	}
+
+	const danger = Number(prefs.timerDangerMinutes);
+	if (Number.isFinite(danger) && danger >= timerWarningMinutes.value) {
+		timerDangerMinutes.value = Math.floor(danger);
+	}
+}
+
+initializeBoardPrefs();
 
 const { getOrderEntryIngredients } = useOrderIngredientsLookup({
 	meals,
@@ -160,10 +242,125 @@ const visibleOrderEntries = computed(() => {
 });
 
 const ingredientFontSize = computed(() => Math.min(32, Math.max(12, detailFontSize.value + 2)));
+const showOrderCardItems = computed({
+	get: () => orderCardDisplayMode.value === 'items',
+	set: (value) => {
+		orderCardDisplayMode.value = value ? 'items' : 'count';
+	},
+});
+
+function formatOrderTimeShort(value) {
+	const date = value instanceof Date ? value : new Date(value);
+	if (Number.isNaN(date.getTime())) return '--:--';
+	return new Intl.DateTimeFormat('hu-HU', {
+		hour: '2-digit',
+		minute: '2-digit',
+	}).format(date);
+}
+
+function getOrderCardItemNames(order) {
+	return asArray(order?.rendelesElemeks).flatMap((entry) => {
+		const quantity = Number(entry?.mennyiseg);
+		const quantityLabel = Number.isFinite(quantity) && quantity > 1 ? ` x${quantity}` : '';
+		const names = [
+			String(entry?.keszetelNev ?? '').trim(),
+			String(entry?.uditoNev ?? '').trim(),
+			String(entry?.menuNev ?? '').trim(),
+			String(entry?.koretNev ?? '').trim(),
+		].filter(Boolean);
+
+		if (names.length === 0) {
+			const fallbackName = String(getOrderItemName(entry) ?? '').trim();
+			return fallbackName ? [`${fallbackName}${quantityLabel}`] : [];
+		}
+
+		return names.map((name) => `${name}${quantityLabel}`);
+	});
+}
+
+function getOrderCustomerName(order) {
+	const name = String(order?.teljesNev ?? order?.felhasznaloNev ?? '').trim();
+	return name || '-';
+}
+
+function getOrderCustomerPhone(order) {
+	const phone = String(order?.telefonszam ?? order?.telefonSzam ?? '').trim();
+	return phone || '-';
+}
+
+function getTimerWarningMinutes() {
+	const warning = Number(timerWarningMinutes.value);
+	if (!Number.isFinite(warning) || warning < 0) return 0;
+	return Math.floor(warning);
+}
+
+function getTimerDangerMinutes() {
+	const warning = getTimerWarningMinutes();
+	const danger = Number(timerDangerMinutes.value);
+	if (!Number.isFinite(danger) || danger < warning) return warning;
+	return Math.floor(danger);
+}
+
+function getOrderTimerBarClass(order) {
+	const elapsedMinutes = getOrderElapsedMinutes(order);
+	const warning = getTimerWarningMinutes();
+	const danger = getTimerDangerMinutes();
+
+	if (elapsedMinutes >= danger) return 'bg-red-100 text-red-900';
+	if (elapsedMinutes >= warning) return 'bg-amber-100 text-amber-900';
+	return 'bg-sky-100 text-sky-900';
+}
 
 function closePanel() {
 	selectedOrderId.value = null;
 	selectedOrderSnapshot.value = null;
+}
+
+async function advanceOrderToNextStatus(order) {
+	if (advancingOrder.value || savingStatus.value) return;
+
+	const orderId = toOrderId(order?.id);
+	if (!orderId) return;
+
+	const currentStatus = String(order?.statusz ?? '').trim();
+	const currentIndex = ORDER_STATUSES.indexOf(currentStatus);
+	if (currentIndex < 0) return;
+
+	const nextStatus = ORDER_STATUSES[currentIndex + 1] ?? '';
+	if (!nextStatus) return;
+
+	advancingOrder.value = true;
+	try {
+		await updateOrderStatus(orderId, nextStatus);
+		if (nextStatus === FINAL_ORDER_STATUS && selectedOrderId.value === orderId) {
+			closePanel();
+		}
+		await loadOrders();
+	} catch (err) {
+		error.value = err?.message || 'Státusz mentése sikertelen.';
+	} finally {
+		advancingOrder.value = false;
+	}
+}
+
+function onOrderCardActivate(order) {
+	const orderId = toOrderId(order?.id);
+	if (!orderId) return;
+
+	selectedOrderId.value = order?.id;
+
+	const now = Date.now();
+	const isDoubleActivate = lastTappedOrderId.value === orderId
+		&& now - lastTappedAt.value <= DOUBLE_ACTIVATE_WINDOW_MS;
+
+	lastTappedOrderId.value = orderId;
+	lastTappedAt.value = now;
+
+	if (!isDoubleActivate) return;
+
+	lastTappedOrderId.value = '';
+	lastTappedAt.value = 0;
+	void advanceOrderToNextStatus(order);
 }
 
 const { savingStatus, onDraggableChange, isDragCooldown } = useOrderStatusDnD({
@@ -198,6 +395,7 @@ const {
 	isOrderSelected,
 	getOrderCardItemCount,
 	getOrderElapsedLabel,
+	getOrderElapsedMinutes,
 	getColumnCount,
 	realtimeIndicatorClass,
 } = useEmployeeOrderDisplay({
@@ -217,6 +415,25 @@ watch(savingStatus, () => {
 		schedulePendingRefreshFlush();
 	}
 });
+
+watch(
+	() => ({
+		pending: columnOpen.pending,
+		processing: columnOpen.processing,
+		ready: columnOpen.ready,
+	}),
+	() => {
+		saveBoardPrefs();
+	},
+	{ deep: true },
+);
+
+watch(
+	[orderCardDisplayMode, timerWarningMinutes, timerDangerMinutes],
+	() => {
+		saveBoardPrefs();
+	},
+);
 
 useEmployeeOrdersBoot({
 	initializePanel,
@@ -248,8 +465,34 @@ watch(
 	},
 );
 
+function onWindowBeforeUnload(event) {
+	const leaveConfirmMessage = t('nav.leaveEmployeePageConfirmMessage');
+	event.preventDefault();
+	event.returnValue = leaveConfirmMessage;
+	return leaveConfirmMessage;
+}
+
+onMounted(() => {
+	window.addEventListener('beforeunload', onWindowBeforeUnload);
+});
+
+onBeforeRouteLeave((to, from, next) => {
+	if (to?.name === from?.name) {
+		next();
+		return;
+	}
+
+	const confirmed = window.confirm(t('nav.leaveEmployeePageConfirmMessage'));
+	next(confirmed);
+});
+
 onBeforeUnmount(() => {
 	clearPendingRefreshTimer();
+	window.removeEventListener('beforeunload', onWindowBeforeUnload);
+	if (saveBoardPrefsTimer != null) {
+		clearTimeout(saveBoardPrefsTimer);
+		saveBoardPrefsTimer = null;
+	}
 });
 </script>
 
@@ -289,6 +532,52 @@ onBeforeUnmount(() => {
 			</svg>
 		</button>
 
+		<button
+			type="button"
+			class="fixed bottom-4 left-4 z-[60] inline-flex h-11 w-11 items-center justify-center rounded-full bg-black/80 text-white ring-1 ring-white/30 shadow-sm backdrop-blur-sm hover:bg-black"
+			@click="showOrderCardConfig = !showOrderCardConfig"
+			aria-label="Rendeléskártya beállítások"
+			title="Rendeléskártya beállítások"
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+				<path fill-rule="evenodd" d="M11.49 3.17a1 1 0 00-1.98 0l-.11 1.25a6.98 6.98 0 00-1.68.97L6.58 4.6a1 1 0 10-1.41 1.4l.8 1.13a7.01 7.01 0 00-.7 1.77l-1.24.1a1 1 0 000 1.99l1.25.1c.14.63.37 1.22.69 1.77l-.8 1.14a1 1 0 101.4 1.4l1.14-.8c.52.39 1.08.71 1.68.96l.1 1.25a1 1 0 001.99 0l.1-1.25c.6-.25 1.16-.57 1.68-.96l1.14.8a1 1 0 001.4-1.4l-.8-1.14c.32-.55.55-1.14.69-1.77l1.25-.1a1 1 0 000-1.99l-1.25-.1a7 7 0 00-.7-1.77l.8-1.13a1 1 0 00-1.4-1.4l-1.14.8a6.98 6.98 0 00-1.68-.97l-.1-1.25zM10.5 13a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" clip-rule="evenodd" />
+			</svg>
+		</button>
+
+		<div
+			class="fixed bottom-20 left-4 z-[60] w-72 rounded-xl border border-white/20 bg-black/75 p-4 text-white shadow-xl backdrop-blur-sm transition-all duration-300"
+			:class="showOrderCardConfig ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0'"
+		>
+			<div class="mb-3 text-sm font-bold text-white">Rendeléskártya beállítás</div>
+			<div class="space-y-2 text-sm text-gray-100">
+				<label class="flex items-center gap-3">
+					<input v-model="showOrderCardItems" type="checkbox" class="h-4 w-4 rounded border-white/40 bg-black/20 text-sky-400 focus:ring-sky-400">
+					<span>Tételek kilistázása</span>
+				</label>
+				<div class="mt-3 space-y-2 rounded-lg border border-white/15 bg-white/5 p-3">
+					<div class="text-xs font-semibold uppercase tracking-wide text-gray-300">Idősáv küszöbök (perc)</div>
+					<label class="flex items-center justify-between gap-3">
+						<span class="text-xs text-gray-200">Sárga kezdete</span>
+						<input
+							v-model.number="timerWarningMinutes"
+							type="number"
+							min="0"
+							class="w-20 rounded-md border border-white/20 bg-black/30 px-2 py-1 text-right text-sm text-white outline-none ring-0"
+						>
+					</label>
+					<label class="flex items-center justify-between gap-3">
+						<span class="text-xs text-gray-200">Piros kezdete</span>
+						<input
+							v-model.number="timerDangerMinutes"
+							type="number"
+							:min="getTimerWarningMinutes()"
+							class="w-20 rounded-md border border-white/20 bg-black/30 px-2 py-1 text-right text-sm text-white outline-none ring-0"
+						>
+					</label>
+				</div>
+			</div>
+		</div>
+
 		<div v-if="error" class="mx-auto max-w-4xl px-4 pt-4">
 			<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
 				{{ error }}
@@ -302,7 +591,7 @@ onBeforeUnmount(() => {
 				:class="[
 					'flex flex-col rounded-xl border border-gray-200 shadow-sm transition-all duration-300',
 					col.headerClass,
-					columnOpen[col.key] ? 'flex-1 min-w-[16rem]' : 'w-16 flex-none',
+					columnOpen[col.key] ? 'flex-1 min-w-[16rem]' : 'w-28 flex-none',
 				]"
 			>
 				<!-- Column header -->
@@ -378,29 +667,51 @@ onBeforeUnmount(() => {
 						<template #item="{ element }">
 							<button
 								type="button"
-								class="mb-3 w-full cursor-grab rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm active:cursor-grabbing"
+								class="mb-3 w-full cursor-grab overflow-hidden rounded-lg border border-gray-200 bg-white text-left shadow-sm active:cursor-grabbing"
 								:class="
 									isOrderSelected(element?.id)
 										? 'ring-2 ring-indigo-500'
 										: 'hover:bg-gray-50'
 								"
-								@click="selectedOrderId = element?.id"
+								@click="onOrderCardActivate(element)"
 							>
-								<div class="flex items-start justify-between gap-2">
-									<div class="text-base font-bold text-gray-900">#{{ element?.id }}</div>
-									<div class="flex items-center gap-2">
-										<OrderStatusBadge
-											:status="element?.statusz"
-											base-class="inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold"
-										/>
+									<div
+										class="flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold"
+										:class="getOrderTimerBarClass(element)"
+									>
+										<div>{{ getOrderElapsedLabel(element) }}</div>
+										<div>{{ formatOrderTimeShort(element?.datum) }}</div>
 									</div>
-								</div>
-								<div class="mt-2 flex items-center justify-between gap-3 text-sm text-gray-700">
-									<div>Eltelt idő: <span class="font-semibold">{{ getOrderElapsedLabel(element) }}</span></div>
-									<div class="text-xs text-gray-500">{{ formatDateTime(element?.datum) }}</div>
-								</div>
-								<div class="mt-2 text-sm text-gray-700">
-									Tételek: <span class="font-semibold">{{ getOrderCardItemCount(element) }}</span>
+									<div class="p-4">
+										<div class="text-center text-2xl font-extrabold text-gray-900">{{ element?.id }}</div>
+										<div class="mt-1 flex justify-end">
+											<div class="max-w-[55%] truncate text-right text-xs font-semibold text-gray-600">{{ getOrderCustomerPhone(element) }}</div>
+										</div>
+										<div v-if="orderCardDisplayMode === 'items'" class="mt-2">
+											<ul class="space-y-1 text-sm text-gray-700">
+												<li
+													v-for="(itemName, itemIndex) in getOrderCardItemNames(element)"
+													:key="`${element?.id}-${itemIndex}-${itemName}`"
+													class="flex items-center justify-between gap-3"
+												>
+													<span class="truncate">{{ itemName }}</span>
+													<span
+														v-if="itemIndex === getOrderCardItemNames(element).length - 1"
+														class="ml-2 max-w-[55%] truncate text-right text-xs font-semibold text-gray-600"
+													>
+														{{ getOrderCustomerName(element) }}
+													</span>
+												</li>
+												<li v-if="getOrderCardItemNames(element).length === 0" class="flex items-center justify-between gap-3 text-gray-500">
+													<span>Nincs tétel.</span>
+													<span class="ml-2 max-w-[55%] truncate text-right text-xs font-semibold text-gray-600">{{ getOrderCustomerName(element) }}</span>
+												</li>
+											</ul>
+										</div>
+										<div v-else class="mt-2 flex items-center justify-between gap-3 text-sm text-gray-700">
+											<div>Tételek: <span class="font-semibold">{{ getOrderCardItemCount(element) }}</span></div>
+											<div class="max-w-[55%] truncate text-right text-xs font-semibold text-gray-600">{{ getOrderCustomerName(element) }}</div>
+										</div>
 								</div>
 							</button>
 						</template>
@@ -414,6 +725,22 @@ onBeforeUnmount(() => {
 							<div v-else class="h-10" aria-hidden="true" />
 						</template>
 					</draggable>
+				</div>
+
+				<div v-show="!columnOpen[col.key]" class="flex-1 overflow-y-auto px-2 py-3">
+					<div v-if="getListRef(col.key).value.length === 0" class="py-2 text-center text-xs text-gray-500">-</div>
+					<div v-else class="space-y-2">
+						<button
+							v-for="element in getListRef(col.key).value"
+							:key="`collapsed-${col.key}-${element?.id}`"
+							type="button"
+							class="w-full rounded-lg border border-gray-200 bg-white px-2 py-4 text-center text-2xl font-extrabold leading-none text-gray-800 shadow-sm"
+							:class="isOrderSelected(element?.id) ? 'ring-2 ring-indigo-500' : 'hover:bg-gray-50'"
+							@click="onOrderCardActivate(element)"
+						>
+							{{ element?.id }}
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -432,17 +759,13 @@ onBeforeUnmount(() => {
 			:on-panel-pointer-down="onPanelPointerDown"
 			:on-panel-pointer-move="onPanelPointerMove"
 			:on-panel-pointer-up="onPanelPointerUp"
+			:on-panel-lost-pointer-capture="onPanelLostPointerCapture"
+			:on-panel-resize-pointer-down="onPanelResizePointerDown"
+			:on-panel-resize-pointer-move="onPanelResizePointerMove"
+			:on-panel-resize-pointer-up="onPanelResizePointerUp"
 			:dec-font="decFont"
 			:inc-font="incFont"
 			@close-panel="closePanel"
 		/>
 	</div>
 </template>
-
-<style scoped>
-.status-atvehetö {
-	animation: none !important;
-	box-shadow: none !important;
-	border-width: 0 !important;
-}
-</style>

@@ -126,6 +126,12 @@ async function requestDiscovery() {
 	});
 }
 
+async function clearDiscoveryOverride() {
+	await fetchJson(`${helperBaseUrl}/override`, {
+		method: 'DELETE',
+	});
+}
+
 async function waitForDiscoveryResult(timeoutMs) {
 	const deadline = Date.now() + timeoutMs;
 
@@ -232,13 +238,33 @@ async function resolveBackendTarget() {
 		spawnHelper();
 		await waitForHelperReady(helperStartupTimeoutMs);
 	}
-	await requestDiscovery();
 
 	try {
+		await requestDiscovery();
 		return await waitForDiscoveryResult(discoveryTimeoutMs);
 	} catch (error) {
+		const message = String(error?.message || '');
+		const invalidOverride = message.includes('Manual override failed verification');
+
+		if (invalidOverride) {
+			try {
+				console.warn(`[discovery] ${message}`);
+				console.warn('[discovery] Clearing stale manual override and retrying automatic discovery.');
+				await clearDiscoveryOverride();
+				await requestDiscovery();
+				return await waitForDiscoveryResult(discoveryTimeoutMs);
+			} catch (retryError) {
+				if (fallbackTarget) {
+					console.warn(`[discovery] ${retryError.message}`);
+					console.warn(`[discovery] Falling back to configured VITE_API_BASE_URL=${fallbackTarget}`);
+					return fallbackTarget;
+				}
+				throw retryError;
+			}
+		}
+
 		if (fallbackTarget) {
-			console.warn(`[discovery] ${error.message}`);
+			console.warn(`[discovery] ${message}`);
 			console.warn(`[discovery] Falling back to configured VITE_API_BASE_URL=${fallbackTarget}`);
 			return fallbackTarget;
 		}
