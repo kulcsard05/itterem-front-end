@@ -54,6 +54,7 @@ const itemIngredients = computed(() => {
 	return list.map((v) => String(v ?? '').trim()).filter(Boolean);
 });
 
+const showIngredientsVertical = ref(false);
 const itemIngredientsLabel = computed(() => itemIngredients.value.join(', '));
 
 const itemTypeLabel = computed(() => String(props.itemData?.typeLabel ?? '').trim() || getItemTypeLabel(itemType.value));
@@ -98,6 +99,11 @@ function openBreakdownEntry(entry) {
 	const payload = entry?.openPayload;
 	if (!payload) return;
 	emit('open-item', payload);
+}
+
+function toggleIngredientsLayout() {
+	if (!itemIngredients.value.length) return;
+	showIngredientsVertical.value = !showIngredientsVertical.value;
 }
 </script>
 
@@ -147,10 +153,20 @@ function openBreakdownEntry(entry) {
 
 				<div
 					v-if="itemIngredients.length"
-					class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700"
+					class="mt-4 cursor-pointer rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 transition-colors hover:bg-gray-100"
+					role="button"
+					tabindex="0"
+					@click="toggleIngredientsLayout"
+					@keydown.enter.prevent="toggleIngredientsLayout"
+					@keydown.space.prevent="toggleIngredientsLayout"
 				>
 					<p class="font-semibold text-gray-900">{{ t('menuItem.ingredients') }}</p>
-					<p v-if="itemIngredientsLabel" class="mt-1 text-sm text-gray-700">{{ itemIngredientsLabel }}</p>
+					<p v-if="!showIngredientsVertical && itemIngredientsLabel" class="mt-1 text-sm text-gray-700">
+						{{ itemIngredientsLabel }}
+					</p>
+					<ul v-else class="mt-2 space-y-1 text-sm text-gray-700">
+						<li v-for="ingredient in itemIngredients" :key="ingredient">{{ ingredient }}</li>
+					</ul>
 				</div>
 
 				<p v-if="showDescription" class="mt-4 text-gray-700">{{ itemDescription }}</p>

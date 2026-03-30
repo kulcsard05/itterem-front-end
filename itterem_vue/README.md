@@ -49,6 +49,14 @@ Notes:
 - `npm run dev:raw`
 	- Starts plain Vite without running discovery logic.
 
+- `npm run generate:seed -- --image-source placeholder`
+	- Generates demo SQL seed data with locally rendered placeholder images.
+	- Useful when you want a fully offline run without external image APIs.
+
+- `npm run generate:seed -- --image-source pexels`
+	- Generates demo SQL seed data with downloaded food photos from Pexels.
+	- Writes both the SQL import file and an attribution manifest.
+
 ## Build
 
 ```bash
@@ -65,6 +73,30 @@ Notes:
 
 - `npm run preview -- --host` now rebuilds before serving, so preview always matches the current source.
 - When the preview page is opened from another LAN device and `VITE_API_BASE_URL` points to `localhost`, the app falls back to same-origin `/api` and `/orderHub` requests so Vite preview can proxy them back to the backend running on your machine.
+
+## Demo Seed Generator
+
+The project now includes a catalog seed generator at `scripts/generate-demo-seed.mjs`.
+
+What it does:
+
+- builds SQL inserts for categories, ingredients, meals, sides, drinks, and menus
+- embeds image blobs directly into the generated SQL
+- supports both placeholder-image mode and real-photo Pexels mode
+- writes image attribution metadata when Pexels mode is used
+
+Generated files:
+
+- `generated-demo-seed.sql`
+- `generated-demo-seed-image-attribution.json`
+
+Notes:
+
+- the SQL file is intentionally large because images are embedded as hex BLOB values
+- Pexels mode needs a local API key in `.env.local`
+- on macOS the script uses `sips` to normalize images into JPEG blobs
+
+Detailed usage, setup, and troubleshooting are documented in [DEMO_SEED_README.md](./DEMO_SEED_README.md).
 
 ## Discovery Helper Notes
 
