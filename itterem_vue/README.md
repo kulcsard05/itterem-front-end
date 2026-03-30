@@ -61,6 +61,11 @@ npm run build
 npm run preview
 ```
 
+Notes:
+
+- `npm run preview -- --host` now rebuilds before serving, so preview always matches the current source.
+- When the preview page is opened from another LAN device and `VITE_API_BASE_URL` points to `localhost`, the app falls back to same-origin `/api` and `/orderHub` requests so Vite preview can proxy them back to the backend running on your machine.
+
 ## Discovery Helper Notes
 
 - Helper source is under `devtools/server_discovery_helper`.

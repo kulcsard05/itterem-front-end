@@ -5,245 +5,245 @@
   },
   "common": {
     "appName": "Itterem",
-    "user": "Felhasznalo",
-    "save": "Mentes",
-    "cancel": "Megsem",
-    "close": "Bezaras",
+    "user": "Felhasználó",
+    "save": "Mentés",
+    "cancel": "Mégsem",
+    "close": "Bezárás",
     "back": "Vissza",
-    "loading": "Betoltes...",
-    "refresh": "Frissites",
-    "refreshing": "Frissites...",
-    "quantity": "Mennyiseg",
-    "unitPrice": "Egysegar",
-    "total": "Osszesen",
-    "uncategorized": "Egyeb",
+    "loading": "Betöltés...",
+    "refresh": "Frissítés",
+    "refreshing": "Frissítés...",
+    "quantity": "Mennyiség",
+    "unitPrice": "Egységár",
+    "total": "Összesen",
+    "uncategorized": "Egyéb",
     "notAvailable": "-",
-    "imageUnavailable": "Kep nem erheto el",
+    "imageUnavailable": "Kép nem érhető el",
     "language": "Nyelv",
-    "orderIdLabel": "Rendeles azonosito",
+    "orderIdLabel": "Rendelésazonosító",
     "currency": {
       "fallback": "{value} Ft"
     }
   },
   "nav": {
-    "menu": "Etlap",
-    "about": "Rolunk",
+    "menu": "Étlap",
+    "about": "Rólunk",
     "admin": "Admin",
-    "cart": "Kosar",
-    "login": "Bejelentkezes",
-    "logout": "Kijelentkezes",
-    "logoutConfirmTitle": "Kijelentkezes?",
-    "logoutConfirmMessage": "Biztosan ki szeretnel jelentkezni most?"
+    "cart": "Kosár",
+    "login": "Bejelentkezés",
+    "logout": "Kijelentkezés",
+    "logoutConfirmTitle": "Kijelentkezés?",
+    "logoutConfirmMessage": "Biztosan ki szeretnél jelentkezni most?"
   },
   "itemTypes": {
-    "meal": "Keszetel",
-    "side": "Koret",
-    "menu": "Menu",
-    "drink": "Udito",
-    "item": "Tetel"
+    "meal": "Készétel",
+    "side": "Köret",
+    "menu": "Menü",
+    "drink": "Üdítő",
+    "item": "Tétel"
   },
   "menu": {
     "tabs": {
-      "meals": "Keszetelek",
-      "sides": "Koretek",
-      "menus": "Menuk",
-      "drinks": "Uditok"
+      "meals": "Készételek",
+      "sides": "Köretek",
+      "menus": "Menük",
+      "drinks": "Üdítők"
     },
     "debug": {
-      "categories": "Kategoriak"
+      "categories": "Kategóriák"
     },
-    "loadingMeals": "Keszetelek betoltese...",
-    "loadingGeneric": "Betoltes...",
-    "emptyMeals": "Nem talalhatok keszetelek.",
-    "emptyGeneric": "Nem talalhatok elemek.",
-    "quickOrder": "Gyors rendeles",
-    "addToCart": "+ Kosar",
-    "addedCount": "Hozzaadva {count}x",
-    "fallbackMenuItem": "Menu elem",
-    "categoryPrefix": "Kategoria: {name}",
-    "noDescription": "Nincs leiras.",
+    "loadingMeals": "Készételek betöltése...",
+    "loadingGeneric": "Betöltés...",
+    "emptyMeals": "Nem találhatók készételek.",
+    "emptyGeneric": "Nem találhatók elemek.",
+    "quickOrder": "Gyors rendelés",
+    "addToCart": "+ Kosár",
+    "addedCount": "Hozzáadva {count}x",
+    "fallbackMenuItem": "Menüelem",
+    "categoryPrefix": "Kategória: {name}",
+    "noDescription": "Nincs leírás.",
     "loadErrors": {
-      "categories": "Kategoriak betoltese sikertelen",
-      "meals": "Keszetelek betoltese sikertelen",
-      "sides": "Koretek betoltese sikertelen",
-      "menus": "Menuk betoltese sikertelen",
-      "drinks": "Uditok betoltese sikertelen"
+      "categories": "Kategóriák betöltése sikertelen",
+      "meals": "Készételek betöltése sikertelen",
+      "sides": "Köretek betöltése sikertelen",
+      "menus": "Menük betöltése sikertelen",
+      "drinks": "Üdítők betöltése sikertelen"
     },
     "alt": {
-      "foodImage": "Etel kep"
+      "foodImage": "Étel képe"
     }
   },
   "menuItem": {
-    "fallbackTitle": "Tetel",
-    "backToMenu": "<- Vissza az etlaphoz",
-    "menuContents": "Menu tartalma:",
-    "ingredients": "Hozzavalok",
-    "addToCart": "Kosarba",
-    "addedToCart": "{name} hozzaadva a kosarhoz."
+    "fallbackTitle": "Tétel",
+    "backToMenu": "<- Vissza az étlaphoz",
+    "menuContents": "Menü tartalma:",
+    "ingredients": "Hozzávalók",
+    "addToCart": "Kosárba",
+    "addedToCart": "{name} hozzáadva a kosárhoz."
   },
   "quickBuy": {
-    "title": "Gyors rendeles",
-    "loginRequired": "A rendeleshez be kell jelentkezni.",
-    "invalidItem": "Ez a tetel jelenleg nem rendelheto.",
-    "orderPlacedTitle": "Rendeles leadva!",
-    "orderPlacedFallback": "Koszonjuk a rendelest.",
-    "orderPlaced": "Rendeles leadva.",
-    "orderFailed": "Rendeles leadasa sikertelen.",
-    "ordering": "Rendeles folyamatban...",
-    "placeOrder": "Rendeles leadasa",
-    "serverTimeout": "A szerver valasza tul sokaig tartott. Probald ujra.",
-    "decreaseQuantity": "Csokkentes",
-    "increaseQuantity": "Noveles"
+    "title": "Gyors rendelés",
+    "loginRequired": "A rendeléshez be kell jelentkezni.",
+    "invalidItem": "Ez a tétel jelenleg nem rendelhető.",
+    "orderPlacedTitle": "Rendelés leadva!",
+    "orderPlacedFallback": "Köszönjük a rendelést.",
+    "orderPlaced": "Rendelés leadva.",
+    "orderFailed": "Rendelés leadása sikertelen.",
+    "ordering": "Rendelés folyamatban...",
+    "placeOrder": "Rendelés leadása",
+    "serverTimeout": "A szerver válasza túl sokáig tartott. Próbáld újra.",
+    "decreaseQuantity": "Csökkentés",
+    "increaseQuantity": "Növelés"
   },
   "cart": {
-    "title": "Kosar ({count})",
-    "empty": "A kosar ures.",
-    "loginRequired": "A rendeleshez be kell jelentkezni.",
-    "invalidItems": "A kosar ervenytelen tetelt tartalmaz. Frissits, majd probald ujra.",
-    "orderPlacedTitle": "Rendeles leadva!",
-    "orderPlacedFallback": "Koszonjuk a rendelest.",
-    "orderPlaced": "Rendeles leadva.",
-    "orderFailed": "Rendeles leadasa sikertelen.",
-    "ordering": "Rendeles leadasa...",
-    "placeOrder": "Rendeles leadasa",
-    "clear": "Kosar uritese",
-    "removeItem": "{name} torlese",
-    "decreaseQuantity": "{name} mennyiseg csokkentese",
-    "increaseQuantity": "{name} mennyiseg novelese"
+    "title": "Kosár ({count})",
+    "empty": "A kosár üres.",
+    "loginRequired": "A rendeléshez be kell jelentkezni.",
+    "invalidItems": "A kosár érvénytelen tételt tartalmaz. Frissíts, majd próbáld újra.",
+    "orderPlacedTitle": "Rendelés leadva!",
+    "orderPlacedFallback": "Köszönjük a rendelést.",
+    "orderPlaced": "Rendelés leadva.",
+    "orderFailed": "Rendelés leadása sikertelen.",
+    "ordering": "Rendelés leadása...",
+    "placeOrder": "Rendelés leadása",
+    "clear": "Kosár ürítése",
+    "removeItem": "{name} törlése",
+    "decreaseQuantity": "{name} mennyiség csökkentése",
+    "increaseQuantity": "{name} mennyiség növelése"
   },
   "auth": {
     "login": {
-      "title": "Bejelentkezes",
-      "emailLabel": "Email cim",
-      "passwordLabel": "Jelszo",
-      "forgotPassword": "Elfelejtett jelszo?",
-      "forgotPasswordSoon": "Hamarosan elerheto",
-      "submit": "Bejelentkezes",
-      "submitting": "Bejelentkezes...",
-      "noAccount": "Nincs meg fiokod?",
-      "registerNow": "Regisztralj most",
-      "failed": "Bejelentkezes sikertelen",
-      "fixFields": "Kerjuk, javitsd a kijelolt mezoket.",
+      "title": "Bejelentkezés",
+      "emailLabel": "E-mail cím",
+      "passwordLabel": "Jelszó",
+      "forgotPassword": "Elfelejtett jelszó?",
+      "forgotPasswordSoon": "Hamarosan elérhető",
+      "submit": "Bejelentkezés",
+      "submitting": "Bejelentkezés...",
+      "noAccount": "Nincs még fiókod?",
+      "registerNow": "Regisztrálj most",
+      "failed": "Bejelentkezés sikertelen",
+      "fixFields": "Kérjük, javítsd a kijelölt mezőket.",
       "validation": {
-        "emailRequired": "Email cim megadasa kotelezo.",
-        "emailInvalid": "Kerjuk, adj meg egy ervenyes email cimet.",
-        "passwordRequired": "Jelszo megadasa kotelezo."
+        "emailRequired": "E-mail cím megadása kötelező.",
+        "emailInvalid": "Kérjük, adj meg egy érvényes e-mail címet.",
+        "passwordRequired": "Jelszó megadása kötelező."
       }
     },
     "register": {
-      "title": "Uj fiok letrehozasa",
-      "fullNameLabel": "Teljes nev",
-      "emailLabel": "Email cim",
-      "phoneLabel": "Telefonszam",
-      "passwordLabel": "Jelszo",
-      "passwordHint": "A jelszonak legalabb {min} karakter hosszonak kell lennie.",
-      "submit": "Regisztracio",
-      "submitting": "Regisztracio...",
-      "success": "Sikeres regisztracio! Kerjuk, jelentkezz be.",
-      "failed": "Regisztracio sikertelen",
-      "haveAccount": "Mar van fiokod?",
+      "title": "Új fiók létrehozása",
+      "fullNameLabel": "Teljes név",
+      "emailLabel": "E-mail cím",
+      "phoneLabel": "Telefonszám",
+      "passwordLabel": "Jelszó",
+      "passwordHint": "A jelszónak legalább {min} karakter hosszúnak kell lennie.",
+      "submit": "Regisztráció",
+      "submitting": "Regisztráció...",
+      "success": "Sikeres regisztráció! Kérjük, jelentkezz be.",
+      "failed": "Regisztráció sikertelen",
+      "haveAccount": "Már van fiókod?",
       "loginNow": "Jelentkezz be",
-      "fixFields": "Kerjuk, javitsd a kijelolt mezoket.",
+      "fixFields": "Kérjük, javítsd a kijelölt mezőket.",
       "validation": {
-        "fullNameRequired": "Teljes nev megadasa kotelezo.",
-        "fullNameShort": "A teljes nev tul rovid.",
-        "emailRequired": "Email cim megadasa kotelezo.",
-        "emailInvalid": "Kerjuk, adj meg egy ervenyes email cimet.",
-        "phoneRequired": "Telefonszam megadasa kotelezo.",
-        "phoneInvalid": "Kerjuk, adj meg egy ervenyes telefonszamot.",
-        "passwordRequired": "Jelszo megadasa kotelezo.",
-        "passwordMin": "A jelszonak legalabb {min} karakter hosszonak kell lennie."
+        "fullNameRequired": "Teljes név megadása kötelező.",
+        "fullNameShort": "A teljes név túl rövid.",
+        "emailRequired": "E-mail cím megadása kötelező.",
+        "emailInvalid": "Kérjük, adj meg egy érvényes e-mail címet.",
+        "phoneRequired": "Telefonszám megadása kötelező.",
+        "phoneInvalid": "Kérjük, adj meg egy érvényes telefonszámot.",
+        "passwordRequired": "Jelszó megadása kötelező.",
+        "passwordMin": "A jelszónak legalább {min} karakter hosszúnak kell lennie."
       }
     }
   },
   "account": {
-    "title": "Fiokom",
-    "signedInAs": "Bejelentkezve mint",
+    "title": "Fiókom",
+    "signedInAs": "Bejelentkezve:",
     "adminBadge": "ADMIN",
-    "phone": "Telefonszam",
-    "editPhone": "Szerkesztes",
-    "savePhone": "Mentes",
-    "cancelPhone": "Megse",
-    "phoneSaved": "Telefonszam mentve.",
-    "phoneSaveFailed": "Telefonszam frissitese sikertelen.",
-    "userIdMissing": "Felhasznalo azonosito nem talalhato.",
-    "profileHint": "Ez a felhasznaloi oldalad. Itt vannak az adataid és a rendeléseid.",
-    "ordersTitle": "Rendeleseim",
-    "ordersLoading": "Rendelesek betoltese...",
-    "ordersFailed": "Sajat rendelesek betoltese sikertelen.",
-    "noOrders": "Meg nincs sajat rendelesed.",
+    "phone": "Telefonszám",
+    "editPhone": "Szerkesztés",
+    "savePhone": "Mentés",
+    "cancelPhone": "Mégse",
+    "phoneSaved": "Telefonszám mentve.",
+    "phoneSaveFailed": "Telefonszám frissítése sikertelen.",
+    "userIdMissing": "Felhasználó-azonosító nem található.",
+    "profileHint": "Ez a saját oldalad. Itt találod az adataidat és a rendeléseidet.",
+    "ordersTitle": "Rendeléseim",
+    "ordersLoading": "Rendelések betöltése...",
+    "ordersFailed": "Saját rendelések betöltése sikertelen.",
+    "noOrders": "Még nincs saját rendelésed.",
     "realtimeConnectionTitle": "SignalR kapcsolat",
-    "realtimeUpdates": "AZONNALI FRISSITES",
-    "status": "Statusz:",
-    "items": "Tetelek: {items}",
-    "doneNotice": "A rendelesed statusza frissult: #{id} ({status})"
+    "realtimeUpdates": "AZONNALI FRISSÍTÉS",
+    "status": "Státusz:",
+    "items": "Tételek: {items}",
+    "doneNotice": "A rendelésed státusza frissült: #{id} ({status})"
   },
   "orderStatuses": {
-    "pending": "Fuggoben",
+    "pending": "Függőben",
     "processing": "Folyamatban",
-    "ready": "Atveheto",
-    "done": "Atvett"
+    "ready": "Átvehető",
+    "done": "Átvett"
   },
   "about": {
-    "title": "Rolunk",
-    "subtitle": "Az Itterem egy szivbol jovo projekt/etterem - ahol a jo etelek, a baratsagos kiszolgalas es az otthoni hangulat talalkozik.",
-    "storyTitle": "A mi tortenetunk",
-    "storyParagraph1": "Az Itterem 2018-ban nyitotta meg kapuit egy kis belvarosi sarokhelyen. Alapitoink, Kovacs Peter es Nagy Erzsebet mindig is hittek abban, hogy az egyszeru, jo minosegu alapanyagokbol keszult etelek a legfinomabbak.",
-    "storyParagraph2": "Ma mar tobb mint 200 torzsvasarlonk van, es minden nap azzal a cellal nyitjuk ki az ajtokat, hogy valami finomat tegyunk az asztalra - szivvel-lelekkel.",
-    "valuesTitle": "Ertekeink",
+    "title": "Rólunk",
+    "subtitle": "Az Itterem egy szívből jövő étteremprojekt, ahol a jó ételek, a barátságos kiszolgálás és az otthonos hangulat találkozik.",
+    "storyTitle": "A mi történetünk",
+    "storyParagraph1": "Az Itterem 2018-ban nyitotta meg kapuit egy kis belvárosi sarokhelyen. Alapítóink, Kovács Péter és Nagy Erzsébet mindig is hittek abban, hogy az egyszerű, jó minőségű alapanyagokból készült ételek a legfinomabbak.",
+    "storyParagraph2": "Ma már több mint 200 törzsvásárlónk van, és minden nap azzal a céllal nyitjuk ki az ajtókat, hogy valami finomat tegyünk az asztalra, szívvel-lélekkel.",
+    "valuesTitle": "Értékeink",
     "values": {
       "freshness": {
-        "title": "Frissesseg es minoseg",
-        "body": "Naponta friss alapanyagokbol, helyi termeloktol dolgozunk."
+        "title": "Frissesség és minőség",
+        "body": "Naponta friss alapanyagokból, helyi termelőktől dolgozunk."
       },
       "hospitality": {
-        "title": "Vendegkozpontusag",
-        "body": "Minden vendegunkre szemelyes figyelmet forditunk."
+        "title": "Vendégközpontúság",
+        "body": "Minden vendégünkre személyes figyelmet fordítunk."
       },
       "sustainability": {
-        "title": "Fenntarthatosag",
-        "body": "Csomagolasaink ujrahasznosithatok, hulladekot tudatosan csokkentunk."
+        "title": "Fenntarthatóság",
+        "body": "Csomagolásaink újrahasznosíthatók, a hulladékot tudatosan csökkentjük."
       }
     },
     "teamTitle": "Csapatunk",
     "team": {
       "peter": {
-        "role": "Alapito es Sef",
-        "bio": "15 eves tapasztalattal rendelkezo sef, aki imad kiserletezni az izekkel."
+        "role": "Alapító és séf",
+        "bio": "15 éves tapasztalattal rendelkező séf, aki imád kísérletezni az ízekkel."
       },
       "erzsebet": {
-        "role": "Alapito es Manager",
-        "bio": "A vendeglatas szerelmese, aki minden nap gondoskodik arrol, hogy minden zokkenomentesen menjen."
+        "role": "Alapító és menedzser",
+        "bio": "A vendéglátás szerelmese, aki minden nap gondoskodik arról, hogy minden zökkenőmentesen menjen."
       },
       "david": {
-        "role": "Cukrasz",
-        "bio": "Egyedi desszertjeivel minden latogatast emlekezetesse tesz."
+        "role": "Cukrász",
+        "bio": "Egyedi desszertjeivel minden látogatást emlékezetessé tesz."
       }
     }
   },
   "footer": {
-    "tagline": "Friss alapanyagok, szivbol jovo etelek - minden nap, minden vendegnek.",
-    "contact": "Elerhetoseg",
-    "address": "1052 Budapest, Vaci utca 1.",
+    "tagline": "Friss alapanyagok, szívből jövő ételek, minden nap, minden vendégnek.",
+    "contact": "Elérhetőség",
+    "address": "1052 Budapest, Váci utca 1.",
     "hours": "H-P: 10:00-22:00\nSzo-V: 11:00-23:00",
-    "map": "Megkozelites",
-    "mapTitle": "Itterem helyszin",
+    "map": "Megközelítés",
+    "mapTitle": "Az Itterem helyszíne",
     "copyright": "Minden jog fenntartva."
   },
   "notFound": {
-    "title": "Az oldal nem talalhato",
-    "body": "A keresett oldal nem letezik vagy eltavolitasra kerult.",
-    "backToMenu": "Vissza az etlaphoz"
+    "title": "Az oldal nem található",
+    "body": "A keresett oldal nem létezik vagy eltávolításra került.",
+    "backToMenu": "Vissza az étlaphoz"
   },
   "errors": {
-    "authExpired": "A bejelentkezes lejart. Kerjuk, jelentkezz be ujra.",
-    "permissionDeniedAction": "Nincs jogosultsagod ehhez a muvelethez.",
-    "permissionDeniedRoute": "Nincs jogosultsagod ennek az oldalnak az eleresehez.",
-    "signInRequiredRoute": "Az oldal eleresehez be kell jelentkezned."
+    "authExpired": "A bejelentkezés lejárt. Kérjük, jelentkezz be újra.",
+    "permissionDeniedAction": "Nincs jogosultságod ehhez a művelethez.",
+    "permissionDeniedRoute": "Nincs jogosultságod ennek az oldalnak az eléréséhez.",
+    "signInRequiredRoute": "Az oldal eléréséhez be kell jelentkezned."
   },
   "api": {
     "errors": {
-      "timeout": "A keres idotullepes miatt megszakadt."
+      "timeout": "A kérés időtúllépés miatt megszakadt."
     }
   }
 }

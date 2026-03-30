@@ -27,10 +27,31 @@ function stripTrailingSlashes(value) {
 	return String(value ?? '').replace(/\/+$/, '');
 }
 
+function isLoopbackHostname(value) {
+	const hostname = String(value ?? '').trim().toLowerCase();
+	return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+}
+
+function shouldUseSameOriginApiBase(envBaseUrl) {
+	if (!envBaseUrl || typeof window === 'undefined') return false;
+
+	const pageHostname = String(window.location?.hostname ?? '').trim().toLowerCase();
+	if (!pageHostname || isLoopbackHostname(pageHostname)) return false;
+
+	try {
+		return isLoopbackHostname(new URL(envBaseUrl).hostname);
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Return the API base URL.
  * In development, the browser always uses same-origin requests so Vite's
  * proxy remains the single integration point for the backend.
+ * In local preview, when the page is opened from another device and the baked
+ * API base points at loopback, fall back to same-origin so the preview proxy
+ * can bridge requests back to the local backend.
  * In non-dev builds, VITE_API_BASE_URL has priority, then the persisted
  * discovered server URL is used as a runtime fallback.
  * @returns {string}
@@ -39,6 +60,7 @@ export function getApiBaseUrl() {
 	if (import.meta.env.DEV) return '';
 
 	const envBaseUrl = stripTrailingSlashes(import.meta.env.VITE_API_BASE_URL || '');
+	if (shouldUseSameOriginApiBase(envBaseUrl)) return '';
 	if (envBaseUrl) return envBaseUrl;
 
 	try {

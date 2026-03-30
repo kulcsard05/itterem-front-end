@@ -374,7 +374,7 @@ export async function login(email, password) {
 			return body;
 		}
 		if (response.status === 401) {
-			throw new Error('Hibás email vagy jelszó');
+			throw new Error('Hibás e-mail-cím vagy jelszó');
 		}
 		throw new Error(extractErrorMessage(body, 'Bejelentkezés sikertelen'));
 	} catch (error) {
@@ -725,7 +725,7 @@ export function updateOrderStatus(id, status) {
 export async function placeOrder(felhasznaloId, orderItems) {
 	const normalizedUserId = toPositiveIntOrNull(felhasznaloId);
 	if (normalizedUserId == null) {
-		throw new Error('A felhasználó azonosító érvénytelen');
+		throw new Error('A felhasználó-azonosító érvénytelen');
 	}
 
 	const normalizedOrderItems = normalizeOrderItems(orderItems);

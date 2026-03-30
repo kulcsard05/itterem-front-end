@@ -598,8 +598,8 @@ watch(activeTab, () => {
 		<div class="bg-white p-8 rounded-xl shadow-md mb-5">
 			<div class="flex justify-between items-center gap-5 max-md:flex-col max-md:items-start">
 				<div>
-					<h1 class="text-4xl font-bold text-gray-800 mb-2">Itterem Admin Panel</h1>
-					<div class="text-gray-500">Étterem Kezelő Rendszer</div>
+					<h1 class="text-4xl font-bold text-gray-800 mb-2">Itterem adminpanel</h1>
+					<div class="text-gray-500">Étteremkezelő rendszer</div>
 				</div>
 				<div class="flex gap-3 max-md:w-full">
 					<!-- <button
@@ -701,7 +701,7 @@ watch(activeTab, () => {
 					<span v-if="storageSnapshotTimeLabel">({{ storageSnapshotTimeLabel }})</span>.
 				</div>
 				<div class="mt-1 text-xs text-amber-700">
-					{{ isLoading ? 'Frissítés folyamatban a szerverről…' : 'A szerverfrissítés részben vagy teljesen sikertelen volt, ezért a gyorsítótár maradt látható.' }}
+					{{ isLoading ? 'Frissítés folyamatban a szerverről…' : 'A szerverfrissítés részben vagy teljesen sikertelen volt, ezért továbbra is a gyorsítótárazott adatok láthatók.' }}
 				</div>
 			</div>
 

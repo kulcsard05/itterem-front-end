@@ -5,24 +5,27 @@ import vue from '@vitejs/plugin-vue';
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
 	// Precedence: launcher-provided process env > .env file > local default.
-	const apiTarget = process.env.VITE_API_BASE_URL || env.VITE_API_BASE_URL || 'http://localhost:7200' ;
+	const apiTarget = process.env.VITE_API_BASE_URL || env.VITE_API_BASE_URL || 'http://localhost:7200';
+	const proxy = {
+		'/api': {
+			target: apiTarget,
+			changeOrigin: true,
+		},
+		'/orderHub': {
+			target: apiTarget,
+			changeOrigin: true,
+			ws: true,
+		},
+	};
 
 	return {
 		plugins: [vue()],
 		server: {
 			allowedHosts: ['unexpressable-baylee-sagaciously.ngrok-free.dev'],
-			proxy: {
-
-				'/api': {
-					target: apiTarget,
-					changeOrigin: true,
-				},
-				'/orderHub': {
-					target: apiTarget,
-					changeOrigin: true,
-					ws: true,
-				},
-			},
+			proxy,
+		},
+		preview: {
+			proxy,
 		},
 	};
 });

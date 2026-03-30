@@ -33,6 +33,9 @@ scan port `7200` from browser JavaScript.
 - Non-dev runtime resolves API base URL in this order:
   1. `VITE_API_BASE_URL` (if baked into the build)
   2. last discovered server persisted in browser storage
+- If a non-dev build is opened from a non-loopback host but the baked API base still points at
+  loopback (`localhost`, `127.0.0.1`, `::1`), the frontend falls back to same-origin requests so
+  local `vite preview` can proxy `/api` and `/orderHub` back to the machine running the backend.
 - If an API request fails due to connectivity, the frontend triggers helper
   discovery (`/discover` + `/result` polling), persists the discovered server,
   and retries the request once with the new base URL.
