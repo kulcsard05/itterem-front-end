@@ -44,6 +44,7 @@ const desktopLanguageMenuRef = ref(null);
 const permissionDeniedMessage = ref('');
 
 const PERMISSION_BANNER_TIMEOUT_MS = 5000;
+const CART_HISTORY_STATE_KEY = 'itteremCartOpen';
 let permissionBannerTimer = null;
 
 const { addItem, totalItems } = useCart();
@@ -71,6 +72,7 @@ onMounted(() => {
 	window.addEventListener('storage', onStorageChange);
 	window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
 	window.addEventListener(PERMISSION_DENIED_EVENT, onPermissionDenied);
+	window.addEventListener('popstate', onCartHistoryNavigation);
 	window.addEventListener('click', onWindowClickForLanguageMenu);
 });
 
@@ -78,6 +80,7 @@ onUnmounted(() => {
 	window.removeEventListener('storage', onStorageChange);
 	window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
 	window.removeEventListener(PERMISSION_DENIED_EVENT, onPermissionDenied);
+	window.removeEventListener('popstate', onCartHistoryNavigation);
 	window.removeEventListener('click', onWindowClickForLanguageMenu);
 	clearPermissionBanner();
 	clearAuthExpiryTimer();
@@ -205,6 +208,48 @@ function goAbout() {
 	router.push({ name: 'about' });
 }
 
+function isCartHistoryState(state) {
+	return Boolean(state?.[CART_HISTORY_STATE_KEY]);
+}
+
+function openCart() {
+	if (cartOpen.value) return;
+
+	cartOpen.value = true;
+	if (typeof window === 'undefined' || isCartHistoryState(window.history.state)) return;
+
+	window.history.pushState(
+		{
+			...(window.history.state ?? {}),
+			[CART_HISTORY_STATE_KEY]: true,
+		},
+		'',
+		window.location.href,
+	);
+}
+
+function closeCart({ syncHistory = true } = {}) {
+	if (!cartOpen.value) return;
+
+	if (syncHistory && typeof window !== 'undefined' && isCartHistoryState(window.history.state)) {
+		window.history.back();
+		return;
+	}
+
+	cartOpen.value = false;
+}
+
+function onCartHistoryNavigation(event) {
+	if (isCartHistoryState(event?.state)) {
+		cartOpen.value = true;
+		return;
+	}
+
+	if (cartOpen.value) {
+		closeCart({ syncHistory: false });
+	}
+}
+
 function toggleLanguageMenu(event) {
 	event.stopPropagation();
 	languageMenuOpen.value = !languageMenuOpen.value;
@@ -300,7 +345,7 @@ function selectLocale(nextLocaleValue) {
 							type="button"
 							class="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2.5 text-gray-700 hover:bg-gray-100"
 							:aria-label="t('nav.cart')"
-							@click="cartOpen = true"
+							@click="openCart"
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
@@ -404,7 +449,7 @@ function selectLocale(nextLocaleValue) {
 						type="button"
 						class="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2.5 text-gray-700 hover:bg-gray-100"
 						:aria-label="t('nav.cart')"
-						@click="cartOpen = true"
+						@click="openCart"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M7 13L5.4 5M10 21a1 1 0 100-2 1 1 0 000 2zm7 0a1 1 0 100-2 1 1 0 000 2z" />
@@ -441,7 +486,7 @@ function selectLocale(nextLocaleValue) {
 			</router-view>
 		</main>
 
-		<CartDrawer v-if="!isEmployee" :open="cartOpen" :auth="auth" @close="cartOpen = false" />
+		<CartDrawer v-if="!isEmployee" :open="cartOpen" :auth="auth" @close="closeCart" />
 
 		<FooterSection v-if="!isEmployee" />
 
