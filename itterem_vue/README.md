@@ -1,61 +1,63 @@
 # Itterem Frontend (Vue + Vite)
 
-Frontend client for the Itterem restaurant app.
+English version: [README.en.md](./README.en.md)
 
-## Requirements
+Az Itterem éttermi alkalmazás frontend kliense.
+
+## Követelmények
 
 - Node.js 20+
 - npm 10+
 
-Optional for automatic backend discovery during local development:
+Opcionális az automatikus backend-felderítéshez lokális fejlesztés közben:
 
 - Python 3.10+
-- Python dependency: `psutil` (see `devtools/server_discovery_helper/requirements.txt`)
+- Python-függőség: `psutil` (lásd: `devtools/server_discovery_helper/requirements.txt`)
 
-## Install
+## Telepítés
 
 ```bash
 npm install
 ```
 
-## Environment
+## Környezeti beállítások
 
-Create a local environment file:
+Hozz létre egy lokális környezeti fájlt:
 
 ```bash
 cp .env.example .env
 ```
 
-Example:
+Példa:
 
 ```env
 VITE_API_BASE_URL=http://localhost:7200
 ```
 
-Notes:
+Megjegyzések:
 
-- `.env` is ignored by git.
-- `VITE_API_BASE_URL` can also be provided by the discovery launcher at runtime.
+- A `.env` fájl nincs verziókezelve.
+- A `VITE_API_BASE_URL` értékét a discovery launcher futás közben is megadhatja.
 
-## Development Commands
+## Fejlesztői parancsok
 
 - `npm run dev`
-	- Starts the discovery-aware launcher (`scripts/dev-with-discovery.mjs`).
-	- Tries backend discovery first, falls back to `VITE_API_BASE_URL` when needed.
+	- Elindítja a discovery-t ismerő launchert (`scripts/dev-with-discovery.mjs`).
+	- Először megpróbálja felderíteni a backendet, és csak utána esik vissza a `VITE_API_BASE_URL` használatára.
 
 - `npm run dev:discover`
-	- Same as `npm run dev`.
+	- Ugyanaz, mint a `npm run dev`.
 
 - `npm run dev:raw`
-	- Starts plain Vite without running discovery logic.
+	- Sima Vite indítás discovery logika nélkül.
 
 - `npm run generate:seed -- --image-source placeholder`
-	- Generates demo SQL seed data with locally rendered placeholder images.
-	- Useful when you want a fully offline run without external image APIs.
+	- Demo SQL seed adatokat generál lokálisan renderelt helykitöltő képekkel.
+	- Akkor hasznos, ha teljesen offline futást szeretnél külső kép API nélkül.
 
 - `npm run generate:seed -- --image-source pexels`
-	- Generates demo SQL seed data with downloaded food photos from Pexels.
-	- Writes both the SQL import file and an attribution manifest.
+	- Demo SQL seed adatokat generál a Pexelsről letöltött ételfotókkal.
+	- Létrehozza az SQL import fájlt és az attribúciós manifestet is.
 
 ## Build
 
@@ -63,79 +65,83 @@ Notes:
 npm run build
 ```
 
-## Preview Production Build
+## Production build előnézet
 
 ```bash
 npm run preview
 ```
 
-Notes:
+Megjegyzések:
 
-- `npm run preview -- --host` now rebuilds before serving, so preview always matches the current source.
-- When the preview page is opened from another LAN device and `VITE_API_BASE_URL` points to `localhost`, the app falls back to same-origin `/api` and `/orderHub` requests so Vite preview can proxy them back to the backend running on your machine.
+- A `npm run preview -- --host` már újrabuildel kiszolgálás előtt, így az előnézet mindig az aktuális forrást tükrözi.
+- Ha az előnézeti oldalt egy másik LAN-eszközről nyitod meg, és a `VITE_API_BASE_URL` `localhost`-ra mutat, az alkalmazás visszaesik a same-origin `/api` és `/orderHub` kérésekre, így a Vite preview vissza tud proxyzni a gépeden futó backendhez.
 
-## Demo Seed Generator
+## Demo seed generátor
 
-The project now includes a catalog seed generator at `scripts/generate-demo-seed.mjs`.
+A projekt tartalmaz egy katalógus seed generátort itt: `scripts/generate-demo-seed.mjs`.
 
-What it does:
+Jelenlegi korlátozás:
 
-- builds SQL inserts for categories, ingredients, meals, sides, drinks, and menus
-- embeds image blobs directly into the generated SQL
-- supports both placeholder-image mode and real-photo Pexels mode
-- writes image attribution metadata when Pexels mode is used
+- a seed generátor jelenleg csak macOS-en használható, mert mind a placeholder, mind a Pexels képfeldolgozás a beépített `sips` eszközt használja JPEG blobok előállításához
 
-Generated files:
+Mit csinál:
+
+- SQL insert sorokat készít kategóriákhoz, hozzávalókhoz, készételekhez, köretekhez, üdítőkhöz és menükhöz
+- a képeket közvetlenül a generált SQL-be ágyazza be
+- támogatja a helykitöltő képes és a valódi Pexels-fotós módot is
+- Pexels módnál képattribúciós metaadatot is ír
+
+Generált fájlok:
 
 - `generated-demo-seed.sql`
 - `generated-demo-seed-image-attribution.json`
 
-Notes:
+Megjegyzések:
 
-- the SQL file is intentionally large because images are embedded as hex BLOB values
-- Pexels mode needs a local API key in `.env.local`
-- on macOS the script uses `sips` to normalize images into JPEG blobs
+- az SQL fájl szándékosan nagy, mert a képek hexadecimális BLOB értékként vannak beágyazva
+- a Pexels mód helyi API kulcsot igényel a `.env.local` fájlban
+- a script a `sips` eszközt használja a képek JPEG BLOB formára normalizálásához, ezért jelenleg macOS-függő
 
-Detailed usage, setup, and troubleshooting are documented in [DEMO_SEED_README.md](./DEMO_SEED_README.md).
+A részletes használat, beállítás és hibaelhárítás a [DEMO_SEED_README.md](./DEMO_SEED_README.md) fájlban található.
 
-## Discovery Helper Notes
+## Discovery helper megjegyzések
 
-- Helper source is under `devtools/server_discovery_helper`.
-- Frontend helper connection settings use:
+- A helper forrása a `devtools/server_discovery_helper` alatt van.
+- A frontend helper kapcsolati beállításai:
 	- `VITE_DISCOVERY_HELPER_HOST`
 	- `VITE_DISCOVERY_HELPER_PORT`
-- The launcher accepts internal overrides via:
+- A launcher ezeket a belső felülbírálásokat is elfogadja:
 	- `ITTEREM_DISCOVERY_HELPER_HOST`
 	- `ITTEREM_DISCOVERY_HELPER_PORT`
 	- `ITTEREM_DISCOVERY_TIMEOUT_MS`
 	- `ITTEREM_DISCOVERY_SKIP=1`
 
-## Main App Structure
+## Fő alkalmazásstruktúra
 
-- `src/components` UI components
-- `src/composables` shared state and app logic
-- `src/services` backend API layer
-- `src/domain` domain-specific DTO/normalization helpers
-- `src/shared` cross-cutting utility helpers
-- `src/config` application constants and configuration
-- `src/router.js` route and role guard logic
-- `src/locales` language resources
+- `src/components` UI komponensek
+- `src/composables` megosztott állapot és alkalmazáslogika
+- `src/services` backend API réteg
+- `src/domain` doménspecifikus DTO- és normalizáló segédek
+- `src/shared` keresztmetszeti utility függvények
+- `src/config` alkalmazáskonstansok és konfiguráció
+- `src/router.js` route- és szerepkörvédelmi logika
+- `src/locales` nyelvi erőforrások
 
-## Dependencies
+## Függőségek
 
 - `vue`, `vue-router`, `vue-i18n`
-	- Core framework, route-level role/locale navigation, and localization.
+	- Az alap keretrendszer, a route-szintű szerepkör- és nyelvkezelés, valamint a lokalizáció.
 
 - `@microsoft/signalr`
-	- Real-time order updates used by account and employee order-management flows.
-	- Connection lifecycle is centralized in `src/composables/useSignalR.js`.
+	- Valós idejű rendelésfrissítésekhez az account és dolgozói rendeléskezelő folyamatokban.
+	- A kapcsolat életciklusa a `src/composables/useSignalR.js` fájlban van központosítva.
 
 - `vuedraggable`
-	- Drag-and-drop interaction for employee order status board only.
-	- Used in `src/components/admin/EmployeeOrders.vue` for status transitions.
+	- Drag-and-drop interakció kizárólag a dolgozói rendelésstátusz táblán.
+	- A `src/components/admin/EmployeeOrders.vue` használja a státuszváltásokhoz.
 
 - `tailwindcss`, `postcss`, `autoprefixer`, `@tailwindcss/postcss`
-	- Utility-first styling pipeline and CSS post-processing in Vite build.
+	- Utility-first stílusrendszer és CSS utófeldolgozás a Vite buildben.
 
 - `@vitejs/plugin-vue`, `vite`
-	- Vue SFC transform and local dev/build toolchain.
+	- Vue SFC transzformáció és helyi fejlesztői/build eszközlánc.

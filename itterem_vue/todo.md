@@ -1,520 +1,177 @@
-# Backend TODO — ETag alapú menü gyorsítás (frontend már felkészítve)
+# Backend Status — ETag alapú menü gyorsítás
 
-A frontend már elkészült a feltételes lekérésekhez:
-- Küldi: `If-None-Match`
-- Kezeli: `304 Not Modified`
-- ETag-eket kliensoldalon menti
-
-Most a backend feladata, hogy ETag-et adjon vissza a menü adatokra.
+Az ETag-alapú menü gyorsítás most már végig működik.
 
 ---
 
-## 1) Érintett endpointok
+## Állapot: kész
 
-Az alábbi **GET** endpointoknak kell ETag támogatás:
+Az alábbi endpointok ETag támogatással működnek:
 - `GET /api/Kategoria`
 - `GET /api/Keszetelek`
 - `GET /api/Koretek`
 - `GET /api/Menuk`
 - `GET /api/Uditok`
 
-Minden endpointnál ugyanaz az elv:
-1. Számolj aktuális verziót/hash-t (ETag)
-2. Ha request header `If-None-Match` megegyezik az aktuális ETag-gel → `304`
-3. Ha nem egyezik → `200` + normál JSON body + `ETag` response header
+Jelenlegi szerződés:
+- a frontend küldi az `If-None-Match` headert, ha már ismer ETag-et
+- változatlan adatnál a backend `304 Not Modified` választ ad
+- változott adatnál a backend `200 OK` + body + `ETag` headert ad vissza
+- adatmódosítás után új ETag keletkezik, így a következő lekérés új `200` választ ad
 
 ---
 
-## 2) HTTP szerződés (pontos)
+## Elfogadási kritériumok: teljesítve
 
-### Kliens → Szerver
-- Header: `If-None-Match: "<etag>"`
-
-### Szerver → Kliens
-- Válasz `200 OK` esetén:
-  - `ETag: "<etag>"`
-  - normál JSON body (mint most)
-- Válasz `304 Not Modified` esetén:
-  - body **ne legyen** (vagy üres)
-  - opcionálisan ETag visszaadható, de nem kötelező
-
-### Fontos
-- ETag legyen **stabil** ugyanarra az adatra
-- ETag változzon bármilyen releváns adatváltozásnál
-- Használható weak ETag is: `W/"..."`, de kezdésnek egyszerű strong ETag is jó
+- mind az 5 endpoint ad `ETag` headert `200` válasznál
+- ugyanarra az adatra egymás utáni kérésnél működik a `200` -> `304` revalidáció
+- create/update/delete után a következő GET új ETag-gel jön vissza
+- frontend refresh esetén változatlan adatra nincs felesleges body letöltés
+- auth flow nem sérül, a `401` továbbra is `401`
 
 ---
 
-## 3) ETag előállítás (ajánlott stratégia)
+## Jelenlegi frontend együttműködés
 
-## 3.1 Gyors, megbízható mintázat
-Minden endpointhoz állíts elő egy determinisztikus stringet, pl:
-- rekordszám
-- max `updatedAt` (ha van)
-- max `id`
-- opcionálisan checksum
-
-Majd erre hash:
-- `SHA-256(baseString)`
-- ETag = `"{hexHash}"`
-
-Példa base string (`/api/Keszetelek`):
-- `count=123|maxUpdatedAt=2026-03-04T10:00:00Z|maxId=456`
-
-Ha nincs `updatedAt` oszlop:
-- rövid távon: hash a rendezett rekordokból (id + fő mezők)
-- hosszú távon: érdemes minden táblába `updatedAt`-ot bevezetni
-
-## 3.2 Konkrétan mely táblák számítanak
-- `/api/Kategoria` → `Kategoria`
-- `/api/Keszetelek` → `Keszetelek` (+ ha nested/kapcsolt hozzávalók is jönnek, akkor kapcsolótábla is)
-- `/api/Koretek` → `Koretek`
-- `/api/Menuk` → `Menuk`
-- `/api/Uditok` → `Uditok`
-
-Ha a payload kapcsolt adatot is tartalmaz (pl. készételhez hozzávalók), az ETag-be **kötelező** beleszámítani azt a kapcsolatot is.
-
----
-
-## 4) Változtatások backend kódban
-
-## 4.1 Közös helper middleware/service
-Készíts egy közös utility-t, pl:
-- `ComputeEtagForEndpoint(endpointName)`
-- `TryHandleIfNoneMatch(request, response, currentEtag)`
-
-Elvárt viselkedés:
-1. kiszámolja `currentEtag`
-2. beolvassa `If-None-Match`
-3. match esetén `304` + return
-4. különben controller folytatja, a végén `ETag` header beállítva
-
-## 4.2 Controller szintű alkalmazás
-Minden érintett GET metódus elején:
-- ETag számítás
-- conditional check
-
-Minden 200-as válasz előtt:
-- `Response.Headers["ETag"] = currentEtag`
-
----
-
-## 5) Cache-Control beállítás
-
-Ajánlott response header:
-- `Cache-Control: private, max-age=0, must-revalidate`
-
-Miért:
-- böngésző revalidál minden alkalommal
-- ha nincs változás → olcsó `304`
-- ha változott → teljes új adat
-
----
-
-## 6) Elfogadási kritériumok (Definition of Done)
-
-1. Az 5 endpoint mind ad `ETag` headert 200 esetén
-2. Ugyanarra az adatra két egymás utáni kérés:
-   - 1. kérés: `200` + body + ETag
-   - 2. kérés (If-None-Match): `304`
-3. Adatmódosítás után (create/update/delete):
-   - következő GET már `200` + új ETag
-4. Frontend oldalon frissítéskor (Refresh gomb):
-   - változatlan adatra nincs body letöltés (`304`)
-   - változáskor frissül a lista
-5. Nem törik auth flow:
-   - 401 továbbra is 401
-
----
-
-## 7) Teszt forgatókönyv (kézi)
-
-1. Nyisd meg az appot, `Network` tab
-2. Menü endpointokra első kérés: 200 + ETag
-3. Nyomj `Refresh`-t a frontendben
-4. Elvárt: 304-ok (vagy legalábbis nem minden endpoint 200)
-5. Módosíts adminból egy elemet (pl. étel ár)
-6. Újra `Refresh`
-7. Elvárt: az érintett endpoint 200 + új ETag
-
----
-
-## 8) Opcionális továbbfejlesztés (később)
-
-Ha még kevesebb kérés kell:
-- új endpoint: `GET /api/menu/version`
-- visszaad egy aggregált verziót minden menü adatra
-- frontend csak változáskor húzza be az 5 listát
-
-De jelenleg az ETag + 304 teljesen elegendő és szabványos.
-
----
-
-## 9) Megjegyzés a jelenlegi frontend implementációról
-
-A frontend már:
-- local cache-ből azonnal renderel (`menu-cache-v1`)
+A frontend oldalon ehhez már minden készen áll:
+- local cache-ből azonnal renderel datasetenként külön kulcsokkal (`menu-cache-*-v5`)
 - dataset-fingerprint alapján nem cserél state-et feleslegesen
 - endpoint ETag-eket külön tárol (`menu-etags-v1`)
+- `304 Not Modified` esetén nem vár body-t, és nem írja felül feleslegesen a state-et
+- cache-hiány esetén ledobja az adott dataset ETag-jét, hogy a következő kérés biztosan `200` legyen
 - conditional loader függvényeket használ (`get*Conditional`)
 
-Tehát backend oldalon az ETag visszaadás után az optimalizáció azonnal aktiválódik.
+Ennek eredménye, hogy a menü frissítés most már cache-first + conditional revalidation módban működik.
+
+---
+
+## Opcionális későbbi továbbfejlesztés
+
+Ha később még kevesebb kérés kell, külön aggregált verzió endpoint adható hozzá, például:
+- `GET /api/menu/version`
+
+De jelenleg az ETag + `304` megoldás elegendő és szabványos.
 
 ---
 ---
 
-# Frontend TODO — Deferred Improvements
+# Frontend TODO — Status Snapshot (2026-03-31)
 
-Az alábbi fejlesztéseket külön tervezzük, itt gyűjtjük az előkészítést és példákat.
-
----
-
-## 1) i18n — Nemzetköziesítés
-
-### Probléma
-Minden szöveg hardcode-olva magyar nyelven van a `.vue` fálokban és JS modulokban.
-Példák: `'Rendelés leadva.'`, `'Szerkesztés'`, `'Sikeres regisztráció!'`, `'Mentés sikertelen'`.
-
-### Javasolt stratégia
-- **vue-i18n** csomag telepítése
-- Locale fájlok: `src/locales/hu.json`, `src/locales/en.json`
-- Globális `$t()` + Composition API `useI18n()`
-
-### Lépések
-1. `npm install vue-i18n`
-2. `src/i18n.js` plugin setup
-3. Locale fájlok kialakítása
-4. Komponensek átírása `$t()` hívásokra
-5. Nyelváváltó UI (opcionális)
-
-### Példa — Plugin setup
-
-```js
-// src/i18n.js
-import { createI18n } from 'vue-i18n';
-import hu from './locales/hu.json';
-
-export const i18n = createI18n({
-  locale: 'hu',
-  fallbackLocale: 'hu',
-  messages: { hu },
-});
-```
-
-```js
-// src/main.js
-import { i18n } from './i18n.js';
-app.use(i18n);
-```
-
-### Példa — Locale fájl (hu.json, részlet)
-
-```json
-{
-  "quickBuy": {
-    "title": "Gyors rendelés",
-    "loginRequired": "A rendeléshez be kell jelentkezni.",
-    "orderPlaced": "Rendelés leadva.",
-    "orderFailed": "Rendelés leadása sikertelen.",
-    "ordering": "Rendelés folyamatban…",
-    "placeOrder": "Rendelés leadása",
-    "cancel": "Mégsem",
-    "close": "Bezárás",
-    "quantity": "Mennyiség",
-    "unitPrice": "Egységár",
-    "total": "Összesen"
-  },
-  "admin": {
-    "edit": "Szerkesztés",
-    "saveFailed": "Mentés sikertelen",
-    "deleteFailed": "Törlés sikertelen",
-    "back": "Vissza"
-  },
-  "orderStatuses": {
-    "pending": "Függőben",
-    "inProgress": "Folyamatban",
-    "ready": "Átvehető",
-    "pickedUp": "Átvett"
-  }
-}
-```
-
-### Példa — Komponens használat
-
-```vue
-<script setup>
-import { useI18n } from 'vue-i18n';
-const { t } = useI18n();
-</script>
-
-<template>
-  <h2>{{ t('quickBuy.title') }}</h2>
-  <button>{{ t('quickBuy.placeOrder') }}</button>
-</template>
-```
-
-### Hatókör
-Érintett fájlok (nagyjából mindegyik template + néhány JS/composable):
-- Összes `src/components/**/*.vue`
-- `src/composables/useAdminEntityConfigs.js` (entity label-ek, message-ek)
-- `src/admin-helpers.js` (validator hibaüzenetek)
-- `src/constants.js` (ORDER_STATUSES)
+Az eredeti lista több pontja már részben vagy teljesen megvalósult. Ez a blokk a jelenlegi állapotot és a maradék tényleges teendőket rögzíti.
 
 ---
 
-## 2) DTO Casing — PascalCase / camelCase egységesítés
+## 1) i18n — állapot: részben kész, auditálva
 
-### Probléma
-A backend ASP.NET Core PascalCase-ben küldi a DTO-kat (`EtelId`, `Nev`, `Ar`, `Mennyiseg`).
-A frontend jelenleg PascalCase property neveket használ mindenhol, keveredik a JS konvencióval.
+### Már elkészült
+- `vue-i18n` telepítve van
+- központi i18n setup létezik (`src/i18n.js`)
+- locale fájlok léteznek (`src/locales/hu.json`, `src/locales/en.json`)
+- locale state + perzisztencia létezik (`src/composables/useLocale.js`)
+- van nyelvváltó UI és query-param szinkron (`App.vue`, `router.js`)
+- több public / auth / account komponens már `useI18n()`-t használ
 
-### Javasolt stratégia
-- Axios/fetch interceptor vagy normalizáló réteg az API modulban
-- Backend response → camelCase mapping beérkezéskor
-- Frontend request → PascalCase mapping küldéskor
-- Fokozatos átállás: először az `order-dto.js` minta kiterjesztése
+### Audit alapján továbbra is nyitott
+- több admin és employee komponensben maradt hardcode-olt HU szöveg
+- több API fallback hibaüzenet még string literálként él
+- az order status konstansok és néhány util még magyar literalokra támaszkodik
+
+### Konkrétan most is igaz, mert
+- az admin UI-ban továbbra is sok közvetlen magyar felirat van, például [src/components/admin/AdminDashboard.vue](src/components/admin/AdminDashboard.vue), [src/components/admin/AdminTable.vue](src/components/admin/AdminTable.vue), [src/components/admin/AdminEditModal.vue](src/components/admin/AdminEditModal.vue), [src/components/admin/AdminBulkEditModal.vue](src/components/admin/AdminBulkEditModal.vue), [src/components/admin/ConfirmModal.vue](src/components/admin/ConfirmModal.vue), [src/components/admin/EmployeeOrders.vue](src/components/admin/EmployeeOrders.vue) és [src/components/admin/FloatingOrderDetailsPanel.vue](src/components/admin/FloatingOrderDetailsPanel.vue)
+- a dolgozói nézetben az `useI18n()` már importálva van, de a legtöbb látható szöveg még nincs locale kulcsokra kötve
+- a [src/services/api.js](src/services/api.js) továbbra is sok magyar fallback hibasztringet tartalmaz, például `Rendelések betöltése sikertelen`, `Saját rendelések betöltése sikertelen`, `Hozzávalók betöltése sikertelen`
+- a [src/config/constants.js](src/config/constants.js) `ORDER_STATUSES` listája továbbra is magyar literalokat használ (`Függőben`, `Folyamatban`, `Átvehető`, `Átvett`), és erre épül a [src/domain/order/order-utils.js](src/domain/order/order-utils.js) is
+
+### Következő érdemi szelet
+1. admin modalok és táblák szövegeinek kiszervezése locale kulcsokra
+2. `src/services/api.js` fallback üzeneteinek áthelyezése locale kulcsokra vagy lokalizálható boundary-ra
+3. order status literalok leválasztása a `constants` / `order-utils` / `shared/utils` rétegről
+4. csak ezután érdemes bundle-optimalizációként locale lazy-loadot mérlegelni
 
 ### Megjegyzés
-Alternatíva: backend oldali `JsonSerializerOptions` → `camelCase`. Ez egyszerűbb lenne, de backendhez hozzáférés kell.
-
-### Lépések
-1. Döntés: frontend-oldalon mapping VAGY backend `System.Text.Json` camelCase policy
-2. Mapping utility írás (ha frontend-oldali)
-3. API réteg módosítás
-4. Komponensek fokozatos átírása
-
-### Példa — Frontend-oldali mapping utility
-
-```js
-// src/dto-mapper.js
-
-/** PascalCase → camelCase */
-function toCamel(str) {
-  return str.charAt(0).toLowerCase() + str.slice(1);
-}
-
-/** camelCase → PascalCase */
-function toPascal(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-/** Rekurzív kulcs-mapping objektumra/tömbre */
-export function mapKeys(obj, transform) {
-  if (Array.isArray(obj)) return obj.map(item => mapKeys(item, transform));
-  if (obj && typeof obj === 'object' && !(obj instanceof Date)) {
-    return Object.fromEntries(
-      Object.entries(obj).map(([k, v]) => [transform(k), mapKeys(v, transform)])
-    );
-  }
-  return obj;
-}
-
-export const fromBackend = (data) => mapKeys(data, toCamel);
-export const toBackend = (data) => mapKeys(data, toPascal);
-```
-
-### Példa — API integráció
-
-```js
-// src/api.js — a meglévő requestJsonOrThrow módosítása
-import { fromBackend, toBackend } from './dto-mapper.js';
-
-// Response olvasáskor:
-const json = await response.json();
-return fromBackend(json);
-
-// Request küldéskor:
-body: JSON.stringify(toBackend(payload)),
-```
-
-### Példa — Backend-oldali megoldás (ha lehetséges, egyszerűbb)
-
-```csharp
-// Program.cs
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    });
-```
-
-### Hatókör & kockázat
-- Az összes `.vue` fájl + composable + helper érinti (property nevek mindenhol)
-- A `normalizeOrderDto` már kezeli a dupla casing-et — ez kiterjeszthető
-- **Nagy volumenű változás** — javasolt ütemezés: egy entity-csoport egyszerre
+A korábbi TODO-ban szereplő alaplépések, mint a `vue-i18n` telepítés, plugin setup és nyelvváltó UI, már nem TODO-k. A mostani hiányosság már nem az infrastruktúra, hanem a hardcode-olt UI és hibaüzenetek következetes kitakarítása.
 
 ---
 
-## 3) CSRF védelem
+## 2) DTO Casing — állapot: részben megkezdve
 
-### Elemzés
-A backend JWT Bearer tokent használ (`Authorization: Bearer <token>`).
-A JWT Bearer auth **immunis a CSRF támadásokra**, mert a böngésző nem küldi
-automatikusan az `Authorization` headert cross-origin requesteknél.
+### Jelenlegi állapot
+- általános, teljes appra kiterjedő PascalCase/camelCase mapper nincs
+- az order domainben már van normalizáló réteg (`normalizeOrderDto` minta)
+- a menü/admin entity-k többsége továbbra is backend-alakú DTO-kkal dolgozik
 
-### Eredmény
-**Nem szükséges CSRF tokent bevezetni.**
+### Döntési pont
+- ha van backend hozzáférés, a backend oldali `camelCase` serializer policy a tisztább megoldás
+- ha nincs, akkor frontend oldalon az API boundary-ban kell entity-csoportonként normalizálni
 
-A jelenlegi architektúra (JWT Bearer, token localStorage-ból olvasva, manuálisan
-illesztve a headerbe) önmagában védi a CSRF ellen.
+### Javasolt ütemezés
+1. kategóriák / készételek / köretek / üdítők
+2. menük
+3. admin CRUD payloadok
+4. auth / profile payloadok
 
-### Javaslat (opcionális biztonsági erősítés)
-Ha a jövőben cookie-alapú auth-ra váltanánk, CSRF token szükséges lenne:
+### Kockázat
+Nagy churn, ezért egyszerre csak egy entity-családot érdemes átállítani.
 
-```csharp
-// Backend — ASP.NET Core anti-forgery
-builder.Services.AddAntiforgery(options =>
-{
-    options.HeaderName = "X-XSRF-TOKEN";
-    options.Cookie.Name = "XSRF-TOKEN";
-    options.Cookie.SameSite = SameSiteMode.Strict;
-});
-```
+---
 
-```js
-// Frontend — XSRF token olvasás cookie-ból
-function getXsrfToken() {
-  const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
-}
+## 3) CSRF védelem — állapot: lezárt / jelenleg nem szükséges
 
-// fetch híváshoz:
-headers: {
-  'X-XSRF-TOKEN': getXsrfToken(),
-}
-```
+### Döntés
+A jelenlegi JWT Bearer + `Authorization` header alapú megoldás mellett külön CSRF token bevezetése nem szükséges.
 
-**De jelenleg erre nincs szükség.**
+### Mikor kell újranyitni
+Ha az auth valaha cookie-alapúvá válik, akkor ez a téma újra előkerül, és XSRF token szükséges lesz.
 
 ---
 
 ## 4) Pinia — State Management migráció
 
-### Probléma
-Jelenleg a shared state module-szintű singleton ref-ekkel van megoldva
-a composable-ökben. Ez működik, de:
-- Nincs DevTools integráció (nem látszanak a store-ok)
-- Nincs time-travel debugging
-- Nehezebb tesztelni (modul-szintű side effect)
-- SSR-nél problémás lenne (shared state request-ek közt)
+### Állapot
+Még nincs elkezdve.
 
-### Jelenlegi minta (ami lecserélendő)
+### Ami ezt jelzi
+- nincs `pinia` dependency
+- nincs `src/stores/` mappa
+- a shared state továbbra is module-szintű singleton `ref` mintával fut a composable-ökben
 
-```js
-// src/composables/useAuth.js — jelenlegi
-const auth = ref(null);  // modul szintű singleton
+### Megítélés
+Ez jelenleg inkább DX / tesztelhetőség / jövőbeli SSR téma, nem sürgős funkcionális hiány.
 
-export function useAuth() {
-  const isLoggedIn = computed(() => Boolean(auth.value?.token));
-  function setAuth(user) {
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-    auth.value = user;
-  }
-  return { auth, isLoggedIn, setAuth, ... };
-}
-```
-
-### Javasolt Pinia store
-
-```js
-// src/stores/auth.js
-import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
-import { ROLE_ADMIN, ROLE_EMPLOYEE, AUTH_STORAGE_KEY } from '../constants.js';
-import { readStoredAuth } from '../storage-utils.js';
-
-export const useAuthStore = defineStore('auth', () => {
-  // --- State ---
-  const auth = ref(null);
-
-  // --- Getters ---
-  const isLoggedIn = computed(() => Boolean(auth.value?.token));
-  const isAdmin = computed(() => Number(auth.value?.jogosultsag) === ROLE_ADMIN);
-  const isEmployee = computed(() =>
-    [ROLE_EMPLOYEE, ROLE_ADMIN].includes(Number(auth.value?.jogosultsag))
-  );
-
-  // --- Actions ---
-  function setAuth(user) {
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-    auth.value = user;
-  }
-
-  function clearAuth() {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    auth.value = null;
-  }
-
-  // --- Init ---
-  try {
-    auth.value = readStoredAuth();
-  } catch {
-    auth.value = null;
-  }
-
-  return { auth, isLoggedIn, isAdmin, isEmployee, setAuth, clearAuth };
-});
-```
-
-### Lépések
-1. `npm install pinia`
-2. Plugin setup `main.js`-ben
-3. Store fájlok létrehozása `src/stores/` mappában
-4. Composable-ök fokozatos migrálása (auth → cart → menuData → orderColumns)
-5. Komponensek átírása `useAuthStore()` stb. használatára
-
-### Példa — Plugin setup
-
-```js
-// src/main.js
-import { createPinia } from 'pinia';
-
-const pinia = createPinia();
-app.use(pinia);
-```
-
-### Példa — Komponensben használat
-
-```vue
-<script setup>
-import { useAuthStore } from '../stores/auth.js';
-const authStore = useAuthStore();
-// authStore.isLoggedIn, authStore.setAuth(user), stb.
-</script>
-```
-
-### Migrálandó composable-ök (prioritás sorrendben)
-1. `useAuth.js` → `stores/auth.js`
-2. `useCart.js` → `stores/cart.js`
-3. `useMenuData.js` → `stores/menuData.js`
-4. `useOrderColumns.js` → `stores/orderColumns.js`
-5. `useMenuImageCache.js` → `stores/menuImageCache.js`
-
-### Kockázat
-- **Közepes volumen** — 5 composable átírás + összes felhasználó komponens
-- A singleton ref minta már jól működik, a migráció elsősorban DX és tesztelhetőség miatt éri meg
-- Javasolt: egyenként migrálni, nem egyszerre
+### Ha egyszer elindul
+1. `useAuth.js`
+2. `useCart.js`
+3. `useMenuData.js`
+4. `useOrderColumns.js`
+5. `useMenuImageCache.js`
 
 ---
 
-## 5) Refactor Follow-up Backlog (2026-03-19)
+## 5) Refactor / performance follow-up backlog — frissített állapot
 
-These items are intentionally postponed to keep current behavior stable while still tracking the next readability/performance steps.
+### Az eredeti listából már elkészült
+- `useAdminBulkFailurePrompt` extraction megtörtént
+- `useAdminDataLoader` extraction megtörtént
+- `useAdminEntityConfigs` szét lett bontva kisebb modulokra
+- admin modalok async importtal töltődnek
+- több public komponens async importtal töltődik
+- dev-only ServerDiscovery már lazy boundary mögött van
 
-### High-priority follow-ups
-- AdminDashboard orchestration split: move edit/delete confirmation orchestration from `AdminDashboard.vue` into dedicated composables (same pattern as bulk + selection extraction).
-- Admin modal event surface cleanup: simplify prop/event contracts across `AdminEditModal.vue`, `AdminBulkEditModal.vue`, and `AdminTable.vue` to reduce glue logic in parent components.
-- EmployeeOrders chunk size reduction: lazy-load `vuedraggable` usage path to reduce initial employee page payload.
+### Továbbra is nyitott
+- `AdminDashboard.vue` még mindig túl sok edit/delete orchestration logikát tartalmaz
+- az admin modal event surface még mindig zajos a parent és child komponensek között
+- `EmployeeOrders.vue` még mindig statikusan importálja a `vuedraggable` csomagot
+- a SignalR boundary még nem lazy, mert a `useSignalR.js` statikusan importálja a csomagot
+- nincs teszt setup könnyű component smoke / behavior tesztekhez
+- az operation feedback success/error szövegek még több helyen duplikáltak
+- a composable naming / layout konvenciók README dokumentálása még nyitott
 
-### Medium-priority follow-ups
-- SignalR lazy boundary: defer SignalR-heavy code on routes that do not need realtime behavior.
-- i18n extraction in admin helpers/config messages: migrate remaining hardcoded HU strings from helper/config modules to locale keys.
-- Add lightweight component behavior tests (or smoke tests) for:
-  - bulk edit/delete flow and failure-continue prompt
-  - selection reconciliation across tab/data reload
-  - employee realtime update while dragging
+### Javasolt következő sorrend
+1. `vuedraggable` lazy-load az employee nézethez
+2. SignalR lazy boundary route- vagy feature-szinten
+3. `AdminDashboard` edit/delete orchestration további kiszervezése composable-ökbe
+4. admin i18n sweep
+5. lightweight smoke / behavior teszt alapok
 
-### Cleanup / consistency follow-ups
-- Normalize async component loading style across admin/public feature boundaries.
-- Consolidate reusable “operation feedback” text generation (success/error pairs) in one helper/composable.
-- Review composable naming/layout conventions and document them in README for future contributors.
+### Teszt megjegyzés
+Jelenleg nincs bevezetett frontend teszt runner a projektben, ezért a tesztes backlog első lépése maga a minimális teszt infrastruktúra kiválasztása.
