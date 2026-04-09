@@ -9,7 +9,7 @@
 		"dev:discover": "node ./scripts/dev-with-discovery.mjs",
 		"build": "vite build",
 		"preview": "vite build --mode preview && vite preview",
-		"build:dev" : "vite build --mode development",
+		"build:dev": "vite build --mode development",
 		"generate:seed": "node --env-file-if-exists=.env.local ./scripts/generate-demo-seed.mjs"
 	},
 	"dependencies": {
@@ -22,9 +22,12 @@
 	"devDependencies": {
 		"@tailwindcss/postcss": "^4.1.18",
 		"@vitejs/plugin-vue": "^6.0.1",
+		"@vue/test-utils": "^2.4.6",
 		"autoprefixer": "^10.4.23",
+		"jsdom": "^29.0.2",
 		"postcss": "^8.5.6",
 		"tailwindcss": "^4.1.18",
-		"vite": "^7.2.4"
+		"vite": "^7.2.4",
+		"vitest": "^4.1.4"
 	}
 }
